@@ -9,6 +9,7 @@ import Recordings from "./Recordings.jsx";
 import EnvironmentControls from "./EnvironmentControls.jsx";
 import CreativeControls from "./CreativeControls.jsx";
 import LanguageControls from "./LanguageControls.jsx";
+import { readRuntimeSnapshot, mergeRuntimeSnapshot } from "./runtime-state.js";
 import "./style.css";
 
 const NervousSystem = lazy(() => import("./NervousSystem.jsx"));
@@ -84,7 +85,7 @@ function App() {
       try {
         const r = await fetch(individualId ? `/api/individuals/${individualId}` : "/api/state", { signal: controller.signal });
         if (!r.ok) throw new Error("Runtime unavailable");
-        const next = await r.json();
+        const next = readRuntimeSnapshot(await r.json());
         if (next.persistence) {
           const rosterResponse = await fetch("/api/individuals", { signal: controller.signal });
           if (!rosterResponse.ok) throw new Error("Population unavailable");
@@ -99,8 +100,7 @@ function App() {
         }
         if (!stopped && epoch === requestEpoch.current && !pendingSharedCommand.current) {
           selectedIndividualRef.current = next.individualId;
-          setState(previous => previous?.individualId === next.individualId && previous.sessionId === next.sessionId
-            && (previous.tick > next.tick || previous.commandSequence > next.commandSequence) ? previous : next);
+          setState(previous => mergeRuntimeSnapshot(previous, next));
           if (sharedNext) receiveShared(sharedNext, 'poll');
           else { sharedLive.current = null; setSharedBundle(null); setSharedLease(null); }
           setConnectionError("");
@@ -111,7 +111,7 @@ function App() {
       } catch (e) {
         if (!stopped)
           setConnectionError(
-            "Runtime disconnected. Values are stale; controls are unavailable.",
+            e.code === "RUNTIME_PROTOCOL_MISMATCH" ? e.message : "Runtime disconnected. Values are stale; controls are unavailable.",
           );
       } finally {
         if (!stopped) timer = setTimeout(poll, 500);
@@ -344,7 +344,7 @@ function App() {
                 const { controllerToken, ...safeState } = next;
                 setVisualLease(previous => controllerToken
                   ? { individualId: next.individualId, sessionId: next.sessionId, token: controllerToken }
-                  : next.environmentAdapter?.attached && previous?.individualId === next.individualId && previous.sessionId === next.sessionId
+                  : next.environmentAdapter?.attached && previous && previous.individualId === next.individualId && previous.sessionId === next.sessionId
                     ? previous : null);
                 requestEpoch.current++;
                 setState(previous => {
@@ -369,7 +369,7 @@ function App() {
               <Scene state={state} controllerToken={visualLease && state && visualLease.individualId === state.individualId && visualLease?.sessionId === state?.sessionId ? visualLease.token : null} onEnvironmentFrame={next => {
                 if (next.individualId !== selectedIndividualRef.current || next.sessionId !== state?.sessionId
                   || next.environmentAdapter?.environmentEpoch !== state?.environmentAdapter?.environmentEpoch) return;
-                setState(previous => previous?.individualId === next.individualId && previous.sessionId === next.sessionId && previous.tick <= next.tick ? next : previous);
+                setState(previous => mergeRuntimeSnapshot(previous, next));
               }} />
               </>}
               {state?.sharedSession && (sharedBundle?.shared.sharedId === state.sharedSession.sharedId
