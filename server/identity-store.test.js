@@ -181,6 +181,8 @@ test('failed admission receipt never delivers current and bounded history never 
   assert.equal(first.snapshot().chemistry.some(value => value.active), false);
   assert.equal(first.checkpoints(id).length, 64);
   assert.equal(first.checkpoints(id)[0].checkpointId, original);
+  assert.equal(first.snapshot().stimulusPolicy.reservedDose, 0);
+  assert.equal(first.restore(id, first.snapshot().persistence.checkpointId).status, 'paused');
   first.close();
   const next = openIdentityStore(path);
   assert.equal(next.snapshot().stimulusPolicy.reservedDose, 0);
@@ -214,4 +216,27 @@ test('process death releases writer ownership and recovery remains paused', asyn
   assert.equal(recovered.snapshot().status, 'paused');
   recovered.step();
   assert.equal(recovered.snapshot().tick, 1);
+});
+
+
+test('failed staged admission preserves previously spent reservations and remains explicitly restorable', t => {
+  const path = directory(t);
+  let store = openIdentityStore(path);
+  const id = store.primaryId;
+  store.control(id, 'start'); store.encounter(id, 'nectar');
+  for (let i = 0; i < 200; i++) store.step();
+  const saved = store.save();
+  store.close();
+  store = openIdentityStore(path, { write: () => { throw new Error('simulated disk full'); } });
+  store.control(id, 'start');
+  assert.throws(() => store.encounter(id, 'floral'), /disk full/);
+  assert.equal(store.snapshot().stimulusPolicy.reservedDose, saved.stimulusPolicy.reservedDose);
+  assert.equal(store.snapshot().stimulusPolicy.entries.length, 1);
+  assert.equal(store.snapshot().status, 'fault');
+  assert.deepEqual(store.snapshot().neural, saved.neural);
+  store.close();
+  const recovered = openIdentityStore(path);
+  t.after(() => recovered.close());
+  assert.equal(recovered.restore(id, saved.persistence.checkpointId).status, 'paused');
+  assert.equal(recovered.snapshot().stimulusPolicy.reservedDose, saved.stimulusPolicy.reservedDose);
 });

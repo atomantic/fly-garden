@@ -128,17 +128,20 @@ export function openIdentityStore(directory, { write = atomicWrite } = {}) {
       throw error;
     }
   }
+  function storeCheckpoint(id, payload) {
+    const record = recordFor(id);
+    if (record.checkpoints.length >= MAX_CHECKPOINTS) throw new RuntimeError('Checkpoint history limit reached; no history was deleted.', 409);
+    const checkpoint = entry(payload, record.head);
+    const next = structuredClone(saved);
+    const replacement = next.individuals.find(value => value.individualId === id);
+    replacement.checkpoints.push(checkpoint);
+    replacement.head = checkpoint.checkpointId;
+    persist(next);
+  }
   function save(id = saved.primaryId) {
     requireResident(id);
     return guarded(() => {
-      const record = recordFor(id);
-      if (record.checkpoints.length >= MAX_CHECKPOINTS) throw new RuntimeError('Checkpoint history limit reached; no history was deleted.', 409);
-      const checkpoint = entry(runtime.checkpoint(), record.head);
-      const next = structuredClone(saved);
-      const replacement = next.individuals.find(value => value.individualId === id);
-      replacement.checkpoints.push(checkpoint);
-      replacement.head = checkpoint.checkpointId;
-      persist(next);
+      storeCheckpoint(id, runtime.checkpoint());
       return snapshot(id);
     });
   }
@@ -176,9 +179,21 @@ export function openIdentityStore(directory, { write = atomicWrite } = {}) {
     control: (id, action) => { requireResident(id); runtime.control(action); return snapshot(id); },
     encounter: (id, compoundId) => {
       requireResident(id);
-      runtime.encounter(compoundId);
-      // Persist the reservation before the next synchronous step can deliver it. Failure faults/cancels input.
-      return compoundId === 'quiet' ? snapshot(id) : save(id);
+      const current = runtime.snapshot();
+      if (compoundId === 'quiet' || current.status !== 'running') {
+        runtime.encounter(compoundId);
+        return snapshot(id);
+      }
+      // Validate/stage on a detached copy. Existing recovery prevents overlap with active input.
+      const staged = createRuntime({ individualId: id, sessionId: current.sessionId, checkpoint: runtime.checkpoint() });
+      staged.control('start');
+      staged.encounter(compoundId);
+      return guarded(() => {
+        storeCheckpoint(id, staged.checkpoint());
+        // No await/step can interleave: admission was validated against this exact live state.
+        runtime.encounter(compoundId);
+        return snapshot(id);
+      });
     },
     step: () => { if (!closed) runtime.step(); },
     close: () => { if (!closed) { runtime.control('pause'); closed = true; release(); } },
