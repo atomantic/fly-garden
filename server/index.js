@@ -10,6 +10,7 @@ import { createRecordingStore } from './recording-store.js';
 import { createCreativeSessions } from './creative-session.js';
 import { createLanguageService } from './language-service.js';
 import { createOllamaLanguageProvider } from './ollama-language-provider.js';
+import { createManagedVisitorBridge } from './managed-visitor-bridge.js';
 import { createSharedHttp } from './shared-http.js';
 import { createAtlasHttp } from './atlas-http.js';
 import { createAtlasConnectivityHttp } from './atlas-connectivity-http.js';
@@ -39,7 +40,7 @@ async function readBody(request) {
 }
 
 /** Polling observers share the selected resident runtimes. Wall-clock gaps never catch up simulation time. */
-export function createServer({ runtime = createRuntime(), identities = null, distDir = fileURLToPath(new URL('../dist/', import.meta.url)), autoTick = true, capacity = createCapacityPolicy(), resourceUsage = () => ({ aggregateMemoryBytes: process.memoryUsage().rss, availableMemoryBytes: freemem() }), incrementalMemoryBytes = null, recordings = null, creativeSessions = createCreativeSessions(), onEnvironmentFrame = null, languageProviders = [], languageService = null, atlasDirectory = fileURLToPath(new URL('../data/atlas/', import.meta.url)), atlasGraphDirectory = fileURLToPath(new URL('../data/', import.meta.url)), allowedOrigins = [], allowedHosts = [] } = {}) {
+export function createServer({ runtime = createRuntime(), identities = null, distDir = fileURLToPath(new URL('../dist/', import.meta.url)), autoTick = true, capacity = createCapacityPolicy(), resourceUsage = () => ({ aggregateMemoryBytes: process.memoryUsage().rss, availableMemoryBytes: freemem() }), incrementalMemoryBytes = null, recordings = null, creativeSessions = createCreativeSessions(), onEnvironmentFrame = null, languageProviders = [], languageService = null, visitorTransport = undefined, atlasDirectory = fileURLToPath(new URL('../data/atlas/', import.meta.url)), atlasGraphDirectory = fileURLToPath(new URL('../data/', import.meta.url)), allowedOrigins = [], allowedHosts = [] } = {}) {
   const root = resolve(distDir);
   const atlasHttp = createAtlasHttp({ directory: atlasDirectory });
   const atlasConnectivityHttp = createAtlasConnectivityHttp({ atlasDirectory, graphDirectory: atlasGraphDirectory });
@@ -68,6 +69,17 @@ export function createServer({ runtime = createRuntime(), identities = null, dis
   const stateFor = id => identities ? identities.snapshot(id) : runtime.snapshot();
   const sequences = new Map();
   const sequenceFor = id => sequences.get(id ?? identities?.primaryId) ?? 0;
+  const visitors = identities ? createManagedVisitorBridge({ transport: visitorTransport, authority: {
+    claim(id, ownerId) {
+      const handle = identities.claimExternal(id, ownerId);
+      try {
+        language?.lifecycle(id);
+        creativeSessions.synchronize(stateFor(id));
+        for (const source of activeRecordings.values()) if (source.individualId === id) source.sessionId = null;
+        return handle;
+      } catch (error) { handle.release(); throw error; }
+    },
+  } }) : null;
   const snapshot = id => {
     const state = stateFor(id);
     if (language) {
@@ -78,7 +90,7 @@ export function createServer({ runtime = createRuntime(), identities = null, dis
     }
     creativeSessions.synchronize(state);
     const creativeCapture = creativeSessions.status(state.individualId);
-    return { ...state, commandSequence: sequenceFor(id), ...(creativeCapture ? { creativeCapture } : {}) };
+    return { ...state, ...(visitors ? { visitor: visitors.snapshot(state.individualId) } : {}), commandSequence: sequenceFor(id), ...(creativeCapture ? { creativeCapture } : {}) };
   };
   function validateCommand(body, fields, id) {
     const expected = ['protocolVersion', 'individualId', 'sessionId', 'sequence', ...fields];
@@ -160,6 +172,7 @@ export function createServer({ runtime = createRuntime(), identities = null, dis
           validateCommand(body, [], body.individualId);
           const state = snapshot(body.individualId);
           if (!state.persistence.resident) throw new RuntimeError('Recording requires a loaded individual.', 409);
+          if (state.externalOwner) throw new RuntimeError('Home recordings cannot capture a managed visitor session.', 409);
           if (state.sharedSession) throw new RuntimeError('Shared-world recording attribution is not available; separate before starting a home recording.', 409);
           if ([...activeRecordings.values()].some(value => value.individualId === state.individualId)) throw new RuntimeError('Individual already recording.', 409);
           const session = recordings.start({ individualId: state.individualId, worldId: 'home', sessionId: state.sessionId,
@@ -179,6 +192,31 @@ export function createServer({ runtime = createRuntime(), identities = null, dis
           identities.encounterDynamicsControl(id, body.enabled);
           return json(response, 200, snapshot(id));
         }
+        const visitorRoute = /^\/api\/individuals\/([0-9a-f-]+)\/visitor$/.exec(url.pathname);
+        if (visitors && visitorRoute) {
+          const id = visitorRoute[1]; stateFor(id); checkOrigin(request, base);
+          if (request.method === 'GET') {
+            if ([...url.searchParams].some(([key, value]) => key !== 'capabilities' || value !== '1') || url.searchParams.getAll('capabilities').length > 1) throw new RuntimeError('Unknown visitor query.');
+            let capabilities;
+            if (url.searchParams.has('capabilities')) {
+              try { capabilities = await visitors.capabilities(id); }
+              catch (error) { capabilities = { available: false, worldIds: [], reason: error.statusCode ? error.message : 'Visitor capabilities unavailable.' }; }
+            }
+            return json(response, 200, { visitor: visitors.snapshot(id), ...(capabilities ? { capabilities } : {}) });
+          }
+          if (request.method !== 'POST') throw new RuntimeError('Use POST for visitor operations.', 405);
+          if (url.search) throw new RuntimeError('Visitor commands do not accept query parameters.');
+          const body = await readBody(request);
+          validateCommand(body, ['operation', 'payload'], id);
+          if (!['admit', 'start', 'pause', 'rest', 'home'].includes(body.operation)) throw new RuntimeError('Unknown visitor operation.');
+          if (!body.payload || typeof body.payload !== 'object' || Array.isArray(body.payload)
+            || (body.operation === 'admit' ? Object.keys(body.payload).length !== 1 || typeof body.payload.worldId !== 'string'
+              : Object.keys(body.payload).length !== 0)) throw new RuntimeError('Invalid visitor payload.');
+          response.once('close', () => { if (!response.writableEnded) visitors.lifecycle(id).catch(() => {}); });
+          if (body.operation === 'admit') await visitors.admit(id, body.payload);
+          else await visitors.control(id, body.operation);
+          return json(response, 200, { state: snapshot(id), visitor: visitors.snapshot(id) });
+        }
         const languageRoute = /^\/api\/individuals\/([0-9a-f-]+)\/language$/.exec(url.pathname);
         if (language && languageRoute) {
           const id = languageRoute[1];
@@ -188,7 +226,7 @@ export function createServer({ runtime = createRuntime(), identities = null, dis
           const body = await readBody(request);
           validateCommand(body, ['operation', 'payload'], id);
           if (!['arm', 'chat', 'disarm', 'cancel'].includes(body.operation)) throw new RuntimeError('Unknown language operation.');
-          if (stateFor(id).sharedSession && ['arm', 'chat'].includes(body.operation)) throw new RuntimeError('Language interpretation is unavailable in shared fixture sessions.', 409);
+          if ((stateFor(id).sharedSession || stateFor(id).externalOwner) && ['arm', 'chat'].includes(body.operation)) throw new RuntimeError('Language interpretation is unavailable in shared or managed visitor sessions.', 409);
           const result = await language[body.operation](id, body.payload);
           return json(response, 200, { state: snapshot(id), language: language.snapshot(id), result });
         }
@@ -308,9 +346,16 @@ export function createServer({ runtime = createRuntime(), identities = null, dis
     if (identities) {
       const budget = population();
       if (budget.pressure !== 'within-budget') {
-        for (const resident of identities.list().filter(value => value.resident)) identities.control(resident.individualId, 'pause');
+        for (const resident of identities.list().filter(value => value.resident)) {
+          const id = resident.individualId;
+          if (stateFor(id).externalOwner) { if (visitors.snapshot(id).running) visitors.lifecycle(id).catch(() => {}); }
+          else identities.control(id, 'pause');
+        }
       } else identities.step();
     } else runtime.step();
+    if (visitors) for (const resident of identities.list().filter(value => value.resident)) {
+      if (stateFor(resident.individualId).externalOwner) visitors.tick(resident.individualId).catch(() => { visitors.lifecycle(resident.individualId).catch(() => {}); });
+    }
     language?.tick().catch(() => {});
     if (++sampleTick % 10 !== 0 || !recordings) return;
     // One bounded capture batch at a time; serialize writes fairly without awaiting the neural timer.
@@ -342,7 +387,8 @@ export function createServer({ runtime = createRuntime(), identities = null, dis
     pendingRecordings.add(batch);
     batch.finally(() => pendingRecordings.delete(batch));
   }, 50); });
-  server.on('close', () => { clearInterval(timer); language?.close(); identities?.close();
+  server.on('close', () => { clearInterval(timer); language?.close();
+    if (visitors) visitors.disconnectAll().finally(() => identities?.close()); else identities?.close();
     Promise.allSettled([...pendingRecordings]).then(() => recordings?.close()); });
   return server;
 }

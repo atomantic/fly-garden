@@ -101,6 +101,7 @@ export function openIdentityStore(directory, { write = atomicWrite, loadPrimary 
   const encounterAdapters = new Map();
   const persistenceErrors = new Map();
   const sharedSessions = new Map(), sharedOwners = new Map(), sharedTokens = new Map();
+  const externalOwners = new Map();
   const persist = candidate => {
     const text = JSON.stringify(candidate);
     if (Buffer.byteLength(text) > MAX_BYTES) throw new RuntimeError('Identity storage limit reached. Preserve/export the store before continuing.', 409);
@@ -149,7 +150,7 @@ export function openIdentityStore(directory, { write = atomicWrite, loadPrimary 
     if (!resident && !replicaSessions.has(id)) replicaSessions.set(id, randomUUID());
     const state = resident ? runtimes.get(id).snapshot() : createRuntime({ individualId: id, sessionId: replicaSessions.get(id),
       checkpoint: checkpointFor(record, record.head).payload }).snapshot();
-    return { ...state, sharedSession: sharedOwners.has(id) ? sharedSessions.get(sharedOwners.get(id)).snapshot() : null, environmentAdapter: environmentSnapshot(id, state), encounterDynamics: encounterDynamicsSnapshot(id, state), ...(resident ? {} : { status: 'saved-unloaded' }), persistence: { mode: 'durable-fixture',
+    return { ...state, externalOwner: externalOwners.has(id) ? { kind: 'managed-visitor' } : null, sharedSession: sharedOwners.has(id) ? sharedSessions.get(sharedOwners.get(id)).snapshot() : null, environmentAdapter: environmentSnapshot(id, state), encounterDynamics: encounterDynamicsSnapshot(id, state), ...(resident ? {} : { status: 'saved-unloaded' }), persistence: { mode: 'durable-fixture',
       checkpointId: record.head, branchOf: structuredClone(record.branchOf), checkpointCount: record.checkpoints.length,
       savedSimTimeMs: checkpointFor(record, record.head).payload.dynamics.tick * 5,
       error: persistenceErrors.get(id) ?? null, resident,
@@ -160,7 +161,11 @@ export function openIdentityStore(directory, { write = atomicWrite, loadPrimary 
     if (!runtimes.has(id)) throw new RuntimeError('Individual is saved-unloaded; explicitly load it before control.', 409);
     return runtimes.get(id);
   }
+  function requireExternalFree(id) {
+    if (externalOwners.has(id)) throw new RuntimeError('A managed visitor owns this individual; use its scoped pause, rest or home flow until confirmed return.', 409);
+  }
   function requireIndependent(id) {
+    requireExternalFree(id);
     if (sharedOwners.has(id)) throw new RuntimeError('Individual belongs to a shared session; explicitly separate it before independent control or persistence.', 409);
   }
   function guarded(id, operation) {
@@ -211,6 +216,7 @@ export function openIdentityStore(directory, { write = atomicWrite, loadPrimary 
     });
   }
   function replica(id, checkpointId) {
+    requireExternalFree(id);
     const record = recordFor(id);
     const checkpoint = checkpointFor(record, checkpointId);
     if (saved.individuals.length >= MAX_IDENTITIES) throw new RuntimeError('Saved identity storage limit reached.', 409);
@@ -235,6 +241,7 @@ export function openIdentityStore(directory, { write = atomicWrite, loadPrimary 
     return snapshot(individualId);
   }
   function load(id) {
+    requireExternalFree(id);
     const record = recordFor(id);
     if (runtimes.has(id)) return snapshot(id);
     const candidate = createRuntime({ individualId: id, checkpoint: checkpointFor(record, record.head).payload });
@@ -312,6 +319,7 @@ export function openIdentityStore(directory, { write = atomicWrite, loadPrimary 
     catch (error) { throw error.statusCode ? error : new RuntimeError(error.message, 409); }
   }
   function stepIndividual(id) {
+    if (externalOwners.has(id)) return;
     if (sharedOwners.has(id)) { sharedSessions.get(sharedOwners.get(id)).checkFreshness(); return; }
     const runtime = requireResident(id);
     const adapter = environments.get(id);
@@ -435,6 +443,7 @@ export function openIdentityStore(directory, { write = atomicWrite, loadPrimary 
     if (!joint) throw new RuntimeError('Joint checkpoint not found.', 404);
     const memberIds = joint.payload.members.map(member => member.individualId), prior = new Set();
     const replacements = joint.payload.members.map(member => {
+      requireExternalFree(member.individualId);
       const runtime = requireResident(member.individualId), owner = sharedOwners.get(member.individualId);
       if (owner) {
         if (sharedFor(owner).memberIds().some(id => !memberIds.includes(id))) throw new RuntimeError('Separate overlapping shared membership before joint restore.', 409);
@@ -453,7 +462,28 @@ export function openIdentityStore(directory, { write = atomicWrite, loadPrimary 
     for (const member of replacements) runtimes.set(member.runtime.snapshot().individualId, member.runtime);
     return claimShared(session);
   }
-  return { sharedJoin, sharedLeave, sharedControl, sharedFrame, sharedSave, sharedRestore,
+  function claimExternal(id, ownerId) {
+    requireIndependent(id);
+    const runtime = requireResident(id);
+    if (closed || typeof ownerId !== 'string' || !ownerId || ownerId.length > 128) throw new RuntimeError('Invalid external ownership request.', 409);
+    if (runtime.snapshot().source !== 'fixture' || runtime.snapshot().status === 'fault') throw new RuntimeError('Only a healthy resident fixture can acquire visitor ownership.', 409);
+    runtime.control('pause');
+    detachEnvironment(id); revokeEncounters(id); encounterAdapters.delete(id);
+    const owner = { ownerId };
+    externalOwners.set(id, owner);
+    const isCurrent = () => !closed && externalOwners.get(id) === owner && runtimes.get(id) === runtime;
+    const assertCurrent = () => { if (!isCurrent()) throw new RuntimeError('External runtime authority was revoked.', 409); };
+    return Object.freeze({
+      isCurrent,
+      snapshot: () => runtime.snapshot(),
+      control: action => { assertCurrent(); return runtime.control(action); },
+      prepareStep: input => { assertCurrent(); return runtime.prepareStep(input); },
+      previewStep: token => { assertCurrent(); return runtime.previewStep(token); },
+      commitStep: token => { assertCurrent(); return runtime.commitStep(token); },
+      release: () => { if (externalOwners.get(id) === owner) { if (runtime.snapshot().status === 'running') runtime.control('pause'); externalOwners.delete(id); } },
+    });
+  }
+  return { claimExternal, sharedJoin, sharedLeave, sharedControl, sharedFrame, sharedSave, sharedRestore,
     sharedSnapshot: sharedId => sharedFor(sharedId).snapshot(),
     sharedCheckpoints: () => structuredClone(saved.jointCheckpoints ?? []),
     encounterDynamicsSnapshot, encounterDynamicsControl, environmentSnapshot, environmentControl, environmentFrame, create, createIndividual: create, load, unload, primaryId: saved.primaryId, snapshot, save, restore, replica,
@@ -462,6 +492,7 @@ export function openIdentityStore(directory, { write = atomicWrite, loadPrimary 
       checkpointId: record.head, resident: runtimes.has(record.individualId) })),
     checkpoints: id => recordFor(id).checkpoints.map(({ payload, ...metadata }) => ({ ...metadata, simTimeMs: payload.dynamics.tick * 5 })),
     control: (id, action) => {
+      requireExternalFree(id);
       if (sharedOwners.has(id)) {
         if (!['pause', 'rest', 'home'].includes(action)) requireIndependent(id);
         const sharedId = sharedOwners.get(id);

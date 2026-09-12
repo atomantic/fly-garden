@@ -810,3 +810,13 @@ td button[aria-pressed="true"] {
 .habitat-shared .habitat-label { position: static; margin: 20px; }
 .habitat-shared .pod-label { display: none; }
 .habitat-shared .scene-footer { position: static; }
+
+.habitat.habitat-away { height: auto; min-height: 250px; }
+.habitat-away .visitor-home-placeholder { padding: 20px; line-height: 1.6; }
+.habitat-away .habitat-label { position: static; margin: 20px; }
+.habitat-away .pod-label { display: none; }
+.habitat-away .scene-footer { position: static; }
+
+.visitor-controls p { overflow-wrap: anywhere; }
+.visitor-controls label { display: block; margin: 16px 0; }
+.visitor-controls select { max-width: 100%; }
