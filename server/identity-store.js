@@ -60,18 +60,22 @@ function validate(saved) {
 }
 
 /** Atomic whole-store replacement keeps checkpoint data and lineage in one transaction. No imported paths or credentials. */
-export function openIdentityStore(directory, { write = atomicWrite } = {}) {
+export function openIdentityStore(directory, { write = atomicWrite, residentIds = [] } = {}) {
+  if (!Array.isArray(residentIds) || residentIds.some(id => !uuid(id)) || new Set(residentIds).size !== residentIds.length) {
+    throw new RuntimeError('Additional resident IDs must be a unique list of saved individual IDs.');
+  }
   directory = resolve(directory);
   mkdirSync(directory, { recursive: true, mode: 0o700 });
   const release = acquireLock(directory);
   const path = join(directory, 'identities.json');
-  let saved, runtime, closed = false, persistenceError = null;
+  let saved, closed = false;
+  const residents = new Map();
+  const persistenceErrors = new Map();
   const persist = candidate => {
     const text = JSON.stringify(candidate);
     if (Buffer.byteLength(text) > MAX_BYTES) throw new RuntimeError('Identity storage limit reached. Preserve/export the store before continuing.', 409);
     write(path, text);
     saved = candidate;
-    persistenceError = null;
   };
   const entry = (payload, parentId = null) => ({ checkpointId: randomUUID(), parentId,
     createdAt: new Date().toISOString(), payload, sha256: digest(payload) });
@@ -81,15 +85,19 @@ export function openIdentityStore(directory, { write = atomicWrite } = {}) {
       saved = validate(JSON.parse(readFileSync(path, 'utf8')));
     } catch (error) {
       if (error.code !== 'ENOENT') throw error;
+      if (residentIds.length) throw new RuntimeError('Cannot select saved residents when initializing a new store.');
       const individualId = randomUUID();
-      runtime = createRuntime({ individualId });
+      const runtime = createRuntime({ individualId });
       const checkpoint = entry(runtime.checkpoint());
       persist({ schemaVersion: 1, primaryId: individualId, individuals: [{ individualId,
         createdAt: checkpoint.createdAt, branchOf: null, head: checkpoint.checkpointId, checkpoints: [checkpoint] }] });
     }
-    const record = saved.individuals.find(value => value.individualId === saved.primaryId);
-    runtime = createRuntime({ individualId: saved.primaryId,
-      checkpoint: record.checkpoints.find(value => value.checkpointId === record.head).payload });
+    // Selection is supplied by the caller's admission layer, never a browser read.
+    // The production service selects only the primary until resource admission is integrated.
+    for (const id of new Set([saved.primaryId, ...residentIds])) {
+      const record = recordFor(id);
+      residents.set(id, createRuntime({ individualId: id, checkpoint: checkpointFor(record, record.head).payload }));
+    }
   } catch (error) { release(); throw error; }
 
   function recordFor(id) {
@@ -103,28 +111,35 @@ export function openIdentityStore(directory, { write = atomicWrite } = {}) {
     if (!checkpoint) throw new RuntimeError('Checkpoint does not belong to this individual.', 404);
     return checkpoint;
   }
-  const replicaSessions = new Map();
+  const unloadedSessions = new Map();
   function snapshot(id = saved.primaryId) {
     const record = recordFor(id);
-    const resident = id === saved.primaryId;
-    if (!resident && !replicaSessions.has(id)) replicaSessions.set(id, randomUUID());
-    const state = resident ? runtime.snapshot() : createRuntime({ individualId: id, sessionId: replicaSessions.get(id),
+    const runtime = residents.get(id);
+    const resident = !!runtime;
+    if (!resident && !unloadedSessions.has(id)) unloadedSessions.set(id, randomUUID());
+    const state = resident ? runtime.snapshot() : createRuntime({ individualId: id, sessionId: unloadedSessions.get(id),
       checkpoint: checkpointFor(record, record.head).payload }).snapshot();
     return { ...state, ...(resident ? {} : { status: 'saved-unloaded' }), persistence: { mode: 'durable-fixture',
-      checkpointId: record.head, branchOf: record.branchOf, checkpointCount: record.checkpoints.length,
+      checkpointId: record.head, branchOf: structuredClone(record.branchOf), checkpointCount: record.checkpoints.length,
       savedSimTimeMs: checkpointFor(record, record.head).payload.dynamics.tick * 5,
-      error: persistenceError, resident,
-      disclosure: 'Explicit saves only. Restore cancels optional input but retains spent reservations. Saved replicas are unloaded; dataset workers and capacity admission are not integrated.' } };
+      error: persistenceErrors.get(id) ?? null, resident,
+      disclosure: 'Explicit saves only. Restore cancels optional input but retains spent reservations. Each selected fixture has independent state. Dataset workers and resource admission are not integrated.' } };
   }
   function requireResident(id) {
     recordFor(id);
-    if (id !== saved.primaryId) throw new RuntimeError('Saved replica is unloaded. Population admission is not implemented.', 409);
+    const runtime = residents.get(id);
+    if (!runtime) throw new RuntimeError('Saved individual is unloaded. Population admission is not implemented.', 409);
+    return runtime;
   }
-  function guarded(operation) {
-    try { return operation(); }
-    catch (error) {
-      persistenceError = 'Persistence operation failed; previous checkpoint preserved.';
-      runtime.pauseFault(persistenceError);
+  function guarded(id, operation) {
+    try {
+      operation();
+      persistenceErrors.delete(id);
+      return snapshot(id);
+    } catch (error) {
+      const reason = 'Persistence operation failed for this individual; previous checkpoint preserved.';
+      persistenceErrors.set(id, reason);
+      residents.get(id)?.pauseFault(reason);
       throw error;
     }
   }
@@ -139,15 +154,14 @@ export function openIdentityStore(directory, { write = atomicWrite } = {}) {
     persist(next);
   }
   function save(id = saved.primaryId) {
-    requireResident(id);
-    return guarded(() => {
+    const runtime = requireResident(id);
+    return guarded(id, () => {
       storeCheckpoint(id, runtime.checkpoint());
-      return snapshot(id);
     });
   }
   function restore(id, checkpointId) {
-    requireResident(id);
-    return guarded(() => {
+    const runtime = requireResident(id);
+    return guarded(id, () => {
       const record = recordFor(id);
       const checkpoint = checkpointFor(record, checkpointId);
       // Construct/validate before replacing either live state or the durable head.
@@ -156,8 +170,7 @@ export function openIdentityStore(directory, { write = atomicWrite } = {}) {
       const next = structuredClone(saved);
       next.individuals.find(value => value.individualId === id).head = checkpoint.checkpointId;
       persist(next);
-      runtime = restored;
-      return snapshot(id);
+      residents.set(id, restored);
     });
   }
   function replica(id, checkpointId) {
@@ -169,16 +182,29 @@ export function openIdentityStore(directory, { write = atomicWrite } = {}) {
     const next = structuredClone(saved);
     next.individuals.push({ individualId, createdAt: branched.createdAt, branchOf: { individualId: id, checkpointId },
       head: branched.checkpointId, checkpoints: [branched] });
-    guarded(() => persist(next));
+    guarded(id, () => persist(next));
     return snapshot(individualId);
   }
-  return { primaryId: saved.primaryId, snapshot, save, restore, replica,
-    list: () => saved.individuals.map(record => ({ individualId: record.individualId, branchOf: record.branchOf,
-      checkpointId: record.head, resident: record.individualId === saved.primaryId })),
+  function createIndividual() {
+    if (closed) throw new RuntimeError('Identity store is closed.', 503);
+    if (saved.individuals.length >= MAX_IDENTITIES) throw new RuntimeError('Saved identity storage limit reached.', 409);
+    const individualId = randomUUID();
+    const checkpoint = entry(createRuntime({ individualId }).checkpoint());
+    const next = structuredClone(saved);
+    next.individuals.push({ individualId, createdAt: checkpoint.createdAt, branchOf: null,
+      head: checkpoint.checkpointId, checkpoints: [checkpoint] });
+    // No live individual exists yet; failed creation must not fault another resident.
+    persist(next);
+    return snapshot(individualId);
+  }
+  return { primaryId: saved.primaryId, snapshot, save, restore, replica, createIndividual,
+    list: () => saved.individuals.map(record => ({ individualId: record.individualId, branchOf: structuredClone(record.branchOf),
+      dataset: structuredClone(checkpointFor(record, record.head).payload.dataset),
+      checkpointId: record.head, resident: residents.has(record.individualId) })),
     checkpoints: id => recordFor(id).checkpoints.map(({ payload, ...metadata }) => ({ ...metadata, simTimeMs: payload.dynamics.tick * 5 })),
-    control: (id, action) => { requireResident(id); runtime.control(action); return snapshot(id); },
+    control: (id, action) => { requireResident(id).control(action); return snapshot(id); },
     encounter: (id, compoundId) => {
-      requireResident(id);
+      const runtime = requireResident(id);
       const current = runtime.snapshot();
       if (compoundId === 'quiet' || current.status !== 'running') {
         runtime.encounter(compoundId);
@@ -188,15 +214,21 @@ export function openIdentityStore(directory, { write = atomicWrite } = {}) {
       const staged = createRuntime({ individualId: id, sessionId: current.sessionId, checkpoint: runtime.checkpoint() });
       staged.control('start');
       staged.encounter(compoundId);
-      return guarded(() => {
+      return guarded(id, () => {
         storeCheckpoint(id, staged.checkpoint());
         // No await/step can interleave: admission was validated against this exact live state.
         runtime.encounter(compoundId);
-        return snapshot(id);
       });
     },
-    step: () => { if (!closed) runtime.step(); },
-    close: () => { if (!closed) { runtime.control('pause'); closed = true; release(); } },
+    // Independent clocks only. A coupled-world synchronization barrier belongs to the world scheduler.
+    step: () => { if (!closed) for (const runtime of residents.values()) runtime.step(); },
+    close: () => {
+      if (!closed) {
+        for (const runtime of residents.values()) runtime.control('pause');
+        closed = true;
+        release();
+      }
+    },
   };
 }
 

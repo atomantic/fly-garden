@@ -29,7 +29,7 @@ async function readBody(request) {
   return parsed;
 }
 
-/** Polling observers share this one runtime. Wall-clock gaps never catch up simulation time. */
+/** Polling observers share the selected resident runtimes. Wall-clock gaps never catch up simulation time. */
 export function createServer({ runtime = createRuntime(), identities = null, distDir = fileURLToPath(new URL('../dist/', import.meta.url)), autoTick = true, allowedOrigins = [], allowedHosts = [] } = {}) {
   const root = resolve(distDir);
   const stateFor = id => identities ? identities.snapshot(id) : runtime.snapshot();
@@ -62,14 +62,15 @@ export function createServer({ runtime = createRuntime(), identities = null, dis
         if (identities && request.method === 'GET' && url.pathname === '/api/individuals') {
           return json(response, 200, { protocolVersion: 1, individuals: identities.list() });
         }
-        const individualRoute = /^\/api\/individuals\/([0-9a-f-]+)(?:\/(checkpoints|restore|replicas))?$/.exec(url.pathname);
+        const individualRoute = /^\/api\/individuals\/([0-9a-f-]+)(?:\/(control|encounters|checkpoints|restore|replicas))?$/.exec(url.pathname);
         if (identities && individualRoute && request.method === 'GET') {
           const [, id, operation] = individualRoute;
           if (!operation) return json(response, 200, snapshot(id));
           if (operation === 'checkpoints') return json(response, 200, { protocolVersion: 1, checkpoints: identities.checkpoints(id) });
           throw new RuntimeError('Use POST for this operation.', 405);
         }
-        if (url.pathname === '/api/control' || url.pathname === '/api/encounters' || (identities && individualRoute)) {
+        const createIndividual = identities && url.pathname === '/api/individuals';
+        if (url.pathname === '/api/control' || url.pathname === '/api/encounters' || createIndividual || (identities && individualRoute)) {
           if (request.method !== 'POST') throw new RuntimeError('Use POST for this operation.', 405);
           const origin = request.headers.origin;
           // Same-origin browser UI or explicitly configured local Vite origin. CLI requests have no Origin.
@@ -78,14 +79,15 @@ export function createServer({ runtime = createRuntime(), identities = null, dis
           const body = await readBody(request);
           if (identities) {
             const id = individualRoute ? individualRoute[1] : identities.primaryId;
-            const operation = individualRoute ? individualRoute[2] : url.pathname.slice(5);
+            const operation = createIndividual ? 'create' : individualRoute ? individualRoute[2] : url.pathname.slice(5);
             const field = operation === 'control' ? 'action' : operation === 'encounters' ? 'compoundId'
               : ['restore', 'replicas'].includes(operation) ? 'checkpointId' : null;
-            if (!['control', 'encounters', 'checkpoints', 'restore', 'replicas'].includes(operation)) throw new RuntimeError('API route not found.', 404);
+            if (!['control', 'encounters', 'checkpoints', 'restore', 'replicas', 'create'].includes(operation)) throw new RuntimeError('API route not found.', 404);
             if (field && typeof body[field] !== 'string') throw new RuntimeError(`Expected a string ${field}.`);
             validateCommand(body, field ? [field] : [], id);
             let state;
-            if (operation === 'control') state = identities.control(id, body.action);
+            if (operation === 'create') state = identities.createIndividual();
+            else if (operation === 'control') state = identities.control(id, body.action);
             else if (operation === 'encounters') state = identities.encounter(id, body.compoundId);
             else if (operation === 'checkpoints') state = identities.save(id);
             else if (operation === 'restore') state = identities.restore(id, body.checkpointId);
