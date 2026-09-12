@@ -201,11 +201,17 @@ export function openConnectomeStore(directory, { profiles = {}, writeCatalog = a
   };
 }
 
-/** Validate completely before creating a fresh destination; never merge into an existing store. */
-export function restoreConnectomeBackup(source,destination,{profiles={}}={}) {
+/** Stream-validate an offline copy without initializing files or opening a writer. */
+export function validateConnectomeBackup(source,{profiles={}}={}) {
   const root=resolve(source); noSymlinkDirectory(root); noSymlinkDirectory(join(root,'checkpoints'));
   const catalog=validateCatalog(JSON.parse(readBounded(join(root,'catalog.json'),LIMITS.catalogBytes).toString()),profiles);
   let total=0; for(const record of catalog.individuals) for(const item of record.checkpoints){total+=item.bytes;if(total>LIMITS.totalCheckpointBytes)invalid();verifyPayload(root,record,item);}
+  return catalog;
+}
+
+/** Validate completely before creating a fresh destination; never merge into an existing store. */
+export function restoreConnectomeBackup(source,destination,{profiles={}}={}) {
+  const root=resolve(source), catalog=validateConnectomeBackup(root,{profiles});
   const target=externalDestination(root,destination); mkdirSync(target,{mode:0o700});
   try {
     mkdirSync(join(target,'checkpoints'),{mode:0o700});

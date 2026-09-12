@@ -1,5 +1,5 @@
 import { randomUUID, createHash, randomBytes, timingSafeEqual } from 'node:crypto';
-import { mkdirSync, openSync, closeSync, readFileSync, writeFileSync, fsyncSync, renameSync, unlinkSync, statSync } from 'node:fs';
+import { mkdirSync, openSync, closeSync, readFileSync, writeFileSync, fsyncSync, renameSync, unlinkSync, statSync, lstatSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { createEncounterDynamics, ENCOUNTER_CATALOG, GARDEN_ENCOUNTER_FLOWERS } from './encounter-dynamics.js';
@@ -91,6 +91,9 @@ export function openIdentityStore(directory, { write = atomicWrite, loadPrimary 
     throw new RuntimeError('Additional resident IDs must be a unique list of saved individual IDs.');
   }
   directory = resolve(directory);
+  // Incomplete offline restores must never initialize or activate replacement identities.
+  try { lstatSync(join(directory, '.restore-in-progress')); throw new RuntimeError('Offline restore is incomplete; choose a verified completed restore directory.'); }
+  catch (error) { if (error.code !== 'ENOENT') throw error; }
   mkdirSync(directory, { recursive: true, mode: 0o700 });
   const release = acquireIdentityStoreLock(directory);
   const path = join(directory, 'identities.json');
