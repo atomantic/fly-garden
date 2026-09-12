@@ -1,10 +1,10 @@
 # Local fixture backup and recovery
 
-These commands preserve the supported synthetic fixture store. They do not checkpoint real connectome workers, learned state, a shared-world scheduler or external embodiments. Those capabilities are not implemented. No backup command runs simulation, calls a provider or starts PM2.
+These commands preserve the supported synthetic fixture store. Schema-v2 stores also preserve shared fixture checkpoint references and committed poses. These backups do not include real connectome workers, learned state or external embodiments. No backup command runs simulation, calls a provider or starts PM2.
 
 ## Back up a stopped installation
 
-1. Explicitly save each resident whose current progress should be retained. Saving through the observatory or scoped checkpoint API is required; stopping does not automatically save unsaved progress.
+1. Explicitly save each resident whose current progress should be retained, using a joint save for shared members. Saving through the observatory or scoped checkpoint API is required; stopping does not automatically save unsaved progress.
 2. Stop the app: `pm2 stop fly-garden`. Stop any development server using the same store, too. Keep other standalone tools that write capacity settings stopped.
 3. Run the command with your chosen store and a new archive filename:
 
@@ -18,7 +18,7 @@ The helper acquires the same exclusive SQLite writer lock as the service, valida
 
 All individual IDs, primary selection, checkpoint DAGs, replica provenance, selected heads, fixture dynamics and retained exposure reservations are included. Persisted capacity settings are included when present; legacy stores without this file keep that absence. Dataset/model parameters remain in each checkpoint. The archive contains no source-directory field, writer lock, environment file, network configuration or provider credentials. Historic exposure session IDs remain provenance only; they never become the restored command session.
 
-Recordings are a separate bounded observation export, not executable checkpoints, and are not included. There are no implemented shared-world checkpoint references to include. Protect archives as private modeled history rather than publishing them with issues.
+Recordings are a separate bounded observation export, not executable checkpoints, and are not included. Joint fixture records and their referenced individual checkpoints are included in the validated identity store; private camera leases are never saved. Protect archives as private modeled history rather than publishing them with issues.
 
 ## Restore into a new directory
 

@@ -3,6 +3,7 @@ import { mkdirSync, openSync, closeSync, readFileSync, writeFileSync, fsyncSync,
 import { join, resolve } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { createEncounterDynamics, ENCOUNTER_CATALOG, GARDEN_ENCOUNTER_FLOWERS } from './encounter-dynamics.js';
+import { createFixtureSharedSession, validateSharedPose } from './fixture-shared-session.js';
 import { createEnvironmentAdapter } from './environment-adapter.js';
 import { createRuntime, RuntimeError, branchRuntimeCheckpoint, assertCheckpointPolicyContinuity } from './runtime.js';
 
@@ -28,7 +29,8 @@ export function acquireIdentityStoreLock(directory) {
 }
 
 export function validateIdentityDocument(saved) {
-  if (!exact(saved, ['schemaVersion', 'primaryId', 'individuals']) || saved.schemaVersion !== 1
+  if (!(saved?.schemaVersion === 1 && exact(saved, ['schemaVersion', 'primaryId', 'individuals'])
+    || saved?.schemaVersion === 2 && exact(saved, ['schemaVersion', 'primaryId', 'individuals', 'jointCheckpoints']))
     || !uuid(saved.primaryId) || !Array.isArray(saved.individuals) || !saved.individuals.length
     || saved.individuals.length > MAX_IDENTITIES) fail();
   const ids = new Set();
@@ -58,6 +60,28 @@ export function validateIdentityDocument(saved) {
       || !predecessors.has(record.branchOf.individualId))) fail();
     predecessors.add(record.individualId);
   }
+  if (saved.schemaVersion === 2) {
+    if (!Array.isArray(saved.jointCheckpoints) || saved.jointCheckpoints.length > MAX_CHECKPOINTS) fail();
+    const jointIds = new Set();
+    for (const joint of saved.jointCheckpoints) {
+      if (!exact(joint, ['jointCheckpointId', 'createdAt', 'payload', 'sha256']) || !uuid(joint.jointCheckpointId)
+        || jointIds.has(joint.jointCheckpointId) || typeof joint.createdAt !== 'string' || !Number.isFinite(Date.parse(joint.createdAt))
+        || joint.sha256 !== digest(joint.payload) || !exact(joint.payload, ['intervalMs', 'tick', 'members'])
+        || joint.payload.intervalMs !== 5 || !Number.isSafeInteger(joint.payload.tick) || joint.payload.tick < 0
+        || !Number.isSafeInteger(joint.payload.tick * 5) || !Array.isArray(joint.payload.members)
+        || joint.payload.members.length < 2 || joint.payload.members.length > MAX_IDENTITIES) fail();
+      jointIds.add(joint.jointCheckpointId);
+      const memberIds = new Set();
+      for (const member of joint.payload.members) {
+        if (!exact(member, ['individualId', 'checkpointId', 'simTimeMs', 'pose']) || memberIds.has(member.individualId)
+          || all.get(member.checkpointId) !== member.individualId) fail();
+        memberIds.add(member.individualId); validateSharedPose(member.pose);
+        const record = saved.individuals.find(record => record.individualId === member.individualId);
+        const checkpoint = record.checkpoints.find(checkpoint => checkpoint.checkpointId === member.checkpointId);
+        if (member.simTimeMs !== checkpoint.payload.dynamics.tick * 5) fail();
+      }
+    }
+  }
   return saved;
 }
 
@@ -76,6 +100,7 @@ export function openIdentityStore(directory, { write = atomicWrite, loadPrimary 
   const controllerTokens = new Map();
   const encounterAdapters = new Map();
   const persistenceErrors = new Map();
+  const sharedSessions = new Map(), sharedOwners = new Map(), sharedTokens = new Map();
   const persist = candidate => {
     const text = JSON.stringify(candidate);
     if (Buffer.byteLength(text) > MAX_BYTES) throw new RuntimeError('Identity storage limit reached. Preserve/export the store before continuing.', 409);
@@ -124,7 +149,7 @@ export function openIdentityStore(directory, { write = atomicWrite, loadPrimary 
     if (!resident && !replicaSessions.has(id)) replicaSessions.set(id, randomUUID());
     const state = resident ? runtimes.get(id).snapshot() : createRuntime({ individualId: id, sessionId: replicaSessions.get(id),
       checkpoint: checkpointFor(record, record.head).payload }).snapshot();
-    return { ...state, environmentAdapter: environmentSnapshot(id, state), encounterDynamics: encounterDynamicsSnapshot(id, state), ...(resident ? {} : { status: 'saved-unloaded' }), persistence: { mode: 'durable-fixture',
+    return { ...state, sharedSession: sharedOwners.has(id) ? sharedSessions.get(sharedOwners.get(id)).snapshot() : null, environmentAdapter: environmentSnapshot(id, state), encounterDynamics: encounterDynamicsSnapshot(id, state), ...(resident ? {} : { status: 'saved-unloaded' }), persistence: { mode: 'durable-fixture',
       checkpointId: record.head, branchOf: structuredClone(record.branchOf), checkpointCount: record.checkpoints.length,
       savedSimTimeMs: checkpointFor(record, record.head).payload.dynamics.tick * 5,
       error: persistenceErrors.get(id) ?? null, resident,
@@ -135,11 +160,15 @@ export function openIdentityStore(directory, { write = atomicWrite, loadPrimary 
     if (!runtimes.has(id)) throw new RuntimeError('Individual is saved-unloaded; explicitly load it before control.', 409);
     return runtimes.get(id);
   }
+  function requireIndependent(id) {
+    if (sharedOwners.has(id)) throw new RuntimeError('Individual belongs to a shared session; explicitly separate it before independent control or persistence.', 409);
+  }
   function guarded(id, operation) {
     try { persistenceErrors.delete(id); return operation(); }
     catch (error) {
       const message = 'Persistence operation failed; previous checkpoint preserved.';
       persistenceErrors.set(id, message);
+      if (sharedOwners.has(id)) sharedSessions.get(sharedOwners.get(id)).pause(message);
       runtimes.get(id)?.pauseFault(message);
       revokeEncounters(id);
       throw error;
@@ -156,6 +185,7 @@ export function openIdentityStore(directory, { write = atomicWrite, loadPrimary 
     persist(next);
   }
   function save(id = saved.primaryId) {
+    requireIndependent(id);
     const runtime = requireResident(id);
     return guarded(id, () => {
       storeCheckpoint(id, runtime.checkpoint());
@@ -163,6 +193,7 @@ export function openIdentityStore(directory, { write = atomicWrite, loadPrimary 
     });
   }
   function restore(id, checkpointId) {
+    requireIndependent(id);
     const runtime = requireResident(id);
     return guarded(id, () => {
       const record = recordFor(id);
@@ -212,6 +243,7 @@ export function openIdentityStore(directory, { write = atomicWrite, loadPrimary 
     return snapshot(id);
   }
   function unload(id) {
+    requireIndependent(id);
     const runtime = requireResident(id);
     // Durable save must succeed before residency is released; failures preserve/fault the individual.
     save(id);
@@ -241,6 +273,7 @@ export function openIdentityStore(directory, { write = atomicWrite, loadPrimary 
     controllerTokens.delete(id);
   }
   function environmentControl(id, action) {
+    requireIndependent(id);
     const runtime = requireResident(id);
     if (!['attach', 'detach'].includes(action)) throw new RuntimeError('Unknown environment action.');
     if (action === 'detach') detachEnvironment(id);
@@ -257,6 +290,7 @@ export function openIdentityStore(directory, { write = atomicWrite, loadPrimary 
     return snapshot(id);
   }
   function environmentFrame(id, frame) {
+    requireIndependent(id);
     requireResident(id);
     const adapter = environments.get(id);
     if (!adapter) throw new RuntimeError('Explicitly attach the visual adapter first.', 409);
@@ -278,6 +312,7 @@ export function openIdentityStore(directory, { write = atomicWrite, loadPrimary 
     catch (error) { throw error.statusCode ? error : new RuntimeError(error.message, 409); }
   }
   function stepIndividual(id) {
+    if (sharedOwners.has(id)) { sharedSessions.get(sharedOwners.get(id)).checkFreshness(); return; }
     const runtime = requireResident(id);
     const adapter = environments.get(id);
     if (adapter) { if (!adapter.checkFreshness()) revokeEncounters(id); }
@@ -308,6 +343,7 @@ export function openIdentityStore(directory, { write = atomicWrite, loadPrimary 
     });
   }
   function encounterDynamicsControl(id, enabled) {
+    requireIndependent(id);
     const runtime = requireResident(id);
     if (typeof enabled !== 'boolean') throw new RuntimeError('Encounter enablement must be boolean.');
     if (!enabled) { revokeEncounters(id); return snapshot(id); }
@@ -324,12 +360,114 @@ export function openIdentityStore(directory, { write = atomicWrite, loadPrimary 
     adapter.setEnabled(true, environment.snapshot().environmentEpoch);
     return snapshot(id);
   }
-  return { encounterDynamicsSnapshot, encounterDynamicsControl, environmentSnapshot, environmentControl, environmentFrame, create, createIndividual: create, load, unload, primaryId: saved.primaryId, snapshot, save, restore, replica,
+  function sharedFor(sharedId) {
+    if (closed) throw new RuntimeError('Identity store is closed.', 503);
+    const session = sharedSessions.get(sharedId);
+    if (!session) throw new RuntimeError('Shared session not found.', 404);
+    return session;
+  }
+  function claimShared(session) {
+    for (const id of session.memberIds()) { detachEnvironment(id); encounterAdapters.delete(id); sharedOwners.set(id, session.sharedId); }
+    sharedSessions.set(session.sharedId, session);
+    const controllerToken = randomBytes(32).toString('hex'); sharedTokens.set(session.sharedId, controllerToken);
+    return { ...session.snapshot(), controllerToken };
+  }
+  function sharedJoin(ids) {
+    if (!Array.isArray(ids) || ids.length < 2 || ids.length > MAX_IDENTITIES || new Set(ids).size !== ids.length) throw new RuntimeError('Select distinct loaded shared members.');
+    const members = ids.map(id => {
+      requireIndependent(id); const runtime = requireResident(id);
+      if (runtime.snapshot().status === 'fault') throw new RuntimeError('Restore faulted members before joining.', 409);
+      return { runtime, pose: environments.get(id)?.snapshot().pose ?? { x: 0, z: 0, yaw: 0 } };
+    });
+    const session = createFixtureSharedSession(members);
+    session.pause('Explicit shared join; all members paused.');
+    return claimShared(session);
+  }
+  function sharedLeave(sharedId) {
+    const session = sharedFor(sharedId); session.pause('Membership withdrawn at the current world boundary.');
+    const result = session.snapshot();
+    for (const id of session.memberIds()) sharedOwners.delete(id);
+    sharedSessions.delete(sharedId); sharedTokens.delete(sharedId);
+    return { ...result, status: 'separated' };
+  }
+  function sharedControl(sharedId, action) {
+    const session = sharedFor(sharedId);
+    if (action === 'start') session.start();
+    else if (action === 'pause') session.pause();
+    else throw new RuntimeError('Unknown shared control action.');
+    return session.snapshot();
+  }
+  function sharedFrame(sharedId, batch) {
+    const session = sharedFor(sharedId), token = sharedTokens.get(sharedId);
+    if (!exact(batch, ['controllerToken', 'worldEpoch', 'worldTick', 'frames']) || typeof batch.controllerToken !== 'string'
+      || !/^[a-f0-9]{64}$/.test(batch.controllerToken) || !token
+      || !timingSafeEqual(Buffer.from(batch.controllerToken, 'hex'), Buffer.from(token, 'hex'))) throw new RuntimeError('Shared controller lease missing or revoked.', 409);
+    const { controllerToken, ...frame } = batch;
+    try { return session.accept(frame); }
+    catch (error) { throw error.statusCode ? error : new RuntimeError(error.message, 409); }
+  }
+  function sharedSave(sharedId) {
+    const session = sharedFor(sharedId);
+    try {
+      const state = session.snapshot();
+      const next = structuredClone(saved); next.schemaVersion = 2; next.jointCheckpoints ??= [];
+      if (next.jointCheckpoints.length >= MAX_CHECKPOINTS) throw new RuntimeError('Joint checkpoint history limit reached; no history was deleted.', 409);
+      const members = state.participants.map(member => {
+        const record = next.individuals.find(record => record.individualId === member.individualId);
+        if (record.checkpoints.length >= MAX_CHECKPOINTS) throw new RuntimeError('Checkpoint history limit reached; no history was deleted.', 409);
+        const checkpoint = entry(requireResident(member.individualId).checkpoint(), record.head);
+        record.checkpoints.push(checkpoint); record.head = checkpoint.checkpointId;
+        return { individualId: member.individualId, checkpointId: checkpoint.checkpointId, simTimeMs: member.simTimeMs, pose: member.pose };
+      });
+      const payload = { intervalMs: 5, tick: state.tick, members };
+      const joint = { jointCheckpointId: randomUUID(), createdAt: new Date().toISOString(), payload, sha256: digest(payload) };
+      next.jointCheckpoints.push(joint); validateIdentityDocument(next);
+      persist(next);
+      return structuredClone(joint);
+    } catch (error) {
+      session.pause('Joint save failed; previous durable checkpoints preserved.');
+      throw error;
+    }
+  }
+  function sharedRestore(jointCheckpointId) {
+    recordFor(saved.primaryId);
+    const joint = saved.jointCheckpoints?.find(value => value.jointCheckpointId === jointCheckpointId);
+    if (!joint) throw new RuntimeError('Joint checkpoint not found.', 404);
+    const memberIds = joint.payload.members.map(member => member.individualId), prior = new Set();
+    const replacements = joint.payload.members.map(member => {
+      const runtime = requireResident(member.individualId), owner = sharedOwners.get(member.individualId);
+      if (owner) {
+        if (sharedFor(owner).memberIds().some(id => !memberIds.includes(id))) throw new RuntimeError('Separate overlapping shared membership before joint restore.', 409);
+        prior.add(owner);
+      }
+      const checkpoint = checkpointFor(recordFor(member.individualId), member.checkpointId);
+      assertCheckpointPolicyContinuity(runtime.checkpoint(), checkpoint.payload);
+      return { runtime: createRuntime({ individualId: member.individualId, checkpoint: checkpoint.payload }), pose: member.pose };
+    });
+    const session = createFixtureSharedSession(replacements, { tick: joint.payload.tick });
+    const next = structuredClone(saved);
+    for (const member of joint.payload.members) next.individuals.find(record => record.individualId === member.individualId).head = member.checkpointId;
+    // All identity/policy/pose validation completes before the single durable write or ownership change.
+    validateIdentityDocument(next); persist(next);
+    for (const owner of prior) sharedLeave(owner);
+    for (const member of replacements) runtimes.set(member.runtime.snapshot().individualId, member.runtime);
+    return claimShared(session);
+  }
+  return { sharedJoin, sharedLeave, sharedControl, sharedFrame, sharedSave, sharedRestore,
+    sharedSnapshot: sharedId => sharedFor(sharedId).snapshot(),
+    sharedCheckpoints: () => structuredClone(saved.jointCheckpoints ?? []),
+    encounterDynamicsSnapshot, encounterDynamicsControl, environmentSnapshot, environmentControl, environmentFrame, create, createIndividual: create, load, unload, primaryId: saved.primaryId, snapshot, save, restore, replica,
     list: () => saved.individuals.map(record => ({ individualId: record.individualId, branchOf: structuredClone(record.branchOf),
       dataset: structuredClone(checkpointFor(record, record.head).payload.dataset),
       checkpointId: record.head, resident: runtimes.has(record.individualId) })),
     checkpoints: id => recordFor(id).checkpoints.map(({ payload, ...metadata }) => ({ ...metadata, simTimeMs: payload.dynamics.tick * 5 })),
     control: (id, action) => {
+      if (sharedOwners.has(id)) {
+        if (!['pause', 'rest', 'home'].includes(action)) requireIndependent(id);
+        const sharedId = sharedOwners.get(id);
+        if (action === 'pause') { sharedSessions.get(sharedId).pause('A member explicitly paused the coupled session.'); return snapshot(id); }
+        sharedLeave(sharedId);
+      }
       const runtime = requireResident(id);
       if (!['start', 'pause', 'rest', 'home'].includes(action)) throw new RuntimeError('Unknown control action.');
       revokeEncounters(id);
@@ -339,6 +477,7 @@ export function openIdentityStore(directory, { write = atomicWrite, loadPrimary 
       return snapshot(id);
     },
     encounter: (id, compoundId) => {
+      requireIndependent(id);
       const runtime = requireResident(id);
       const current = runtime.snapshot();
       if (compoundId === 'quiet' || current.status !== 'running') {
