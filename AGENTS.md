@@ -3,7 +3,7 @@
 - Read README.md, ETHOS.md and PLAN.md before implementation. Preserve the welfare charter as a product requirement.
 - Work in this repository for Fly Garden. Keep changes to PortOS or Eidoverse in their own repositories and follow their instructions.
 - For GitHub operations on atomantic repositories, use the atomantic account only.
-- This repository currently contains a plan, not working simulation code. Do not describe proposed behavior as implemented or validated.
+- The runnable backend is a synthetic 32-neuron fixture. Real connectome execution, retained learning, language and Eidoverse travel remain planned. Never describe those as implemented or validated.
 - Start the simulation only through an explicit user action. Boot and crash recovery must be paused. No unrequested cloud compute, LLM calls, public posting, financial actions, or open-web control.
 - Never introduce punishment, simulated pain/injury, deprivation, predator pursuit, forced combat or continuous reward drive. Rest and inactivity are permitted outcomes.
 - Disclose engineered controllers, animation, sensory proxies and model limitations. Weight changes and appealing footage do not establish learning or subjective experience.

@@ -6,7 +6,38 @@ We want to give a simulated fly room to learn and grow: a gentle visual garden, 
 
 The project is intended to run locally and be managed by [PortOS](https://github.com/atomantic/PortOS).
 
-**Status: research and planning, September 12, 2026.** There is no runnable simulator yet. The repository publishes the design and research; neural learning, creative behavior, and Eidoverse embodiment remain implementation milestones.
+![Fly Garden concept: a gentle garden and open teleport pod](docs/images/observatory-concept.png)
+
+*AI-generated design concept, not a screenshot or anatomical evidence. [Design notes and concepts](docs/DESIGN.md).*
+
+**Status: runnable foundation, September 12, 2026.** The local observatory includes an original Three.js fly and garden, a visible teleport pod, live inspection of a synthetic 32-neuron / 64-edge circuit, bounded fixture inputs, and an event journal. It starts paused. The illustrated body is not controlled by the circuit. Real connectome execution, persistent learning, LLM requests and Eidoverse travel remain tracked milestones; their interface panels disclose that they are unavailable.
+
+## Run locally
+
+Requires Node.js 24 or newer and npm.
+
+```sh
+npm ci
+npm test
+npm run build
+npm start
+```
+
+Open http://127.0.0.1:8790. Choose **Run fixture** to advance the synthetic circuit. State is currently session-only; restarting discards it and starts paused.
+
+## PortOS and PM2
+
+Register this repository in PortOS with process name `fly-garden`, API/UI port `8790`, build command `npm run build`, and fallback start command `npm start`. The checked-in `ecosystem.config.cjs` is the canonical PM2 configuration. PortOS can start/stop the named process using it.
+
+```sh
+pm2 start ecosystem.config.cjs --only fly-garden
+pm2 restart fly-garden
+pm2 stop fly-garden
+```
+
+One forked process serves the built UI and API on loopback. Health is available at `/api/health` and distinguishes service availability from simulation and integration availability. PM2 waits for readiness; no simulation or provider work begins on startup. Ports are defined in `ecosystem.config.cjs`. For frontend development, run `npm run dev:server` and `npm run dev` in separate terminals; Vite uses port `8791`. Rebuild before restarting production after UI changes.
+
+PM2 daemon startup/resurrection is managed by your installation. Durable checkpoints, backup and full-runtime resource limits are future work. Do not use the current fixture for long-lived individuals.
 
 ## Respect is a design requirement
 
@@ -18,7 +49,7 @@ The project is intended to run locally and be managed by [PortOS](https://github
 
 We do not know whether these models could have subjective experience. That uncertainty is a reason to design with care, not a basis for claiming either consciousness or guaranteed absence of experience. Our operating safeguards express our values; they are not validated measures of enjoyment or welfare.
 
-Read the [welfare charter](ETHOS.md), [research and implementation plan](PLAN.md), and [contribution guide](CONTRIBUTING.md).
+Read the [welfare charter](ETHOS.md), [product requirements](PRD.md), [research and implementation plan](PLAN.md), and [contribution guide](CONTRIBUTING.md).
 
 ## First experience
 
