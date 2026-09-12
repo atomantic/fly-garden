@@ -8,7 +8,7 @@ import { connectomeProfile } from './connectome-profiles.js';
 /** Explicit controller factory also permits small numerical fixtures in tests. */
 export function createConnectomeSession({ graph, dataset, individualId = randomUUID(), checkpoint = null, provenance = null, loadWallMs = 0 }) {
   const kernel = createSparseLif(graph, { dataset, individualId, checkpoint });
-  let status = 'paused', reason = null, sessionEpoch = randomUUID();
+  let status = 'paused', reason = null, sessionEpoch = randomUUID(), pendingRestore = null;
   const snapshot = () => ({ protocolVersion: 1, source: 'connectome', status, available: status !== 'fault',
     reason, individualId, sessionEpoch, dataset, model: kernel.model, graphSha256: kernel.graphSha256, provenance, loadWallMs,
     neural: kernel.summary(), memory: process.memoryUsage(),
@@ -16,6 +16,18 @@ export function createConnectomeSession({ graph, dataset, individualId = randomU
   function dispatch({ action, value, sessionEpoch: suppliedEpoch }) {
     if (action === 'snapshot') return snapshot();
     if (suppliedEpoch !== sessionEpoch) throw new Error('Stale connectome session epoch');
+    if (action === 'prepareRestore') {
+      const candidate = kernel.prepareRestore(value), token = randomUUID();
+      pendingRestore = { token, candidate };
+      return { token, sessionEpoch };
+    }
+    if (action === 'commitRestore') {
+      if (!pendingRestore || value !== pendingRestore.token) throw new Error('Stale prepared restore token');
+      kernel.commitRestore(pendingRestore.candidate); pendingRestore = null;
+      status = 'paused'; reason = null; sessionEpoch = randomUUID();
+      return snapshot();
+    }
+    if (!['checkpoint', 'snapshot'].includes(action)) pendingRestore = null;
     if (action === 'restore') {
       kernel.restore(value);
       status = 'paused'; reason = null; sessionEpoch = randomUUID();
