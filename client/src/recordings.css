@@ -1,0 +1,18 @@
+.recordings-panel { border: 1px solid #34453c; border-radius: 12px; padding: 20px; margin-top: 20px; min-width: 0; }
+.recordings-panel h2 { margin-top: 0; }
+.recordings-panel p, .recordings-panel small { color: #b7c4b6; line-height: 1.5; overflow-wrap: anywhere; }
+.recordings-panel [role="alert"] { color: #ffc1a7; }
+.recordings-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+.recordings-list { display: grid; gap: 12px; }
+.recordings-list article, .recordings-replay { border: 1px solid #34453c; border-radius: 8px; padding: 14px; background: #101d18; min-width: 0; }
+.recordings-list h3 { margin-top: 0; }
+.recordings-panel dl { display: grid; grid-template-columns: minmax(100px, 150px) minmax(0, 1fr); gap: 6px 12px; font-size: 13px; }
+.recordings-panel dt { color: #a6b6a6; }
+.recordings-panel dd { margin: 0; overflow-wrap: anywhere; }
+.recordings-replay { margin-top: 16px; }
+.recordings-slider { display: grid; gap: 8px; }
+.recordings-slider input { width: 100%; }
+.recordings-rates { max-height: 140px; overflow: auto; }
+.recordings-panel details { margin: 12px 0; }
+.recordings-panel details ul { max-height: 160px; overflow: auto; }
+@media (max-width: 500px) { .recordings-panel { padding: 12px; } .recordings-panel dl { grid-template-columns: 1fr; } .recordings-panel dd { margin-bottom: 6px; } }

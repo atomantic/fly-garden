@@ -240,3 +240,90 @@ test('failed staged admission preserves previously spent reservations and remain
   assert.equal(recovered.restore(id, saved.persistence.checkpointId).status, 'paused');
   assert.equal(recovered.snapshot().stimulusPolicy.reservedDose, saved.stimulusPolicy.reservedDose);
 });
+
+test('independent residents isolate control, checkpoint histories, mutable snapshots and restore sessions', t => {
+  const store = openIdentityStore(directory(t));
+  t.after(() => store.close());
+  const a = store.primaryId;
+  const b = store.create().individualId;
+  const before = store.snapshot(a);
+  const unloadedSession = store.snapshot(b).sessionId;
+  assert.equal(store.load(b).status, 'paused');
+  assert.notEqual(store.snapshot(b).sessionId, unloadedSession);
+  assert.equal(store.list().filter(value => value.resident).length, 2);
+  store.control(b, 'start');
+  store.encounter(b, 'nectar');
+  for (let i = 0; i < 20; i++) store.step();
+  assert.deepEqual(store.snapshot(a), before);
+  const savedB = store.save(b);
+  store.control(a, 'start');
+  store.step(a);
+  const savedA = store.save(a);
+  store.control(b, 'rest');
+  const restoredB = store.restore(b, savedB.persistence.checkpointId);
+  assert.equal(restoredB.status, 'paused');
+  assert.notEqual(restoredB.sessionId, savedB.sessionId);
+  assert.deepEqual(store.snapshot(a), savedA);
+  restoredB.neural.neurons[0].potential = 0.99;
+  assert.notEqual(store.snapshot(b).neural.neurons[0].potential, 0.99);
+  assert.throws(() => store.restore(b, savedA.persistence.checkpointId), /does not belong/);
+  assert.equal(store.snapshot(b).status, 'fault');
+  assert.deepEqual(store.snapshot(a), savedA);
+  store.step(a);
+  assert.equal(store.snapshot(a).tick, savedA.tick + 1);
+});
+
+test('explicit unload persists progress and reload cancels input without losing reservations', t => {
+  const path = directory(t);
+  let store = openIdentityStore(path);
+  const id = store.create().individualId;
+  store.load(id); store.control(id, 'start'); store.encounter(id, 'nectar');
+  store.step(id);
+  const active = store.snapshot(id);
+  const unloaded = store.unload(id);
+  assert.equal(unloaded.status, 'saved-unloaded');
+  assert.equal(unloaded.tick, active.tick);
+  assert.throws(() => store.control(id, 'start'), /unloaded/);
+  const loaded = store.load(id);
+  assert.equal(loaded.status, 'paused');
+  assert.notEqual(loaded.sessionId, active.sessionId);
+  assert.equal(loaded.stimulusPolicy.reservedDose, active.stimulusPolicy.reservedDose);
+  assert.equal(loaded.chemistry.some(value => value.active), false);
+  store.close();
+  store = openIdentityStore(path);
+  t.after(() => store.close());
+  assert.equal(store.snapshot(id).status, 'saved-unloaded');
+  assert.equal(store.snapshot(id).tick, active.tick);
+  assert.equal(store.snapshot().status, 'paused');
+});
+
+test('failed unload preserves the targeted resident and leaves another resident untouched', t => {
+  const path = directory(t);
+  const initial = openIdentityStore(path);
+  const b = initial.create().individualId;
+  initial.close();
+  const store = openIdentityStore(path, { write: () => { throw new Error('disk full'); } });
+  t.after(() => store.close());
+  store.load(b); store.control(b, 'start'); store.step(b);
+  const primary = store.snapshot();
+  const neural = store.snapshot(b).neural;
+  assert.throws(() => store.unload(b), /disk full/);
+  assert.equal(store.snapshot(b).persistence.resident, true);
+  assert.equal(store.snapshot(b).status, 'fault');
+  assert.deepEqual(store.snapshot(b).neural, neural);
+  assert.deepEqual(store.snapshot(), primary);
+});
+
+
+test('boot may defer primary residency until explicit capacity admission', t => {
+  const store = openIdentityStore(directory(t), { loadPrimary: false });
+  t.after(() => store.close());
+  assert.equal(store.snapshot().status, 'saved-unloaded');
+  assert.equal(store.list().filter(value => value.resident).length, 0);
+  store.step();
+  assert.equal(store.snapshot().tick, 0);
+  assert.throws(() => store.control(store.primaryId, 'start'), /unloaded/);
+  assert.equal(store.load(store.primaryId).status, 'paused');
+  store.step();
+  assert.equal(store.snapshot().tick, 0);
+});

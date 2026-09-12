@@ -155,3 +155,117 @@ test('configured tailnet host serves UI and controls while other hosts and origi
   assert.equal((await request('/api/health', { headers: { Host: 'other.example.ts.net' } })).status, 403);
   assert.equal((await request('/api/health', { headers: { Host: 'fly.example.ts.net.attacker.example' } })).status, 403);
 });
+
+test('individual HTTP routing rejects cross-recipient envelopes and capacity failures preserve residents', async t => {
+  const { openIdentityStore } = await import('./identity-store.js');
+  const { createCapacityPolicy } = await import('./population-capacity.js');
+  const directory = await mkdtemp(join(tmpdir(), 'fly-population-http-'));
+  const identities = openIdentityStore(directory);
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const capacity = createCapacityPolicy();
+  const { base, post } = await fixture(t, { identities, capacity, incrementalMemoryBytes: 100,
+    resourceUsage: () => ({ aggregateMemoryBytes: 1000, availableMemoryBytes: 1024 ** 3 }) });
+  const state = id => fetch(`${base}/api/individuals/${id}`).then(r => r.json());
+  const send = async (id, operation, data = {}) => {
+    const current = await state(id);
+    return post(`individuals/${id}/${operation}`, { protocolVersion: 1, individualId: id,
+      sessionId: current.sessionId, sequence: current.commandSequence + 1, ...data });
+  };
+  const a = identities.primaryId, b = identities.create().individualId;
+  assert.equal((await send(b, 'load')).status, 409);
+  assert.equal(identities.list().filter(value => value.resident).length, 1);
+  const settings = { ...capacity.settings(), maxResidentFlies: 2 };
+  assert.equal((await post('population', settings, { Origin: 'https://evil.example' })).status, 403);
+  assert.equal((await post('population', settings)).status, 200);
+  assert.equal((await send(b, 'load')).status, 200);
+  assert.equal((await state(b)).status, 'paused');
+  assert.equal((await send(b, 'control', { action: 'start', individualId: a })).status, 409);
+  assert.equal((await send(b, 'control', { action: 'start' })).status, 200);
+  identities.step();
+  assert.equal((await state(a)).tick, 0);
+  assert.equal((await state(b)).tick, 1);
+  await post('population', { ...settings, maxResidentFlies: 1 });
+  assert.equal((await fetch(`${base}/api/population`).then(r => r.json())).excessResidents, 1);
+  assert.equal((await send(b, 'unload')).status, 200);
+  assert.equal((await state(b)).status, 'saved-unloaded');
+  assert.equal((await send(b, 'load')).status, 409);
+  assert.equal((await send(a, 'unload')).status, 200);
+  assert.equal((await send(b, 'load')).status, 200);
+  assert.equal((await state(b)).tick, 1);
+  assert.equal((await state(b)).status, 'paused');
+});
+
+test('recording HTTP APIs preserve source identity and replay never changes live time', async t => {
+  const { openIdentityStore } = await import('./identity-store.js');
+  const { createRecordingStore, validateRecordingExport } = await import('./recording-store.js');
+  const directory = await mkdtemp(join(tmpdir(), 'fly-recording-http-'));
+  const identities = openIdentityStore(join(directory, 'identities'));
+  const recordings = createRecordingStore({ directory: join(directory, 'recordings') });
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const { base, get, post } = await fixture(t, { identities, recordings });
+  const initial = await get();
+  const envelope = { protocolVersion: 1, individualId: initial.individualId, sessionId: initial.sessionId, sequence: 1 };
+  assert.equal((await post('recordings', envelope, { Origin: 'https://evil.example' })).status, 403);
+  const response = await post('recordings', envelope);
+  assert.equal(response.status, 200);
+  const session = await response.json();
+  await recordings.append(session.id, { individualId: initial.individualId, sessionId: initial.sessionId,
+    worldId: 'home', simulationTimeMs: 0, worldTimeMs: 0, wallTimeMs: Date.now(), sourceStartMs: 0, sourceEndMs: 0, ratesHz: [0] });
+  assert.equal((await post(`recordings/${session.id}/stop`, {})).status, 200);
+  const before = await get();
+  const replay = await fetch(`${base}/api/recordings/${session.id}/replay`).then(r => r.json());
+  assert.equal(replay.mode, 'read-only');
+  assert.equal(replay.canResume, false);
+  assert.equal(replay.records[0].individualId, initial.individualId);
+  const exported = await fetch(`${base}/api/recordings/${session.id}/export`).then(r => r.json());
+  validateRecordingExport(exported);
+  assert.equal(exported.complete, true);
+  assert.deepEqual(await get(), before);
+  assert.equal((await post(`recordings/${session.id}/replay`, {})).status, 405);
+  assert.equal((await post(`recordings/${session.id}/delete`, {})).status, 200);
+  assert.equal(identities.checkpoints(initial.individualId).length, 1);
+});
+
+test('timer captures both individuals fairly and reports overlapping batches without blocking neural steps', async t => {
+  const { openIdentityStore } = await import('./identity-store.js');
+  const { createRecordingStore } = await import('./recording-store.js');
+  const directory = await mkdtemp(join(tmpdir(), 'fly-recording-pair-'));
+  const identities = openIdentityStore(join(directory, 'identities'));
+  const second = identities.create().individualId;
+  identities.load(second);
+  let releaseFirst;
+  const firstWrite = new Promise(resolve => { releaseFirst = resolve; });
+  let writes = 0;
+  const recordings = createRecordingStore({ directory: join(directory, 'recordings'), writeChunk: async (...args) => {
+    if (++writes === 1) await firstWrite;
+    return writeFile(...args);
+  } });
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  t.after(() => releaseFirst());
+  const { base, post } = await fixture(t, { identities, recordings, autoTick: true,
+    resourceUsage: () => ({ aggregateMemoryBytes: 1, availableMemoryBytes: 1024 ** 3 }) });
+  const sessions = [];
+  for (const id of [identities.primaryId, second]) {
+    identities.control(id, 'start');
+    const state = await fetch(`${base}/api/individuals/${id}`).then(r => r.json());
+    sessions.push(await (await post('recordings', { protocolVersion: 1, individualId: id,
+      sessionId: state.sessionId, sequence: state.commandSequence + 1 })).json());
+  }
+  const until = async predicate => {
+    const deadline = Date.now() + 4000;
+    while (!predicate()) { assert.ok(Date.now() < deadline, 'sampler condition timed out'); await new Promise(resolve => setTimeout(resolve, 20)); }
+  };
+  await until(() => writes === 1);
+  const tick = identities.snapshot().tick;
+  await until(() => recordings.list().every(s => s.droppedSamples >= 1));
+  assert.ok(identities.snapshot().tick > tick, 'neural loop continues while disk write waits');
+  releaseFirst();
+  await until(() => sessions.every(s => recordings.read(s.id).records.length >= 1));
+  for (const s of sessions) {
+    await post(`recordings/${s.id}/stop`, {});
+    const recorded = recordings.read(s.id);
+    assert.ok(recorded.records.length >= 1);
+    assert.ok(recorded.session.droppedSamples >= 1);
+    assert.equal(recorded.complete, false);
+  }
+});

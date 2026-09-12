@@ -14,7 +14,7 @@ const digest = value => createHash('sha256').update(JSON.stringify(value)).diges
 const fail = () => { throw new RuntimeError('Identity store is corrupt or incompatible; existing files were preserved.', 409); };
 
 /** SQLite's OS-backed exclusive lock is released automatically on process death. */
-function acquireLock(directory) {
+export function acquireIdentityStoreLock(directory) {
   const database = new DatabaseSync(join(directory, 'writer.sqlite'));
   try {
     database.exec('CREATE TABLE IF NOT EXISTS writer (id INTEGER PRIMARY KEY); BEGIN EXCLUSIVE');
@@ -25,7 +25,7 @@ function acquireLock(directory) {
   }
 }
 
-function validate(saved) {
+export function validateIdentityDocument(saved) {
   if (!exact(saved, ['schemaVersion', 'primaryId', 'individuals']) || saved.schemaVersion !== 1
     || !uuid(saved.primaryId) || !Array.isArray(saved.individuals) || !saved.individuals.length
     || saved.individuals.length > MAX_IDENTITIES) fail();
@@ -60,45 +60,46 @@ function validate(saved) {
 }
 
 /** Atomic whole-store replacement keeps checkpoint data and lineage in one transaction. No imported paths or credentials. */
-export function openIdentityStore(directory, { write = atomicWrite, residentIds = [] } = {}) {
+export function openIdentityStore(directory, { write = atomicWrite, loadPrimary = true, residentIds = [] } = {}) {
   if (!Array.isArray(residentIds) || residentIds.some(id => !uuid(id)) || new Set(residentIds).size !== residentIds.length) {
     throw new RuntimeError('Additional resident IDs must be a unique list of saved individual IDs.');
   }
   directory = resolve(directory);
   mkdirSync(directory, { recursive: true, mode: 0o700 });
-  const release = acquireLock(directory);
+  const release = acquireIdentityStoreLock(directory);
   const path = join(directory, 'identities.json');
-  let saved, closed = false;
-  const residents = new Map();
+  let saved, runtime, closed = false;
+  const runtimes = new Map();
   const persistenceErrors = new Map();
   const persist = candidate => {
     const text = JSON.stringify(candidate);
     if (Buffer.byteLength(text) > MAX_BYTES) throw new RuntimeError('Identity storage limit reached. Preserve/export the store before continuing.', 409);
     write(path, text);
     saved = candidate;
+
   };
   const entry = (payload, parentId = null) => ({ checkpointId: randomUUID(), parentId,
     createdAt: new Date().toISOString(), payload, sha256: digest(payload) });
   try {
     try {
       if (statSync(path).size > MAX_BYTES) fail();
-      saved = validate(JSON.parse(readFileSync(path, 'utf8')));
+      saved = validateIdentityDocument(JSON.parse(readFileSync(path, 'utf8')));
     } catch (error) {
       if (error.code !== 'ENOENT') throw error;
       if (residentIds.length) throw new RuntimeError('Cannot select saved residents when initializing a new store.');
       const individualId = randomUUID();
-      const runtime = createRuntime({ individualId });
+      runtime = createRuntime({ individualId });
       const checkpoint = entry(runtime.checkpoint());
       persist({ schemaVersion: 1, primaryId: individualId, individuals: [{ individualId,
         createdAt: checkpoint.createdAt, branchOf: null, head: checkpoint.checkpointId, checkpoints: [checkpoint] }] });
     }
-    // Selection is supplied by the caller's admission layer, never a browser read.
-    // The production service selects only the primary until resource admission is integrated.
-    for (const id of new Set([saved.primaryId, ...residentIds])) {
+    // The caller's admission layer selects residency; browser reads never do.
+    for (const id of new Set([...(loadPrimary ? [saved.primaryId] : []), ...residentIds])) {
       const record = recordFor(id);
-      residents.set(id, createRuntime({ individualId: id, checkpoint: checkpointFor(record, record.head).payload }));
+      runtimes.set(id, createRuntime({ individualId: id, checkpoint: checkpointFor(record, record.head).payload }));
     }
   } catch (error) { release(); throw error; }
+
 
   function recordFor(id) {
     if (closed) throw new RuntimeError('Identity store is closed.', 503);
@@ -111,35 +112,30 @@ export function openIdentityStore(directory, { write = atomicWrite, residentIds 
     if (!checkpoint) throw new RuntimeError('Checkpoint does not belong to this individual.', 404);
     return checkpoint;
   }
-  const unloadedSessions = new Map();
+  const replicaSessions = new Map();
   function snapshot(id = saved.primaryId) {
     const record = recordFor(id);
-    const runtime = residents.get(id);
-    const resident = !!runtime;
-    if (!resident && !unloadedSessions.has(id)) unloadedSessions.set(id, randomUUID());
-    const state = resident ? runtime.snapshot() : createRuntime({ individualId: id, sessionId: unloadedSessions.get(id),
+    const resident = runtimes.has(id);
+    if (!resident && !replicaSessions.has(id)) replicaSessions.set(id, randomUUID());
+    const state = resident ? runtimes.get(id).snapshot() : createRuntime({ individualId: id, sessionId: replicaSessions.get(id),
       checkpoint: checkpointFor(record, record.head).payload }).snapshot();
     return { ...state, ...(resident ? {} : { status: 'saved-unloaded' }), persistence: { mode: 'durable-fixture',
       checkpointId: record.head, branchOf: structuredClone(record.branchOf), checkpointCount: record.checkpoints.length,
       savedSimTimeMs: checkpointFor(record, record.head).payload.dynamics.tick * 5,
       error: persistenceErrors.get(id) ?? null, resident,
-      disclosure: 'Explicit saves only. Restore cancels optional input but retains spent reservations. Each selected fixture has independent state. Dataset workers and resource admission are not integrated.' } };
+      disclosure: 'Explicit saves only. Restore cancels optional input but retains spent reservations. Explicit loads start paused. Dataset workers are not integrated.' } };
   }
   function requireResident(id) {
     recordFor(id);
-    const runtime = residents.get(id);
-    if (!runtime) throw new RuntimeError('Saved individual is unloaded. Population admission is not implemented.', 409);
-    return runtime;
+    if (!runtimes.has(id)) throw new RuntimeError('Individual is saved-unloaded; explicitly load it before control.', 409);
+    return runtimes.get(id);
   }
   function guarded(id, operation) {
-    try {
-      operation();
-      persistenceErrors.delete(id);
-      return snapshot(id);
-    } catch (error) {
-      const reason = 'Persistence operation failed for this individual; previous checkpoint preserved.';
-      persistenceErrors.set(id, reason);
-      residents.get(id)?.pauseFault(reason);
+    try { persistenceErrors.delete(id); return operation(); }
+    catch (error) {
+      const message = 'Persistence operation failed; previous checkpoint preserved.';
+      persistenceErrors.set(id, message);
+      runtimes.get(id)?.pauseFault(message);
       throw error;
     }
   }
@@ -157,6 +153,7 @@ export function openIdentityStore(directory, { write = atomicWrite, residentIds 
     const runtime = requireResident(id);
     return guarded(id, () => {
       storeCheckpoint(id, runtime.checkpoint());
+      return snapshot(id);
     });
   }
   function restore(id, checkpointId) {
@@ -170,7 +167,8 @@ export function openIdentityStore(directory, { write = atomicWrite, residentIds 
       const next = structuredClone(saved);
       next.individuals.find(value => value.individualId === id).head = checkpoint.checkpointId;
       persist(next);
-      residents.set(id, restored);
+      runtimes.set(id, restored);
+      return snapshot(id);
     });
   }
   function replica(id, checkpointId) {
@@ -185,24 +183,41 @@ export function openIdentityStore(directory, { write = atomicWrite, residentIds 
     guarded(id, () => persist(next));
     return snapshot(individualId);
   }
-  function createIndividual() {
-    if (closed) throw new RuntimeError('Identity store is closed.', 503);
+  // Capacity policy belongs to the caller. These primitives never start a clock.
+  function create() {
+    recordFor(saved.primaryId);
     if (saved.individuals.length >= MAX_IDENTITIES) throw new RuntimeError('Saved identity storage limit reached.', 409);
     const individualId = randomUUID();
-    const checkpoint = entry(createRuntime({ individualId }).checkpoint());
+    const initial = entry(createRuntime({ individualId }).checkpoint());
     const next = structuredClone(saved);
-    next.individuals.push({ individualId, createdAt: checkpoint.createdAt, branchOf: null,
-      head: checkpoint.checkpointId, checkpoints: [checkpoint] });
-    // No live individual exists yet; failed creation must not fault another resident.
+    next.individuals.push({ individualId, createdAt: initial.createdAt, branchOf: null,
+      head: initial.checkpointId, checkpoints: [initial] });
     persist(next);
     return snapshot(individualId);
   }
-  return { primaryId: saved.primaryId, snapshot, save, restore, replica, createIndividual,
+  function load(id) {
+    const record = recordFor(id);
+    if (runtimes.has(id)) return snapshot(id);
+    const candidate = createRuntime({ individualId: id, checkpoint: checkpointFor(record, record.head).payload });
+    runtimes.set(id, candidate);
+    replicaSessions.delete(id);
+    return snapshot(id);
+  }
+  function unload(id) {
+    const runtime = requireResident(id);
+    // Durable save must succeed before residency is released; failures preserve/fault the individual.
+    save(id);
+    runtime.control('pause');
+    runtimes.delete(id);
+    replicaSessions.delete(id);
+    return snapshot(id);
+  }
+  return { create, createIndividual: create, load, unload, primaryId: saved.primaryId, snapshot, save, restore, replica,
     list: () => saved.individuals.map(record => ({ individualId: record.individualId, branchOf: structuredClone(record.branchOf),
       dataset: structuredClone(checkpointFor(record, record.head).payload.dataset),
-      checkpointId: record.head, resident: residents.has(record.individualId) })),
+      checkpointId: record.head, resident: runtimes.has(record.individualId) })),
     checkpoints: id => recordFor(id).checkpoints.map(({ payload, ...metadata }) => ({ ...metadata, simTimeMs: payload.dynamics.tick * 5 })),
-    control: (id, action) => { requireResident(id).control(action); return snapshot(id); },
+    control: (id, action) => { const runtime = requireResident(id); runtime.control(action); return snapshot(id); },
     encounter: (id, compoundId) => {
       const runtime = requireResident(id);
       const current = runtime.snapshot();
@@ -218,17 +233,11 @@ export function openIdentityStore(directory, { write = atomicWrite, residentIds 
         storeCheckpoint(id, staged.checkpoint());
         // No await/step can interleave: admission was validated against this exact live state.
         runtime.encounter(compoundId);
+        return snapshot(id);
       });
     },
-    // Independent clocks only. A coupled-world synchronization barrier belongs to the world scheduler.
-    step: () => { if (!closed) for (const runtime of residents.values()) runtime.step(); },
-    close: () => {
-      if (!closed) {
-        for (const runtime of residents.values()) runtime.control('pause');
-        closed = true;
-        release();
-      }
-    },
+    step: id => { if (!closed) { if (id === undefined) { for (const resident of runtimes.values()) resident.step(); } else requireResident(id).step(); } },
+    close: () => { if (!closed) { for (const resident of runtimes.values()) resident.control('pause'); closed = true; release(); } },
   };
 }
 
