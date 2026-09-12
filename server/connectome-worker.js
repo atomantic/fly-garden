@@ -2,17 +2,20 @@ import { parentPort, workerData } from 'node:worker_threads';
 import { performance } from 'node:perf_hooks';
 import { loadConnectome } from './connectome-data.js';
 import { createSparseLif, LIF_MODEL } from './sparse-lif.js';
+import { connectomeProfile } from './connectome-profiles.js';
 
-let status = 'loading', reason = null, kernel = null, provenance = null, loadWallMs = 0;
+let status = 'loading', reason = null, kernel = null, provenance = null, loadWallMs = 0, model = null;
 const snapshot = () => ({ protocolVersion: 1, source: 'connectome', status, available: !!kernel && status !== 'fault',
-  reason, model: LIF_MODEL, provenance, loadWallMs,
+  reason, dataset: workerData.dataset, model, provenance, loadWallMs,
   neural: kernel?.summary() ?? null, memory: process.memoryUsage(),
   limitations: 'Research LIF backend only. No sensory/motor mapping, plasticity, retained learning, or biological validation. No automatic advancement.' });
 
 const start = performance.now();
 try {
-  const { graph, manifest, manifestSha256 } = await loadConnectome(workerData.directory);
+  const profile = connectomeProfile(workerData.dataset);
+  const { graph, manifest, manifestSha256 } = await loadConnectome(workerData.directory, workerData.dataset);
   kernel = createSparseLif(graph);
+  model = { ...LIF_MODEL, id: profile.modelId };
   provenance = { dataset: manifest.dataset, selection: manifest.selection, manifestSha256,
     neuronCount: manifest.neuronCount, edgeCount: manifest.edgeCount, contactCount: manifest.contactCount };
   status = 'paused';

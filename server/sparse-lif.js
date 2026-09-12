@@ -10,7 +10,10 @@ export function validateGraph(graph) {
   if (!Array.isArray(ids) || !(offsets instanceof Uint32Array) || !(targets instanceof Uint32Array) ||
       !(contacts instanceof Uint32Array) || !(signs instanceof Int8Array)) throw new Error('Invalid sparse array types');
   const n = ids.length;
-  if (!n || new Set(ids).size !== n || Array.from(ids).some(id => typeof id !== 'string' || !/^[1-9]\d*$/.test(id))) {
+  const namespace = typeof ids[0] === 'string' && ids[0].includes('/') ? ids[0].split('/')[0] : null;
+  if (!n || new Set(ids).size !== n || Array.from(ids).some(id => typeof id !== 'string' ||
+      !(namespace ? ['male-cns:v1.0', 'banc:v888'].includes(namespace) &&
+        id.startsWith(`${namespace}/`) && /^[1-9]\d*$/.test(id.slice(namespace.length + 1)) : /^[1-9]\d*$/.test(id)))) {
     throw new Error('Invalid stable string neuron IDs');
   }
   if (offsets.length !== n + 1 || offsets[0] !== 0 || offsets[n] !== targets.length ||

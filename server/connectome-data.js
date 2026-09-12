@@ -3,18 +3,21 @@ import { createHash } from 'node:crypto';
 import { endianness } from 'node:os';
 import { join } from 'node:path';
 import { validateGraph } from './sparse-lif.js';
+import { connectomeProfile, neuronIdentity } from './connectome-profiles.js';
 
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
 
 /** Fixed filenames and pinned derived hashes: disk data cannot choose executable code or paths. */
-export async function loadConnectome(directory) {
-  const expected = JSON.parse(await readFile(new URL('../connectome/graph.lock.json', import.meta.url), 'utf8'));
+export async function loadConnectome(directory, dataset = 'male-cns:v1.0') {
+  const profile = connectomeProfile(dataset);
+  const expected = JSON.parse(await readFile(new URL(`../connectome/${profile.graphLock}`, import.meta.url), 'utf8'));
   if ((await stat(join(directory, 'manifest.json'))).size > 65536) throw new Error('Oversized dataset manifest');
   const manifestBytes = await readFile(join(directory, 'manifest.json'));
   if (sha256(manifestBytes) !== expected.manifestSha256 || endianness() !== 'LE') {
     throw new Error('Incompatible dataset manifest or byte order');
   }
   const manifest = JSON.parse(manifestBytes);
+  if (manifest.schemaVersion !== 1 || manifest.dataset !== dataset) throw new Error('Incompatible dataset selection');
   const files = {};
   for (const name of ['ids.json', 'offsets.u32', 'targets.u32', 'contacts.u32', 'signs.i8']) {
     if ((await stat(join(directory, name))).size !== manifest.files[name].bytes) throw new Error('Dataset array size mismatch');
@@ -38,5 +41,7 @@ export async function loadConnectome(directory) {
   if (graph.ids.length !== manifest.neuronCount || graph.targets.length !== manifest.edgeCount) {
     throw new Error('Dataset count mismatch');
   }
+  // Keep pinned on-disk decimal IDs compatible; expose only profile-qualified identities.
+  graph.ids = graph.ids.map(id => neuronIdentity(dataset, id));
   return { graph, manifest, manifestSha256: expected.manifestSha256 };
 }
