@@ -69,7 +69,7 @@ export function createStimulusPolicy({ individualId, sessionId }) {
     if (!integer(request.simTimeMs) || request.simTimeMs !== timeMs) throw new StimulusPolicyError('Stale or future stimulus timestamp.');
     const effect = effectFor(request.effect);
     if (!effect || !Array.isArray(request.targets) || request.targets.length !== effect.targets.length
-      || request.targets.some((target, i) => target !== effect.targets[i])) throw new StimulusPolicyError('Unknown effect or unsupported target mapping.');
+      || effect.targets.some((target, i) => !Object.hasOwn(request.targets, i) || request.targets[i] !== target)) throw new StimulusPolicyError('Unknown effect or unsupported target mapping.');
     if (!Number.isFinite(request.intensity) || request.intensity < 0 || request.intensity > effect.intensity
       || !integer(request.durationMs) || request.durationMs > effect.durationMs || request.durationMs % 5 !== 0
       || (effect.id !== 'quiet' && (request.intensity === 0 || request.durationMs === 0))) {

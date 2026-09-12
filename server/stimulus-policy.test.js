@@ -45,7 +45,7 @@ test('invalid envelopes are rejected atomically, including arbitrary mapping and
   const invalid = [
     { version: 2 }, { source: 'unknown' }, { individualId: 'another' }, { sessionId: 'old' },
     { simTimeMs: -5 }, { simTimeMs: 5 }, { simTimeMs: NaN }, { effect: 'pain' },
-    { targets: ['fixture-31'] }, { targets: [...valid.targets, 'fixture-4'] },
+    { targets: ['fixture-31'] }, { targets: [...valid.targets, 'fixture-4'] }, { targets: new Array(4) },
     { intensity: NaN }, { intensity: Infinity }, { intensity: -1 }, { intensity: 0.046 },
     { durationMs: NaN }, { durationMs: Infinity }, { durationMs: -5 }, { durationMs: 301 },
     { durationMs: 1 }, { durationMs: 0 }, { intensity: 0 }, { arbitraryCurrent: 10 },
@@ -121,7 +121,7 @@ test('runtime adapters and UI encounter share the boundary before any neural mut
   const runtime = createRuntime();
   runtime.control('start');
   const neural = runtime.snapshot().neural;
-  for (const invalid of [{ intensity: NaN }, { intensity: Infinity }, { effect: 'injury' }, { simTimeMs: 5 }, { targets: ['fixture-31'] }]) {
+  for (const invalid of [{ intensity: NaN }, { intensity: Infinity }, { effect: 'injury' }, { simTimeMs: 5 }, { targets: ['fixture-31'] }, { targets: new Array(4) }]) {
     assert.throws(() => runtime.stimulate('garden', { ...runtimeEnvelope(runtime, 'garden'), ...invalid }));
     assert.deepEqual(runtime.snapshot().neural, neural);
   }
