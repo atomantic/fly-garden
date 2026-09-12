@@ -5,12 +5,13 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 const COLORS = [0x84d7bd, 0xe8be75, 0x9eacf5, 0xe8a7c8, 0xa8d779, 0x76c8e4, 0xd6cfe7];
 
 /** Read-only measured point positions. This renderer owns no runtime/control API or animation loop. */
-export default function AtlasCanvas({ positions, valid, groups, visibleGroups, selectedIndex, pointSize = 2, onSelect }) {
+export default function AtlasCanvas({ positions, valid, groups, visibleGroups, selectedIndex, pointSize = 2, edges = [], edgeOpacity = 0.15, onSelect }) {
   const host = useRef(null), view = useRef(null), select = useRef(onSelect);
-  const [failure, setFailure] = useState('');
+  const [failure, setFailure] = useState(''), [measurement, setMeasurement] = useState(null), [measuring, setMeasuring] = useState(false);
+  const benchmark = useRef(null);
   select.current = onSelect;
   useEffect(() => {
-    setFailure('');
+    setFailure(''); setMeasurement(null); setMeasuring(false);
     let renderer;
     try { renderer = new THREE.WebGLRenderer({ antialias: true }); }
     catch { setFailure('WebGL is unavailable. All cells remain accessible in the searchable table.'); return; }
@@ -43,6 +44,9 @@ export default function AtlasCanvas({ positions, valid, groups, visibleGroups, s
     geometry.computeBoundingSphere();
     const material = new THREE.PointsMaterial({ size: pointSize, sizeAttenuation: false, vertexColors: true });
     const points = new THREE.Points(geometry, material); scene.add(points);
+    const edgeGeometry = new THREE.BufferGeometry();
+    const edgeMaterial = new THREE.LineBasicMaterial({ color: 0x93b5a9, transparent: true, opacity: edgeOpacity, depthWrite: false });
+    const edgeLines = new THREE.LineSegments(edgeGeometry, edgeMaterial); scene.add(edgeLines);
     const selectionGeometry = new THREE.BufferGeometry();
     selectionGeometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(3), 3));
     const selectionMaterial = new THREE.PointsMaterial({ color: 0xffffff, size: 9, sizeAttenuation: false, depthTest: false });
@@ -63,7 +67,10 @@ export default function AtlasCanvas({ positions, valid, groups, visibleGroups, s
     const resize = () => { const width = container.clientWidth, height = container.clientHeight; if (!width || !height) return;
       renderer.setSize(width, height); camera.aspect = width / height; camera.updateProjectionMatrix(); render(); };
     const observer = new ResizeObserver(resize); observer.observe(container);
-    controls.addEventListener('change', render);
+    controls.addEventListener('change', () => {
+      if (benchmark.current) { benchmark.current(); setMeasuring(false); setMeasurement({ error: 'Camera changed; measurement cancelled.' }); }
+      render();
+    });
     let pointerDown;
     const cancel = () => { pointerDown = null; };
     const down = e => { pointerDown = e.button === 0 && e.isPrimary ? [e.clientX, e.clientY, e.pointerId] : null; };
@@ -76,19 +83,19 @@ export default function AtlasCanvas({ positions, valid, groups, visibleGroups, s
       ray.setFromCamera(new THREE.Vector2((e.clientX - rect.left) / rect.width * 2 - 1, -(e.clientY - rect.top) / rect.height * 2 + 1), camera);
       const hit = ray.intersectObject(points)[0]; if (hit) select.current?.(hit.index);
     };
-    const contextLost = e => { e.preventDefault(); lost = true; setFailure('Graphics context lost. Reload the atlas to restore the view; the searchable cell table remains available.'); };
+    const contextLost = e => { e.preventDefault(); benchmark.current?.(); setMeasuring(false); lost = true; setFailure('Graphics context lost. Reload the atlas to restore the view; the searchable cell table remains available.'); };
     renderer.domElement.addEventListener('pointerdown', down);
     renderer.domElement.addEventListener('pointerup', click);
     renderer.domElement.addEventListener('pointercancel', cancel);
     renderer.domElement.addEventListener('webglcontextlost', contextLost);
-    view.current = { geometry, material, marker, selectionGeometry, normalized, fit, render, camera, controls, indices: [] };
+    view.current = { edgeGeometry, edgeMaterial, geometry, material, marker, selectionGeometry, normalized, fit, render, camera, controls, indices: [] };
     resize();
     return () => {
-      view.current = null; observer.disconnect(); controls.dispose();
+      benchmark.current?.(); view.current = null; observer.disconnect(); controls.dispose();
       renderer.domElement.removeEventListener('pointerdown', down); renderer.domElement.removeEventListener('pointerup', click);
       renderer.domElement.removeEventListener('pointercancel', cancel);
       renderer.domElement.removeEventListener('webglcontextlost', contextLost);
-      geometry.dispose(); material.dispose(); selectionGeometry.dispose(); selectionMaterial.dispose(); renderer.dispose(); renderer.domElement.remove();
+      edgeGeometry.dispose(); edgeMaterial.dispose(); geometry.dispose(); material.dispose(); selectionGeometry.dispose(); selectionMaterial.dispose(); renderer.dispose(); renderer.domElement.remove();
     };
   }, [positions, valid, groups]);
   useEffect(() => {
@@ -107,8 +114,49 @@ export default function AtlasCanvas({ positions, valid, groups, visibleGroups, s
     if (current.marker.visible) { current.selectionGeometry.attributes.position.array.set(current.normalized.subarray(selectedIndex * 3, selectedIndex * 3 + 3)); current.selectionGeometry.attributes.position.needsUpdate = true; }
     current.render();
   }, [selectedIndex, visibleGroups, positions, valid, groups]);
+  useEffect(() => {
+    const current = view.current; if (!current) return;
+    const values = [];
+    for (const edge of edges.slice(0, 20000)) {
+      const a = edge.sourceIndex, b = edge.targetIndex;
+      if (!Number.isSafeInteger(a) || !Number.isSafeInteger(b) || !valid[a] || !valid[b]
+        || !visibleGroups.includes(groups[a]) || !visibleGroups.includes(groups[b])) continue;
+      for (const i of [a, b]) values.push(...current.normalized.subarray(i * 3, i * 3 + 3));
+    }
+    // Release the previous GPU allocation before replacing a sampled connection buffer.
+    current.edgeGeometry.dispose();
+    current.edgeGeometry.setAttribute('position', new THREE.Float32BufferAttribute(values, 3));
+    current.edgeGeometry.computeBoundingSphere(); current.render();
+  }, [edges, visibleGroups, positions, valid, groups]);
+  useEffect(() => { const current = view.current; if (current) { current.edgeMaterial.opacity = edgeOpacity; current.render(); } }, [edgeOpacity]);
+  useEffect(() => {
+    if (benchmark.current) { benchmark.current(); setMeasuring(false); setMeasurement({ error: 'View changed; measurement cancelled. Run again for the current geometry.' }); }
+  }, [positions, visibleGroups, edges, pointSize, edgeOpacity, selectedIndex]);
+  function measureRedraws() {
+    const current = view.current;
+    if (!current || failure || benchmark.current) return;
+    let frame = 0, timer, request, stopped = false;
+    const start = performance.now();
+    const points = current.indices.length, lines = (current.edgeGeometry.attributes.position?.count ?? 0) / 2;
+    const bytes = Object.values(current.geometry.attributes).reduce((sum, attribute) => sum + attribute.array.byteLength, 0)
+      + current.geometry.index.array.byteLength + (current.edgeGeometry.attributes.position?.array.byteLength ?? 0) + 12;
+    setMeasuring(true); setMeasurement(null);
+    const stop = () => { if (stopped) return; stopped = true; cancelAnimationFrame(request); clearTimeout(timer); benchmark.current = null; };
+    benchmark.current = stop;
+    timer = setTimeout(() => { stop(); setMeasuring(false); setMeasurement({ error: 'Measurement timed out after 10 seconds; no throughput result was recorded.' }); }, 10000);
+    const redraw = () => {
+      if (stopped || view.current !== current) return;
+      current.render(); frame++;
+      if (frame === 60) {
+        const elapsedMs = performance.now() - start;
+        stop(); setMeasuring(false); setMeasurement({ points, lines, bytes, elapsedMs, rate: 60000 / elapsedMs });
+      } else request = requestAnimationFrame(redraw);
+    };
+    request = requestAnimationFrame(redraw);
+  }
   function cameraCommand(action) {
     const current = view.current; if (!current) return;
+    if (benchmark.current) { benchmark.current(); setMeasuring(false); setMeasurement({ error: 'Camera changed; measurement cancelled.' }); }
     const { camera, controls } = current;
     if (action === 'fit') return current.fit(current.indices);
     const offset = camera.position.clone().sub(controls.target);
@@ -121,6 +169,10 @@ export default function AtlasCanvas({ positions, valid, groups, visibleGroups, s
     <div role="group" aria-label="Anatomical camera controls" style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
       {Object.entries({ fit: 'Fit visible anatomy', left: 'Rotate left', right: 'Rotate right', up: 'Rotate up', down: 'Rotate down', in: 'Zoom in', out: 'Zoom out' }).map(([action, label]) => <button key={action} onClick={() => cameraCommand(action)}>{label}</button>)}
     </div>
+    <button disabled={measuring || Boolean(failure)} onClick={measureRedraws}>Measure 60 redraws</button>
+    {measuring && <p role="status">Measuring 60 static browser redraws (10-second limit)…</p>}
+    {measurement && <p role="status">{measurement.error || `${measurement.points.toLocaleString()} points and ${measurement.lines.toLocaleString()} lines; 60 redraws in ${measurement.elapsedMs.toFixed(1)} ms (${measurement.rate.toFixed(1)} redraws/s). Geometry buffer estimate: ${measurement.bytes.toLocaleString()} bytes.`}</p>}
+    <p className="muted">Manual browser redraw throughput includes requestAnimationFrame scheduling and display refresh limits; it is not GPU timing or neural performance. Measurement does not move the camera or run a simulation.</p>
     {failure && <p role="alert">{failure}</p>}
     <div ref={host} style={{ height: 'min(60vh, 560px)', minHeight: 280, width: '100%' }} />
     <p className="muted">Static anatomical points in the source coordinate frame; no motion, neural activity, body silhouette or full morphology is inferred. Camera controls never start or steer an individual.</p>
