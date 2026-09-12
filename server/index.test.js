@@ -1,4 +1,5 @@
 import test from 'node:test';
+import { request as httpRequest } from 'node:http';
 import assert from 'node:assert/strict';
 import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -6,11 +7,11 @@ import { join } from 'node:path';
 import { createServer } from './index.js';
 import { createRuntime } from './runtime.js';
 
-async function fixture(t) {
+async function fixture(t, options = {}) {
   const distDir = await mkdtemp(join(tmpdir(), 'fly-garden-test-'));
   await writeFile(join(distDir, 'index.html'), '<main>Fixture UI</main>');
   const runtime = createRuntime();
-  const server = createServer({ runtime, autoTick: false, distDir });
+  const server = createServer({ runtime, autoTick: false, distDir, ...options });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   t.after(async () => { await new Promise(resolve => server.close(resolve)); await rm(distDir, { recursive: true }); });
   const base = `http://127.0.0.1:${server.address().port}`;
@@ -103,8 +104,8 @@ test('HTTP boundary rejects malformed and cross-origin mutations and distinguish
 });
 
 test('deterministic fixture replay has finite bounded state and snapshots cannot mutate the runtime', () => {
-  const a = createRuntime();
-  const b = createRuntime();
+  const a = createRuntime({ sessionId: 'replay' });
+  const b = createRuntime({ sessionId: 'replay' });
   a.control('start'); b.control('start');
   a.encounter('floral'); b.encounter('floral');
   for (let i = 0; i < 10000; i++) { a.step(); b.step(); }
@@ -117,4 +118,40 @@ test('deterministic fixture replay has finite bounded state and snapshots cannot
   }
   snapshot.neural.neurons[0].potential = NaN;
   assert.ok(Number.isFinite(a.snapshot().neural.neurons[0].potential));
+});
+
+test('HTTP quiet remains available during recovery and cancels input without a budget refund', async t => {
+  const { post, get } = await fixture(t);
+  await post('control', { action: 'start' });
+  await post('encounters', { compoundId: 'nectar' });
+  const before = await get();
+  assert.equal(before.chemistry.find(effect => effect.id === 'quiet').cooldownRemainingMs, 0);
+  assert.equal((await post('encounters', { compoundId: 'quiet' })).status, 200);
+  const after = await get();
+  assert.equal(after.chemistry.some(effect => effect.active), false);
+  assert.equal(after.stimulusPolicy.reservedDose, before.stimulusPolicy.reservedDose);
+  assert.deepEqual(after.neural, before.neural);
+  assert.equal((await post('encounters', { compoundId: 'nectar' })).status, 409);
+});
+
+test('configured tailnet host serves UI and controls while other hosts and origins remain rejected', async t => {
+  const { base, get } = await fixture(t, { allowedHosts: ['fly.example.ts.net'] });
+  const host = `fly.example.ts.net:${new URL(base).port}`;
+  const request = (path, options = {}) => new Promise((resolve, reject) => {
+    const req = httpRequest(`${base}${path}`, { method: options.method ?? 'GET', headers: { Host: host, ...options.headers } }, response => {
+      let text = '';
+      response.on('data', chunk => { text += chunk; });
+      response.on('end', () => resolve({ status: response.statusCode, text: async () => text }));
+    });
+    req.on('error', reject);
+    req.end(options.body);
+  });
+  assert.equal(await (await request('/')).text(), '<main>Fixture UI</main>');
+  assert.equal((await request('/api/health')).status, 200);
+  const control = { method: 'POST', body: JSON.stringify({ action: 'start' }), headers: { 'Content-Type': 'application/json', Origin: `http://${host}` } };
+  assert.equal((await request('/api/control', control)).status, 200);
+  assert.equal((await get()).status, 'running');
+  assert.equal((await request('/api/control', { ...control, headers: { ...control.headers, Origin: 'http://other.example.ts.net' } })).status, 403);
+  assert.equal((await request('/api/health', { headers: { Host: 'other.example.ts.net' } })).status, 403);
+  assert.equal((await request('/api/health', { headers: { Host: 'fly.example.ts.net.attacker.example' } })).status, 403);
 });

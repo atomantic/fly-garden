@@ -37,7 +37,7 @@ pm2 restart fly-garden
 pm2 stop fly-garden
 ```
 
-One forked process serves the built UI and API on loopback. Health is available at `/api/health` and distinguishes service availability from simulation and integration availability. PM2 waits for readiness; no simulation or provider work begins on startup. Ports are defined in `ecosystem.config.cjs`. For frontend development, run `npm run dev:server` and `npm run dev` in separate terminals; Vite uses port `8791`. Rebuild before restarting production after UI changes.
+One forked process serves the built UI and API on loopback by default. Health is available at `/api/health` and distinguishes service availability from simulation and integration availability. PM2 waits for readiness; no simulation or provider work begins on startup. Ports are defined in `ecosystem.config.cjs`. For frontend development, run `npm run dev:server` and `npm run dev` in separate terminals; Vite uses port `8791`. Rebuild before restarting production after UI changes.
 
 PM2 daemon startup/resurrection is managed by your installation. Durable checkpoints, backup and full-runtime resource limits are future work. Do not use the current fixture for long-lived individuals.
 
@@ -62,3 +62,9 @@ The initial visual model will use original procedural Three.js geometry. Blender
 ## Open source
 
 Original project code and documentation are available under the [MIT License](LICENSE). Connectome datasets, dependencies, and externally sourced assets retain their own terms and require separate attribution. The welfare charter guides this project's development and acceptance of contributions; it does not add restrictions to the MIT license.
+
+## Tailscale DNS access
+
+For access through the machine’s private Tailscale DNS name, copy `.env.example` to `.env`, set `HOST=0.0.0.0` and `ALLOWED_HOSTS` to your exact machine hostname (without scheme, port or trailing dot), then run `pm2 startOrRestart ecosystem.config.cjs --only fly-garden`. Open `http://your-machine.your-tailnet.ts.net:8790/` from your tailnet. This bind listens on all IPv4 interfaces; use it on the intended private network, without public port forwarding.
+
+Both npm and PM2 load the ignored local `.env` file. Loopback remains allowed, other Host names are rejected, and browser mutations require the same origin or an explicitly configured development origin. Host validation is not authentication; Tailscale network access controls remain the access boundary. No wildcard `.ts.net` permission is needed.
