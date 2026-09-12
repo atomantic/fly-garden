@@ -13,13 +13,16 @@ import ManagedVisitorControls from "./ManagedVisitorControls.jsx";
 import { mergeToolbarVisitorReply } from "./visitor-command-state.js";
 import { postVisitorCommand } from "./visitor-api.js";
 import { readRuntimeSnapshot, mergeRuntimeSnapshot } from "./runtime-state.js";
+import { selectConnectomePair, mergeConnectomeSelection } from "./connectome-lab-state.js";
 import "./style.css";
 
 const NervousSystem = lazy(() => import("./NervousSystem.jsx"));
+const ConnectomeLab = lazy(() => import("./ConnectomeLab.jsx"));
 const sections = [
+  "Nervous system",
+  "Connectome lab",
   "Observatory",
   "Neural map",
-  "Nervous system",
   "Encounters",
   "Language",
   "Eidoverse",
@@ -27,9 +30,9 @@ const sections = [
 const readTab = () => {
   try {
     const value = decodeURIComponent(location.hash.slice(1));
-    return sections.includes(value) ? value : "Observatory";
+    return sections.includes(value) ? value : "Nervous system";
   } catch {
-    return "Observatory";
+    return "Nervous system";
   }
 };
 function App() {
@@ -41,6 +44,8 @@ function App() {
   const sharedLive = useRef(null), pendingSharedCommand = useRef(null);
   const [individualId, setIndividualId] = useState("");
   const [individuals, setIndividuals] = useState([]);
+  const [connectomeSelection, setConnectomeSelection] = useState({individualId:"",dataset:"male-cns:v1.0"});
+  const {individualId:connectomeId,dataset:connectomeDataset} = connectomeSelection;
   const [tab, setTab] = useState(readTab),
     [state, setState] = useState(null),
     [error, setError] = useState(""),
@@ -173,6 +178,7 @@ function App() {
     available = !!state && !busy && !connectionError,
     residentAvailable = available && state?.status !== "saved-unloaded" && !state?.externalOwner,
     canQuiet = !!state && !connectionError && state.status !== "saved-unloaded" && (!busy || Boolean(state.externalOwner));
+  const fixtureView = !["Nervous system", "Connectome lab"].includes(tab);
   const go = (t) => {
     location.hash = encodeURIComponent(t);
     setTab(t);
@@ -180,7 +186,7 @@ function App() {
   return (
     <div className="app">
       <aside className="sidebar">
-        <a className="brand" href="#Observatory">
+        <a className="brand" href="#Nervous%20system">
           <span className="brand-icon">✳</span>
           <span>
             fly garden<small>A LITTLE ROOM TO GROW</small>
@@ -195,8 +201,8 @@ function App() {
               aria-current={tab === s ? "page" : undefined}
               className={tab === s ? "active" : ""}
             >
-              <span className="nav-icon">{["◉", "⌘", "✣", "❋", "⌁", "◎"][i]}</span>
-              {s}
+              <span className="nav-icon">{["✣", "◈", "◉", "⌘", "❋", "⌁", "◎"][i]}</span>
+              {s === "Observatory" ? "Fixture garden" : s === "Neural map" ? "Fixture circuit" : s}
               <span className="nav-index">0{i + 1}</span>
             </a>
           ))}
@@ -230,6 +236,8 @@ function App() {
                   ? "Follow the signal."
                   : tab === "Nervous system"
                     ? "Explore the anatomy."
+                    : tab === "Connectome lab"
+                      ? "A complete graph. A separate individual."
                     : tab === "Encounters"
                     ? "A garden of possibilities."
                     : tab === "Language"
@@ -248,11 +256,11 @@ function App() {
         <div className="notice">
           <span className="notice-dot" /> FOUNDATION PREVIEW{" "}
           <span>
-            Live synthetic circuit · real connectome not loaded · no learning
-            claims
+            {fixtureView ? "Synthetic 32-neuron test circuit · engineered body controller · no learning claims"
+              : "Complete pinned datasets · explicit paused simulation controls · no learning claims"}
           </span>
         </div>
-        {(connectionError || error) && (
+        {(fixtureView || state?.externalOwner) && (connectionError || error) && (
           <div role="alert" className="error">
             {connectionError || error}
             {error && !connectionError && (
@@ -272,7 +280,7 @@ function App() {
             if (next.individualId === selectedIndividualRef.current && epoch === requestEpoch.current) setState(next);
           }} />
         </details>}
-        {individuals.length > 0 && <section className="card" aria-label="Individual selection">
+        {fixtureView && individuals.length > 0 && <section className="card" aria-label="Individual selection">
           <label>Individual <select disabled={busy} value={individualId || state?.individualId || ""} onChange={event => {
             requestEpoch.current++;
             const member = selectedSharedMember(sharedLive.current, event.target.value);
@@ -286,11 +294,11 @@ function App() {
           </option>)}</select></label>
           <p>Each synthetic individual has separate state and exposure reservations. Selection does not start a simulation.</p>
         </section>}
-        <div className="toolbar">
+        {(fixtureView || state?.externalOwner) && <div className="toolbar">
           <div className="identity">
             <span className="tiny-fly">✧</span>
             <div>
-              Garden resident{" "}
+              Synthetic fixture{" "}
               <small>
                 {state?.status || "Waiting for runtime"} ·{" "}
                 {((state?.simTimeMs || 0) / 1000).toFixed(1)} s simulated
@@ -324,8 +332,8 @@ function App() {
               ⌂ Home
             </button>
           </div>
-        </div>
-        {state?.persistence && (
+        </div>}
+        {fixtureView && state?.persistence && (
           <section className="card" aria-label="Fixture checkpoints">
             <p>Individual <code>{state.individualId}</code></p>
             <p>Saved at {(state.persistence.savedSimTimeMs / 1000).toFixed(3)} s · {state.persistence.checkpointCount} checkpoints.
@@ -453,12 +461,14 @@ function App() {
             </section>
           </div>
         )}
-        {tab === "Nervous system" && <Suspense fallback={<p role="status">Loading anatomical viewer…</p>}><NervousSystem /></Suspense>}
+        {tab === "Connectome lab" && <details className="card operations-panel"><summary>Shared population and memory limits</summary><Population /></details>}
+        {tab === "Connectome lab" && <Suspense fallback={<p role="status">Reading full-connectome individuals…</p>}><ConnectomeLab selectedIndividualId={connectomeId} onSelectIndividual={(id,dataset) => setConnectomeSelection(current => selectConnectomePair(current,id,dataset))} onSelection={value => setConnectomeSelection(current => mergeConnectomeSelection(current,value))} /></Suspense>}
+        {tab === "Nervous system" && <Suspense fallback={<p role="status">Loading anatomical viewer…</p>}><NervousSystem dataset={connectomeDataset} individualId={connectomeId || null} onDatasetChange={dataset => setConnectomeSelection(current => selectConnectomePair(current,"",dataset))} /></Suspense>}
         {tab === "Neural map" && (
           <section className="card map-panel">
             <div className="card-heading">
               <span className="eyebrow">SYNTHETIC GRAPH / LIVE VALUES</span>
-              <span>Measured anatomy unavailable</span>
+              <span>Synthetic fixture · anatomy is in Nervous system</span>
             </div>
             <div className="graph-large">
               <Scene brain neural={state?.neural} />
@@ -595,7 +605,7 @@ function App() {
             }} />
           </section>
         )}
-        <div className="bottom-grid">
+        {fixtureView && <div className="bottom-grid">
           <section className="card signal">
             <div className="card-heading">
               <span className="eyebrow">SIGNAL / POPULATION MEAN</span>
@@ -645,7 +655,7 @@ function App() {
               )}
             </div>
           </section>
-        </div>
+        </div>}
         <footer>
           Care is a design requirement.{" "}
           <a href="https://github.com/atomantic/fly-garden">

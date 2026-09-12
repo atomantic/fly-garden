@@ -3,7 +3,7 @@
 - Read README.md, ETHOS.md and PLAN.md before implementation. Preserve the welfare charter as a product requirement.
 - Work in this repository for Fly Garden. Keep changes to PortOS or Eidoverse in their own repositories and follow their instructions.
 - For GitHub operations on atomantic repositories, use the atomantic account only.
-- The runnable backend is a synthetic 32-neuron fixture. Real connectome execution, retained learning, language and Eidoverse travel remain planned. Never describe those as implemented or validated.
+- The garden body uses a synthetic 32-neuron fixture. The separate full-connectome lab can explicitly load, checkpoint and step complete pinned MaleCNS/BANC sparse-LIF graphs, without sensory or body coupling. Retained learning and full-connectome embodiment remain planned. Optional language interpretation and managed fixture visitors require separate configuration; code and isolated tests do not establish production host deployment or biological validation.
 - Start the simulation only through an explicit user action. Boot and crash recovery must be paused. No unrequested cloud compute, LLM calls, public posting, financial actions, or open-web control.
 - Never introduce punishment, simulated pain/injury, deprivation, predator pursuit, forced combat or continuous reward drive. Rest and inactivity are permitted outcomes.
 - Disclose engineered controllers, animation, sensory proxies and model limitations. Weight changes and appealing footage do not establish learning or subjective experience.
