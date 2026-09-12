@@ -84,6 +84,9 @@ export function createRuntime({ individualId = 'synthetic-fixture', sessionId = 
   let faultReason = restored?.faultReason ?? null;
   let tick = restored?.dynamics.tick ?? 0;
   let eventId = 0;
+  let mutationRevision = Symbol('runtime revision');
+  const preparedSteps = new WeakMap();
+  const changed = () => { mutationRevision = Symbol('runtime revision'); };
   const events = [];
   const neurons = Array.from({ length: PARAMETERS.neuronCount }, (_, i) => ({
     id: `fixture-${i}`, region: i < 16 ? 'Synthetic left' : 'Synthetic right',
@@ -99,6 +102,7 @@ export function createRuntime({ individualId = 'synthetic-fixture', sessionId = 
   ]);
   let spikeHistory = restored?.dynamics.spikeHistory ?? neurons.map(() => []);
   const log = (type, message, details) => {
+    changed();
     events.unshift({ id: ++eventId, timeMs: tick * STEP_MS, type, message, ...(details ? { details } : {}) });
     if (events.length > 80) events.pop();
   };
@@ -136,6 +140,7 @@ export function createRuntime({ individualId = 'synthetic-fixture', sessionId = 
       if (action === 'start') throw new RuntimeError('Runtime fault requires an explicit validated checkpoint restore.', 409);
       return snapshot();
     }
+    changed();
     if (action === 'start') faultReason = null;
     const next = action === 'start' ? 'running' : action === 'rest' ? 'resting' : 'paused';
     if (action === 'rest' || action === 'home') {
@@ -198,18 +203,24 @@ export function createRuntime({ individualId = 'synthetic-fixture', sessionId = 
     return snapshot();
   }
 
-  function step(input) {
+  /** Candidates are instance-local capabilities, never checkpoint or HTTP payloads. Preparation
+   * neither advances the policy nor cancels active same-session stimulus reservations. */
+  function prepareStep(input) {
+    const prepared = fields => {
+      const token = Object.freeze(Object.create(null));
+      preparedSteps.set(token, { revision: mutationRevision, ...fields });
+      return token;
+    };
     let retinalCurrents = null;
     if (input !== undefined) {
       if (!exactKeys(input, ['retinalCurrents'])) throw new RuntimeError('Unsupported fixture sensory input.');
       retinalCurrents = validateRetinalCurrents(input.retinalCurrents);
     }
-    if (status !== 'running') return;
+    if (status !== 'running') return prepared({ kind: 'inactive' });
     const nextTick = tick + 1;
     const nextTime = nextTick * STEP_MS;
     if (!Number.isSafeInteger(nextTick) || !Number.isSafeInteger(nextTime)) {
-      pauseFault('Simulation clock exceeded its safe numerical range; last valid state retained.');
-      return;
+      return prepared({ kind: 'fault', reason: 'Simulation clock exceeded its safe numerical range; last valid state retained.' });
     }
     const currents = neurons.map((_, i) => PARAMETERS.baselineCurrent + (i % 5) * PARAMETERS.baselineCurrentStride);
     if (retinalCurrents) currents.forEach((_, i) => { currents[i] += retinalCurrents[i]; });
@@ -223,25 +234,62 @@ export function createRuntime({ individualId = 'synthetic-fixture', sessionId = 
       const neuron = neurons[i];
       const potential = neuron.potential * PARAMETERS.membraneRetention + currents[i];
       if (!Number.isFinite(potential) || Math.abs(potential) > MAX_POTENTIAL_BEFORE_RESET) {
-        pauseFault('Non-finite or excessive fixture potential; last valid state retained.');
-        return;
+        return prepared({ kind: 'fault', reason: 'Non-finite or excessive fixture potential; last valid state retained.' });
       }
       const firing = potential >= PARAMETERS.threshold;
       const history = spikeHistory[i].filter(time => time > nextTime - PARAMETERS.rateWindowMs);
       if (firing) history.push(nextTime);
       // Fixed trailing 1 s window; the initial partial window is padded with zero activity.
       if (history.length > MAX_RATE_HZ) {
-        pauseFault('Fixture firing rate exceeded its numerical guard; last valid state retained.');
-        return;
+        return prepared({ kind: 'fault', reason: 'Fixture firing rate exceeded its numerical guard; last valid state retained.' });
       }
       next.push({ potential: firing ? PARAMETERS.resetPotential : Math.max(PARAMETERS.minimumPotential, potential), firing, rateHz: history.length });
       nextHistory.push(history);
     }
-    // Commit only after every candidate value passes: a failed step never partially advances a neuron or the policy clock.
-    policy.advance(nextTime);
-    tick = nextTick;
-    for (let i = 0; i < neurons.length; i++) Object.assign(neurons[i], next[i]);
-    spikeHistory = nextHistory;
+    return prepared({ kind: 'ready', nextTick, nextTime, next, nextHistory });
+  }
+
+  function candidateFor(token) {
+    const candidate = preparedSteps.get(token);
+    if (!candidate || candidate.revision !== mutationRevision) {
+      throw new RuntimeError('Prepared step is foreign, consumed or stale; prepare again from current state.', 409);
+    }
+    return candidate;
+  }
+
+  /** Detached neural preview for validating a whole barrier and deriving bounded actions.
+   * It is not a checkpoint: chemistry, credentials and mutable policy internals are not exported. */
+  function previewStep(token) {
+    const candidate = candidateFor(token);
+    const previewNeurons = neurons.map((neuron, i) => candidate.kind === 'ready'
+      ? { ...neuron, ...candidate.next[i] } : { ...neuron });
+    return structuredClone({ kind: candidate.kind, individualId, sessionId, dataset: RUNTIME_DATASET,
+      status: candidate.kind === 'fault' ? 'fault' : status, faultReason: candidate.reason ?? faultReason,
+      inputSimTimeMs: tick * STEP_MS,
+      simTimeMs: candidate.kind === 'ready' ? candidate.nextTime : tick * STEP_MS,
+      tick: candidate.kind === 'ready' ? candidate.nextTick : tick,
+      neural: { neurons: previewNeurons, edges, spikes: previewNeurons.filter(n => n.firing).length,
+        meanRateHz: previewNeurons.reduce((sum, n) => sum + n.rateHz, 0) / previewNeurons.length } });
+  }
+
+  /** Validate every participant via previewStep before a synchronous batch of commits.
+   * With no intervening runtime mutation, the private validated candidate cannot fail policy
+   * clock checks: its time is on the grid and newer than the same unchanged current clock. */
+  function commitStep(token) {
+    const candidate = candidateFor(token);
+    preparedSteps.delete(token);
+    if (candidate.kind === 'inactive') return false;
+    if (candidate.kind === 'fault') { pauseFault(candidate.reason); return false; }
+    policy.advance(candidate.nextTime);
+    tick = candidate.nextTick;
+    for (let i = 0; i < neurons.length; i++) Object.assign(neurons[i], candidate.next[i]);
+    spikeHistory = candidate.nextHistory;
+    changed();
+    return true;
+  }
+
+  function step(input) {
+    commitStep(prepareStep(input));
   }
 
   function cancelStimulus(source, entryId) {
@@ -250,6 +298,6 @@ export function createRuntime({ individualId = 'synthetic-fixture', sessionId = 
     return canceled;
   }
 
-  return { snapshot, control, encounter, stimulate, stimulusEnvelope: policy.envelope, cancelStimulus, step, checkpoint, pauseFault,
+  return { snapshot, control, encounter, stimulate, stimulusEnvelope: policy.envelope, cancelStimulus, step, prepareStep, previewStep, commitStep, checkpoint, pauseFault,
     checkpointStimulusPolicy: policy.checkpoint, restoreStimulusPolicy };
 }

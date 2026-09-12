@@ -10,6 +10,7 @@ import { createRecordingStore } from './recording-store.js';
 import { createCreativeSessions } from './creative-session.js';
 import { createLanguageService } from './language-service.js';
 import { createOllamaLanguageProvider } from './ollama-language-provider.js';
+import { createSharedHttp } from './shared-http.js';
 import { createAtlasHttp } from './atlas-http.js';
 import { createAtlasConnectivityHttp } from './atlas-connectivity-http.js';
 import { freemem } from 'node:os';
@@ -88,12 +89,29 @@ export function createServer({ runtime = createRuntime(), identities = null, dis
     }
     sequences.set(id, body.sequence);
   }
+  const sharedHttp = createSharedHttp({ identities, snapshot, sequenceFor,
+    consumeSequences: members => { for (const member of members) sequences.set(member.individualId, member.sequence); },
+    afterTransition: (ids, action) => {
+      for (const id of ids) {
+        if (action !== 'save') language?.lifecycle(id);
+        creativeSessions.synchronize(stateFor(id));
+      }
+      if (['join', 'restore', 'separate'].includes(action)) {
+        // Home-only recordings cannot silently acquire a different shared-world provenance.
+        for (const source of activeRecordings.values()) if (ids.includes(source.individualId)) source.sessionId = null;
+      }
+    },
+  });
   const server = createHttpServer(async (request, response) => {
     try {
       const base = new URL(`http://${request.headers.host ?? 'localhost'}`);
       if (!isLoopback(base.hostname) && !allowedHosts.includes(base.hostname)) throw new RuntimeError('Host is not allowed.', 403);
       const url = new URL(request.url, base);
       if (url.pathname === '/api' || url.pathname.startsWith('/api/')) {
+        if (url.pathname.startsWith('/api/shared/')) {
+          if (request.method !== 'GET') checkOrigin(request, base);
+          if (await sharedHttp(request, response, url)) return;
+        }
         if (await atlasHttp(request, response, url.pathname)) return;
         if (await atlasConnectivityHttp(request, response, url)) return;
         if (request.method === 'GET' && url.pathname === '/api/health') {
@@ -142,6 +160,7 @@ export function createServer({ runtime = createRuntime(), identities = null, dis
           validateCommand(body, [], body.individualId);
           const state = snapshot(body.individualId);
           if (!state.persistence.resident) throw new RuntimeError('Recording requires a loaded individual.', 409);
+          if (state.sharedSession) throw new RuntimeError('Shared-world recording attribution is not available; separate before starting a home recording.', 409);
           if ([...activeRecordings.values()].some(value => value.individualId === state.individualId)) throw new RuntimeError('Individual already recording.', 409);
           const session = recordings.start({ individualId: state.individualId, worldId: 'home', sessionId: state.sessionId,
             modelVersion: state.model.id, datasetVersion: `${state.dataset.namespace}:${state.dataset.release}`,
@@ -169,6 +188,7 @@ export function createServer({ runtime = createRuntime(), identities = null, dis
           const body = await readBody(request);
           validateCommand(body, ['operation', 'payload'], id);
           if (!['arm', 'chat', 'disarm', 'cancel'].includes(body.operation)) throw new RuntimeError('Unknown language operation.');
+          if (stateFor(id).sharedSession && ['arm', 'chat'].includes(body.operation)) throw new RuntimeError('Language interpretation is unavailable in shared fixture sessions.', 409);
           const result = await language[body.operation](id, body.payload);
           return json(response, 200, { state: snapshot(id), language: language.snapshot(id), result });
         }
@@ -245,7 +265,9 @@ export function createServer({ runtime = createRuntime(), identities = null, dis
             if (!['control', 'encounters', 'checkpoints', 'restore', 'replicas', 'load', 'unload', 'create'].includes(operation)) throw new RuntimeError('API route not found.', 404);
             if (field && typeof body[field] !== 'string') throw new RuntimeError(`Expected a string ${field}.`);
             validateCommand(body, field ? [field] : [], id);
-            if (['restore', 'unload'].includes(operation) || (operation === 'control' && ['pause', 'rest', 'home'].includes(body.action))) language?.lifecycle(id);
+            const sharedMembers = stateFor(id).sharedSession?.participants.map(member => member.individualId) ?? [id];
+            if (operation === 'control' && ['pause', 'rest', 'home'].includes(body.action)) for (const memberId of sharedMembers) language?.lifecycle(memberId);
+            if (['restore', 'unload'].includes(operation)) language?.lifecycle(id);
             let state;
             if (operation === 'create') state = identities.createIndividual();
             else if (operation === 'control') state = identities.control(id, body.action);

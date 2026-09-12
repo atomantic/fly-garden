@@ -801,3 +801,12 @@ td button[aria-pressed="true"] {
 .language input[type="checkbox"] { width: auto; margin-right: 6px; }
 .language .recordings-list { max-height: 640px; overflow: auto; }
 .language .recordings-list article h4 { margin-top: 0; }
+
+/* Shared retinal disclosures and errors remain in document flow below the canvas. */
+.habitat.habitat-shared { height: auto; }
+.habitat-shared .scene { position: relative; inset: auto; height: clamp(280px, 46vw, 440px); }
+.habitat-shared .shared-renderer > p,
+.habitat-shared .shared-renderer > div:not(.scene) { margin: 14px 20px; overflow-wrap: anywhere; }
+.habitat-shared .habitat-label { position: static; margin: 20px; }
+.habitat-shared .pod-label { display: none; }
+.habitat-shared .scene-footer { position: static; }

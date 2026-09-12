@@ -1,6 +1,9 @@
 import React, { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import Scene from "./Scene.jsx";
+import SharedScene from "./SharedScene.jsx";
+import SharedControls from "./SharedControls.jsx";
+import { mergeSharedBundle, currentSharedRequest, selectedSharedMember } from "./shared-state.js";
 import Population from "./Population.jsx";
 import Recordings from "./Recordings.jsx";
 import EnvironmentControls from "./EnvironmentControls.jsx";
@@ -30,6 +33,8 @@ function App() {
   const historySession = useRef(null);
   const selectedIndividualRef = useRef("");
   const [visualLease, setVisualLease] = useState(null);
+  const [sharedBundle, setSharedBundle] = useState(null), [sharedLease, setSharedLease] = useState(null);
+  const sharedLive = useRef(null), pendingSharedCommand = useRef(null);
   const [individualId, setIndividualId] = useState("");
   const [individuals, setIndividuals] = useState([]);
   const [tab, setTab] = useState(readTab),
@@ -40,6 +45,30 @@ function App() {
     [selected, setSelected] = useState(""),
     [filter, setFilter] = useState(""),
     [history, setHistory] = useState([]);
+  function beginSharedCommand() {
+    const context = { generation: ++requestEpoch.current, selectedId: selectedIndividualRef.current,
+      sharedId: sharedLive.current?.shared.sharedId ?? null };
+    pendingSharedCommand.current = context; return context;
+  }
+  function endSharedCommand(context) {
+    if (pendingSharedCommand.current === context) { pendingSharedCommand.current = null; requestEpoch.current++; }
+  }
+  function receiveShared(value, kind = 'frame', context = null) {
+    const mutation = kind === 'mutation';
+    const selectedId = selectedIndividualRef.current;
+    if (mutation && !currentSharedRequest(context, { generation: requestEpoch.current, selectedId,
+      sharedId: sharedLive.current?.shared.sharedId ?? null })) return;
+    if (!value.shared?.participants?.some(member => member.individualId === selectedId)) return;
+    const previous = sharedLive.current, safe = mergeSharedBundle(previous, value, kind);
+    if (!safe || safe === previous) return;
+    if (mutation) { requestEpoch.current++; setVisualLease(null); }
+    sharedLive.current = safe; setSharedBundle(safe);
+    if (value.controllerToken && mutation) setSharedLease({ sharedId: safe.shared.sharedId, token: value.controllerToken });
+    else setSharedLease(old => old?.sharedId === safe.shared.sharedId && safe.shared.status !== 'separated' ? old : null);
+    const member = safe.members.find(item => item.individualId === selectedId);
+    if (member) setState(old => !old || old.individualId !== member.individualId || old.sessionId !== member.sessionId
+      || (member.commandSequence >= old.commandSequence && member.tick >= old.tick) ? member : old);
+  }
   useEffect(() => {
     const change = () => setTab(readTab());
     addEventListener("hashchange", change);
@@ -62,10 +91,18 @@ function App() {
           const roster = await rosterResponse.json();
           if (!stopped && epoch === requestEpoch.current) setIndividuals(roster.individuals);
         }
-        if (!stopped && epoch === requestEpoch.current) {
+        let sharedNext = null;
+        if (next.sharedSession) {
+          const sharedResponse = await fetch(`/api/shared/${next.sharedSession.sharedId}`, { signal: controller.signal });
+          if (!sharedResponse.ok) throw new Error('Shared session changed; refresh required');
+          sharedNext = await sharedResponse.json();
+        }
+        if (!stopped && epoch === requestEpoch.current && !pendingSharedCommand.current) {
           selectedIndividualRef.current = next.individualId;
           setState(previous => previous?.individualId === next.individualId && previous.sessionId === next.sessionId
-            && previous.tick > next.tick ? previous : next);
+            && (previous.tick > next.tick || previous.commandSequence > next.commandSequence) ? previous : next);
+          if (sharedNext) receiveShared(sharedNext, 'poll');
+          else { sharedLive.current = null; setSharedBundle(null); setSharedLease(null); }
           setConnectionError("");
           const sameSession = historySession.current === next.sessionId;
           historySession.current = next.sessionId;
@@ -214,7 +251,7 @@ function App() {
         )}
         {state?.persistence && tab === "Observatory" && <details className="card operations-panel"><summary>Population, recording and replay</summary>
           <Population />
-          <Recordings state={state} disabled={!available} onMutation={async () => {
+          <Recordings state={state} disabled={!available || Boolean(state?.sharedSession)} onMutation={async () => {
             if (selectedIndividualRef.current !== state.individualId) return;
             const epoch = ++requestEpoch.current;
             const selectedId = state.individualId;
@@ -227,9 +264,12 @@ function App() {
         {individuals.length > 0 && <section className="card" aria-label="Individual selection">
           <label>Individual <select disabled={busy} value={individualId || state?.individualId || ""} onChange={event => {
             requestEpoch.current++;
+            const member = selectedSharedMember(sharedLive.current, event.target.value);
             setVisualLease(null);
+            if (!member) { sharedLive.current = null; setSharedBundle(null); setSharedLease(null); }
             selectedIndividualRef.current = event.target.value;
-            setIndividualId(event.target.value); setState(null); setSelected(""); setHistory([]); setConnectionError("");
+            // Keep the same shared renderer mounted while inspecting its other recipient.
+            setIndividualId(event.target.value); setState(member); setSelected(""); setHistory([]); setConnectionError("");
           }}>{individuals.map(individual => <option key={individual.individualId} value={individual.individualId}>
             {individual.individualId} · {individual.resident ? "resident" : "saved unloaded"}
           </option>)}</select></label>
@@ -248,7 +288,7 @@ function App() {
           </div>
           <div className="actions">
             <button
-              disabled={!residentAvailable}
+              disabled={!residentAvailable || (state?.sharedSession && state?.status !== "running")}
               onClick={() =>
                 command("/api/control", {
                   action: state?.status === "running" ? "pause" : "start",
@@ -280,22 +320,26 @@ function App() {
             <p>Saved at {(state.persistence.savedSimTimeMs / 1000).toFixed(3)} s · {state.persistence.checkpointCount} checkpoints.
               Optional encounters also save their reservation before delivery. Restart restores the latest saved state paused. Restore cancels optional input and retains spent reservations.</p>
             <div className="actions">
-              <button disabled={!available} onClick={() => command(`/api/individuals/${state.individualId}/${state.persistence.resident ? "unload" : "load"}`, {})}>{state.persistence.resident ? "Save and unload" : "Load paused"}</button>
+              <button disabled={!available || Boolean(state.sharedSession)} onClick={() => command(`/api/individuals/${state.individualId}/${state.persistence.resident ? "unload" : "load"}`, {})}>{state.persistence.resident ? "Save and unload" : "Load paused"}</button>
               <button disabled={!available} onClick={() => command(`/api/individuals/${state.individualId}/replicas`, { checkpointId: state.persistence.checkpointId })}>Create saved research replica</button>
-              <button disabled={!residentAvailable} onClick={() => command(`/api/individuals/${state.individualId}/checkpoints`, {})}>Save checkpoint</button>
-              <button disabled={!residentAvailable} onClick={() => command(`/api/individuals/${state.individualId}/restore`, { checkpointId: state.persistence.checkpointId })}>Restore saved state (paused)</button>
+              <button disabled={!residentAvailable || Boolean(state.sharedSession)} onClick={() => command(`/api/individuals/${state.individualId}/checkpoints`, {})}>Save checkpoint</button>
+              <button disabled={!residentAvailable || Boolean(state.sharedSession)} onClick={() => command(`/api/individuals/${state.individualId}/restore`, { checkpointId: state.persistence.checkpointId })}>Restore saved state (paused)</button>
             </div>
             {(state.faultReason || state.persistence.error) && <p role="alert">{state.faultReason || state.persistence.error}</p>}
           </section>
         )}
+        {state?.persistence && tab === "Observatory" && <SharedControls individuals={individuals}
+          shared={sharedBundle?.shared ?? null} controllerToken={sharedLease?.sharedId === sharedBundle?.shared.sharedId ? sharedLease?.token : null}
+          disabled={!available} onCommandStart={beginSharedCommand} onCommandEnd={endSharedCommand} onMutation={(value, context) => receiveShared(value, 'mutation', context)} />}
         {(tab === "Observatory" || tab === "Eidoverse") && (
           <div className="view-grid">
-            <section className="card habitat">
+            <section className={`card habitat${state?.sharedSession ? " habitat-shared" : ""}`}>
               <div className="card-heading">
                 <span className="eyebrow">01 / HOME GARDEN</span>
                 <span className="muted">ILLUSTRATED HABITAT</span>
               </div>
-              <EnvironmentControls key={state?.individualId} state={state} disabled={!available} onMutation={next => {
+              {!state?.sharedSession && <>
+              <EnvironmentControls key={state?.individualId} state={state} disabled={!available || Boolean(state?.sharedSession)} onMutation={next => {
                 if (next.individualId !== selectedIndividualRef.current) return;
                 const { controllerToken, ...safeState } = next;
                 setVisualLease(previous => controllerToken
@@ -317,7 +361,7 @@ function App() {
                 });
               }} />
               <details className="creative-panel"><summary>Music and pollen capture</summary>
-              <CreativeControls key={state?.individualId} state={state} disabled={!available} onMutation={next => {
+              <CreativeControls key={state?.individualId} state={state} disabled={!available || Boolean(state?.sharedSession)} onMutation={next => {
                 if (next.individualId !== selectedIndividualRef.current) return;
                 requestEpoch.current++; setState(next);
               }} />
@@ -327,11 +371,15 @@ function App() {
                   || next.environmentAdapter?.environmentEpoch !== state?.environmentAdapter?.environmentEpoch) return;
                 setState(previous => previous?.individualId === next.individualId && previous.sessionId === next.sessionId && previous.tick <= next.tick ? next : previous);
               }} />
+              </>}
+              {state?.sharedSession && (sharedBundle?.shared.sharedId === state.sharedSession.sharedId
+                ? <SharedScene shared={sharedBundle.shared} controllerToken={sharedLease?.sharedId === sharedBundle.shared.sharedId ? sharedLease.token : null} onFrame={value => receiveShared(value)} />
+                : <p role="status">Reading the shared committed world…</p>)}
               <div className="habitat-label">
                 <span className="label-line" />
                 DROSOPHILA · ORIGINAL PROCEDURAL MODEL
                 <small>
-                  {state?.environmentAdapter?.attached ? "Engineered visual fixture control · no biological claim" : "Body illustration · not driven by the fixture circuit"}
+                  {state?.sharedSession ? "Two shared visual fixtures · no biological claim" : state?.environmentAdapter?.attached ? "Engineered visual fixture control · no biological claim" : "Body illustration · not driven by the fixture circuit"}
                 </small>
               </div>
               <div className="pod-label">
@@ -517,7 +565,7 @@ function App() {
         {tab === "Language" && (
           <section className="card content-panel language">
             <span className="eyebrow">LANGUAGE INTERFACE / EXPLICIT OPT-IN</span>
-            <LanguageControls key={`${state?.individualId}/${state?.sessionId}`} state={state} disabled={!available} onMutation={next => {
+            <LanguageControls key={`${state?.individualId}/${state?.sessionId}`} state={state} disabled={!available || Boolean(state?.sharedSession)} onMutation={next => {
               if (!next || next.individualId !== selectedIndividualRef.current) return;
               requestEpoch.current++;
               setState(previous => {
