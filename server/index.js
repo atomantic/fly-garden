@@ -29,12 +29,12 @@ async function readBody(request) {
 }
 
 /** Polling observers share this one runtime. Wall-clock gaps never catch up simulation time. */
-export function createServer({ runtime = createRuntime(), distDir = fileURLToPath(new URL('../dist/', import.meta.url)), autoTick = true, allowedOrigins = [] } = {}) {
+export function createServer({ runtime = createRuntime(), distDir = fileURLToPath(new URL('../dist/', import.meta.url)), autoTick = true, allowedOrigins = [], allowedHosts = [] } = {}) {
   const root = resolve(distDir);
   const server = createHttpServer(async (request, response) => {
     try {
       const base = new URL(`http://${request.headers.host ?? 'localhost'}`);
-      if (!isLoopback(base.hostname)) throw new RuntimeError('Loopback host required.', 403);
+      if (!isLoopback(base.hostname) && !allowedHosts.includes(base.hostname)) throw new RuntimeError('Host is not allowed.', 403);
       const url = new URL(request.url, base);
       if (url.pathname === '/api' || url.pathname.startsWith('/api/')) {
         if (request.method === 'GET' && url.pathname === '/api/health') {
@@ -85,9 +85,11 @@ const entryPath = process.env.pm_exec_path ?? process.argv[1];
 if (entryPath && resolve(entryPath) === fileURLToPath(import.meta.url)) {
   const port = Number(process.env.PORT ?? ecosystem.PORTS.api);
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('PORT must be an integer from 1 to 65535.');
-  const server = createServer({ allowedOrigins: (process.env.DEV_ORIGINS ?? `http://127.0.0.1:${ecosystem.PORTS.devUi},http://localhost:${ecosystem.PORTS.devUi}`).split(',').filter(Boolean) });
-  server.listen(port, '127.0.0.1', () => {
-    console.log(`Fly Garden: http://127.0.0.1:${port} — synthetic fixture paused`);
+  const host = process.env.HOST ?? '127.0.0.1';
+  const allowedHosts = (process.env.ALLOWED_HOSTS ?? '').split(',').map(value => value.trim().toLowerCase()).filter(Boolean);
+  const server = createServer({ allowedHosts, allowedOrigins: (process.env.DEV_ORIGINS ?? `http://127.0.0.1:${ecosystem.PORTS.devUi},http://localhost:${ecosystem.PORTS.devUi}`).split(',').filter(Boolean) });
+  server.listen(port, host, () => {
+    console.log(`Fly Garden: http://${host}:${port} — synthetic fixture paused`);
     process.send?.('ready');
   });
   for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => server.close());
