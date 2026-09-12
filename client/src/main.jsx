@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import Scene from "./Scene.jsx";
 import "./style.css";
@@ -19,6 +19,8 @@ const readTab = () => {
   }
 };
 function App() {
+  const requestEpoch = useRef(0);
+  const historySession = useRef(null);
   const [tab, setTab] = useState(readTab),
     [state, setState] = useState(null),
     [error, setError] = useState(""),
@@ -37,15 +39,18 @@ function App() {
       timer,
       controller;
     async function poll() {
+      const epoch = requestEpoch.current;
       controller = new AbortController();
       try {
         const r = await fetch("/api/state", { signal: controller.signal });
         if (!r.ok) throw new Error("Runtime unavailable");
         const next = await r.json();
-        if (!stopped) {
+        if (!stopped && epoch === requestEpoch.current) {
           setState(next);
           setConnectionError("");
-          setHistory((h) => [...h.slice(-49), next.neural.meanRateHz]);
+          const sameSession = historySession.current === next.sessionId;
+          historySession.current = next.sessionId;
+          setHistory((h) => [...(sameSession ? h.slice(-49) : []), next.neural.meanRateHz]);
         }
       } catch (e) {
         if (!stopped)
@@ -64,12 +69,16 @@ function App() {
     };
   }, []);
   async function command(path, body) {
+    requestEpoch.current++;
     setBusy(true);
     try {
       const r = await fetch(path, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+        body: JSON.stringify(state?.persistence ? {
+          ...body, protocolVersion: 1, individualId: state.individualId,
+          sessionId: state.sessionId, sequence: state.commandSequence + 1,
+        } : body),
       });
       const next = await r.json();
       if (!r.ok)
@@ -83,6 +92,7 @@ function App() {
     } catch (e) {
       setError(e.message);
     } finally {
+      requestEpoch.current++;
       setBusy(false);
     }
   }
@@ -213,6 +223,18 @@ function App() {
             </button>
           </div>
         </div>
+        {state?.persistence && (
+          <section className="card" aria-label="Fixture checkpoints">
+            <p>Individual <code>{state.individualId}</code></p>
+            <p>Saved at {(state.persistence.savedSimTimeMs / 1000).toFixed(3)} s · {state.persistence.checkpointCount} checkpoints.
+              Optional encounters also save their reservation before delivery. Restart restores the latest saved state paused. Restore cancels optional input and retains spent reservations.</p>
+            <div className="actions">
+              <button disabled={!available} onClick={() => command(`/api/individuals/${state.individualId}/checkpoints`, {})}>Save checkpoint</button>
+              <button disabled={!available} onClick={() => command(`/api/individuals/${state.individualId}/restore`, { checkpointId: state.persistence.checkpointId })}>Restore saved state (paused)</button>
+            </div>
+            {(state.faultReason || state.persistence.error) && <p role="alert">{state.faultReason || state.persistence.error}</p>}
+          </section>
+        )}
         {(tab === "Observatory" || tab === "Eidoverse") && (
           <div className="view-grid">
             <section className="card habitat">
