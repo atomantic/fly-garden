@@ -191,3 +191,20 @@ test('quiet can cancel immediately during recovery without refunding dose or rea
   assert.equal(policy.currents().size, 0);
   assert.equal(policy.snapshot().reservedDose, 13.5);
 });
+
+test('receipt-scoped cancellation checks source and retains other receipts and aggregate reservations', () => {
+  const policy = createStimulusPolicy({ individualId: 'a', sessionId: 's' });
+  const ui = policy.admit('ui', policy.envelope('ui', 'nectar'));
+  policy.advance(1000);
+  const garden = policy.admit('garden', policy.envelope('garden', 'floral'));
+  const before = policy.snapshot();
+  assert.throws(() => policy.cancelEntry('ui', garden.id), /source mismatch/);
+  assert.deepEqual(policy.snapshot(), before);
+  assert.equal(policy.cancelEntry('ui', ui.id), false);
+  assert.equal(policy.snapshot().effects.find(e => e.id === 'floral').active, true);
+  assert.equal(policy.cancelEntry('garden', garden.id), true);
+  assert.equal(policy.currents().size, 0);
+  assert.equal(policy.snapshot().reservedDose, before.reservedDose);
+  assert.equal(policy.snapshot().entries.length, 2);
+  assert.equal(policy.cancelEntry('garden', garden.id), false);
+});

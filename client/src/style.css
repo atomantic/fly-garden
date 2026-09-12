@@ -790,3 +790,14 @@ td button[aria-pressed="true"] {
 .operations-panel > summary, .creative-panel > summary { cursor: pointer; padding: 14px; font-weight: 600; }
 .environment-controls { padding: 14px; }
 .environment-controls p { margin: 8px 0; font-size: 0.9rem; }
+
+.language .recordings-panel { margin-top: 12px; border: 0; padding: 0; }
+.language fieldset { min-width: 0; border: 1px solid #34453c; border-radius: 8px; padding: 14px; margin: 14px 0; }
+.language legend { padding: 0 6px; }
+.language label { display: block; margin: 10px 0; line-height: 1.5; }
+.language select, .language textarea, .language input[type="number"] { font: inherit; color: inherit; background: #101d18; border: 1px solid #45594c; border-radius: 5px; padding: 8px; max-width: 100%; }
+.language select { width: 100%; }
+.language textarea { resize: vertical; }
+.language input[type="checkbox"] { width: auto; margin-right: 6px; }
+.language .recordings-list { max-height: 640px; overflow: auto; }
+.language .recordings-list article h4 { margin-top: 0; }

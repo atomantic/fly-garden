@@ -10,7 +10,7 @@ The project is intended to run locally and be managed by [PortOS](https://github
 
 *AI-generated design concept, not a screenshot or anatomical evidence. [Design notes and concepts](docs/DESIGN.md).*
 
-**Status: runnable foundation, September 12, 2026.** The local observatory includes an original Three.js fly and garden, a visible teleport pod, live inspection of a synthetic 32-neuron / 64-edge circuit, bounded fixture inputs, and an event journal. It starts paused. The body is illustrative by default; an explicitly attached controller camera can drive a disclosed synthetic visual-to-motor loop. Real connectome execution, persistent learning, LLM requests and Eidoverse travel remain tracked milestones; their interface panels disclose that they are unavailable.
+**Status: runnable foundation, September 12, 2026.** The local observatory includes an original Three.js fly and garden, a visible teleport pod, live inspection of a synthetic 32-neuron / 64-edge circuit, bounded fixture inputs, and an event journal. It starts paused. The body is illustrative by default; an explicitly attached controller camera can drive a disclosed synthetic visual-to-motor loop. Real connectome execution in the observatory, persistent learning and Eidoverse travel remain tracked milestones. Optional local language interpretation requires separate verified provider configuration and explicit per-individual arming; it is unavailable by default.
 
 ## Run locally
 
@@ -26,6 +26,10 @@ npm start
 Open http://127.0.0.1:8790. Choose **Run fixture** to advance the synthetic circuit. Use **Save checkpoint** to persist the current fixture state. Accepted optional encounters also save their exposure reservation before delivery. Restart restores the latest save with the same identity, a fresh command session and a paused clock; unsaved progress is discarded. **Restore saved state (paused)** explicitly returns to that checkpoint. Optional stimulation is canceled on restore while spent exposure reservations remain. See [checkpoint storage and lifecycle](docs/CHECKPOINTS.md).
 
 The [visual fixture controller](docs/ENVIRONMENT_ADAPTER.md) owns a dedicated camera lease and pauses when frames go stale. [Movement capture](docs/CREATIVE_ARTIFACTS.md) exports attributed JSON/MIDI/SVG/PNG; it is not evidence of learned creativity. Body pose is session-only, and no real connectome controls this view.
+
+Optional [garden encounter controls](docs/ENCOUNTER_DYNAMICS.md) enable declared floral contact proxies and fictional nectar inputs. Entry can offer one bounded pulse; dwelling never redoses, withdrawal stops delivery, and restart stays disabled. These are engineered mappings, not biological chemistry or evidence of learning.
+
+The [optional telemetry interpreter](docs/LANGUAGE_SERVICE.md) keeps per-individual evidence windows, explicit call/token/cooldown budgets and aggregate session spend limits. Detector requests require separate consent; generated text cannot change neural state, stimuli or tools. The [local Ollama adapter](docs/OLLAMA_LANGUAGE.md) is disabled by default and has only been tested with synthetic provider responses, not a live model.
 
 Separate, explicitly invoked [connectome research tools](docs/CONNECTOME_MODEL_CARD.md) acquire a pinned MaleCNS release and benchmark a local sparse LIF model. These tools do not select a backend in the observatory or control the illustrated fly. The app continues to expose its synthetic fixture; sensory/motor integration and biological validation remain future work.
 

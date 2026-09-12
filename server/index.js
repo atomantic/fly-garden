@@ -8,6 +8,8 @@ import ecosystem from '../ecosystem.config.cjs';
 import { createCapacityPolicy, openCapacityStore, measureFixtureFootprint } from './population-capacity.js';
 import { createRecordingStore } from './recording-store.js';
 import { createCreativeSessions } from './creative-session.js';
+import { createLanguageService } from './language-service.js';
+import { createOllamaLanguageProvider } from './ollama-language-provider.js';
 import { freemem } from 'node:os';
 
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon' };
@@ -34,8 +36,9 @@ async function readBody(request) {
 }
 
 /** Polling observers share the selected resident runtimes. Wall-clock gaps never catch up simulation time. */
-export function createServer({ runtime = createRuntime(), identities = null, distDir = fileURLToPath(new URL('../dist/', import.meta.url)), autoTick = true, capacity = createCapacityPolicy(), resourceUsage = () => ({ aggregateMemoryBytes: process.memoryUsage().rss, availableMemoryBytes: freemem() }), incrementalMemoryBytes = null, recordings = null, creativeSessions = createCreativeSessions(), onEnvironmentFrame = null, allowedOrigins = [], allowedHosts = [] } = {}) {
+export function createServer({ runtime = createRuntime(), identities = null, distDir = fileURLToPath(new URL('../dist/', import.meta.url)), autoTick = true, capacity = createCapacityPolicy(), resourceUsage = () => ({ aggregateMemoryBytes: process.memoryUsage().rss, availableMemoryBytes: freemem() }), incrementalMemoryBytes = null, recordings = null, creativeSessions = createCreativeSessions(), onEnvironmentFrame = null, languageProviders = [], languageService = null, allowedOrigins = [], allowedHosts = [] } = {}) {
   const root = resolve(distDir);
+  const language = identities ? (languageService ?? createLanguageService({ identities, providers: languageProviders })) : null;
   const pendingRecordings = new Set();
   const activeRecordings = new Map();
   let recordingFailure = null;
@@ -62,6 +65,12 @@ export function createServer({ runtime = createRuntime(), identities = null, dis
   const sequenceFor = id => sequences.get(id ?? identities?.primaryId) ?? 0;
   const snapshot = id => {
     const state = stateFor(id);
+    if (language) {
+      const tool = language.snapshot(state.individualId);
+      state.capabilities.llm = { available: tool.available, reason: tool.available
+        ? 'Optional telemetry interpretation is configured; explicit per-individual arming is required. No neural feedback or tools.'
+        : 'No language provider configured. Optional local interpretation stays unavailable and disarmed.' };
+    }
     creativeSessions.synchronize(state);
     const creativeCapture = creativeSessions.status(state.individualId);
     return { ...state, commandSequence: sequenceFor(id), ...(creativeCapture ? { creativeCapture } : {}) };
@@ -134,6 +143,29 @@ export function createServer({ runtime = createRuntime(), identities = null, dis
           activeRecordings.set(session.id, { individualId: state.individualId, sessionId: state.sessionId });
           return json(response, 200, session);
         }
+        const gardenRoute = /^\/api\/individuals\/([0-9a-f-]+)\/garden$/.exec(url.pathname);
+        if (identities && gardenRoute) {
+          const id = gardenRoute[1];
+          if (request.method === 'GET') return json(response, 200, identities.encounterDynamicsSnapshot(id));
+          if (request.method !== 'POST') throw new RuntimeError('Use POST for garden enablement.', 405);
+          checkOrigin(request, base);
+          const body = await readBody(request);
+          validateCommand(body, ['enabled'], id);
+          identities.encounterDynamicsControl(id, body.enabled);
+          return json(response, 200, snapshot(id));
+        }
+        const languageRoute = /^\/api\/individuals\/([0-9a-f-]+)\/language$/.exec(url.pathname);
+        if (language && languageRoute) {
+          const id = languageRoute[1];
+          if (request.method === 'GET') return json(response, 200, language.snapshot(id));
+          if (request.method !== 'POST') throw new RuntimeError('Use POST for language operations.', 405);
+          checkOrigin(request, base);
+          const body = await readBody(request);
+          validateCommand(body, ['operation', 'payload'], id);
+          if (!['arm', 'chat', 'disarm', 'cancel'].includes(body.operation)) throw new RuntimeError('Unknown language operation.');
+          const result = await language[body.operation](id, body.payload);
+          return json(response, 200, { state: snapshot(id), language: language.snapshot(id), result });
+        }
         const artifactRoute = /^\/api\/individuals\/([0-9a-f-]+)\/artifacts(?:\/export\/(json|mid|svg|png))?$/.exec(url.pathname);
         if (identities && artifactRoute) {
           const [, id, format] = artifactRoute;
@@ -180,7 +212,9 @@ export function createServer({ runtime = createRuntime(), identities = null, dis
             return json(response, 200, { ...result, state: snapshot(id) });
           }
           validateCommand(body, ['action'], id);
-          return json(response, 200, { ...identities.environmentControl(id, body.action), commandSequence: sequenceFor(id) });
+          language?.lifecycle(id);
+          const result = identities.environmentControl(id, body.action);
+          return json(response, 200, { ...snapshot(id), ...(result.controllerToken ? { controllerToken: result.controllerToken } : {}) });
         }
         const individualRoute = /^\/api\/individuals\/([0-9a-f-]+)(?:\/(checkpoints|restore|replicas|control|encounters|load|unload))?$/.exec(url.pathname);
         if (identities && individualRoute && request.method === 'GET') {
@@ -205,6 +239,7 @@ export function createServer({ runtime = createRuntime(), identities = null, dis
             if (!['control', 'encounters', 'checkpoints', 'restore', 'replicas', 'load', 'unload', 'create'].includes(operation)) throw new RuntimeError('API route not found.', 404);
             if (field && typeof body[field] !== 'string') throw new RuntimeError(`Expected a string ${field}.`);
             validateCommand(body, field ? [field] : [], id);
+            if (['restore', 'unload'].includes(operation) || (operation === 'control' && ['pause', 'rest', 'home'].includes(body.action))) language?.lifecycle(id);
             let state;
             if (operation === 'create') state = identities.createIndividual();
             else if (operation === 'control') state = identities.control(id, body.action);
@@ -214,7 +249,7 @@ export function createServer({ runtime = createRuntime(), identities = null, dis
             else if (operation === 'load') { checkLoad(id); state = identities.load(id); }
             else if (operation === 'unload') state = identities.unload(id);
             else state = identities.replica(id, body.checkpointId);
-            return json(response, 200, { ...state, commandSequence: sequenceFor(state.individualId) });
+            return json(response, 200, snapshot(state.individualId));
           }
           const key = url.pathname === '/api/control' ? 'action' : 'compoundId';
           if (typeof body[key] !== 'string' || Object.keys(body).some(k => k !== key)) throw new RuntimeError(`Expected only a string ${key}.`);
@@ -248,6 +283,7 @@ export function createServer({ runtime = createRuntime(), identities = null, dis
         for (const resident of identities.list().filter(value => value.resident)) identities.control(resident.individualId, 'pause');
       } else identities.step();
     } else runtime.step();
+    language?.tick().catch(() => {});
     if (++sampleTick % 10 !== 0 || !recordings) return;
     // One bounded capture batch at a time; serialize writes fairly without awaiting the neural timer.
     if (pendingRecordings.size) {
@@ -278,7 +314,7 @@ export function createServer({ runtime = createRuntime(), identities = null, dis
     pendingRecordings.add(batch);
     batch.finally(() => pendingRecordings.delete(batch));
   }, 50); });
-  server.on('close', () => { clearInterval(timer); identities?.close();
+  server.on('close', () => { clearInterval(timer); language?.close(); identities?.close();
     Promise.allSettled([...pendingRecordings]).then(() => recordings?.close()); });
   return server;
 }
@@ -297,7 +333,17 @@ if (entryPath && resolve(entryPath) === fileURLToPath(import.meta.url)) {
     aggregateMemoryBytes: process.memoryUsage().rss, availableMemoryBytes: freemem() });
   if (admission.admitted) identities.load(identities.primaryId);
   const recordings = createRecordingStore({ directory: resolve(dataDirectory, 'recordings') });
-  const server = createServer({ identities, capacity, incrementalMemoryBytes: footprint.incrementalMemoryBytes, recordings, allowedHosts, allowedOrigins: (process.env.DEV_ORIGINS ?? `http://127.0.0.1:${ecosystem.PORTS.devUi},http://localhost:${ecosystem.PORTS.devUi}`).split(',').filter(Boolean) });
+  const localLanguageProvider = createOllamaLanguageProvider({
+    enabled: process.env.FLY_GARDEN_LANGUAGE_OLLAMA_ENABLED === '1',
+    model: process.env.FLY_GARDEN_LANGUAGE_OLLAMA_MODEL,
+    endpoint: process.env.FLY_GARDEN_LANGUAGE_OLLAMA_ORIGIN ?? 'http://127.0.0.1:11434',
+    verifiedLocalNonThinkingModel: process.env.FLY_GARDEN_LANGUAGE_LOCAL_MODEL_VERIFIED === '1',
+    verifiedByteTokenBound: process.env.FLY_GARDEN_LANGUAGE_TOKEN_BOUND_VERIFIED === '1',
+  });
+  const aggregateSpendMicros = Number(process.env.FLY_GARDEN_LANGUAGE_AGGREGATE_SPEND_MICROS ?? '0');
+  if (!Number.isSafeInteger(aggregateSpendMicros) || aggregateSpendMicros < 0) throw new Error('Language aggregate spend must be a nonnegative safe integer.');
+  const languageService = createLanguageService({ identities, providers: localLanguageProvider ? [localLanguageProvider] : [], aggregateSpendMicros });
+  const server = createServer({ identities, languageService, capacity, incrementalMemoryBytes: footprint.incrementalMemoryBytes, recordings, allowedHosts, allowedOrigins: (process.env.DEV_ORIGINS ?? `http://127.0.0.1:${ecosystem.PORTS.devUi},http://localhost:${ecosystem.PORTS.devUi}`).split(',').filter(Boolean) });
   server.listen(port, host, () => {
     console.log(`Fly Garden: http://${host}:${port} — synthetic fixture paused`);
     process.send?.('ready');

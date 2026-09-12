@@ -5,6 +5,7 @@ import Population from "./Population.jsx";
 import Recordings from "./Recordings.jsx";
 import EnvironmentControls from "./EnvironmentControls.jsx";
 import CreativeControls from "./CreativeControls.jsx";
+import LanguageControls from "./LanguageControls.jsx";
 import "./style.css";
 
 const sections = [
@@ -293,8 +294,23 @@ function App() {
               <EnvironmentControls key={state?.individualId} state={state} disabled={!available} onMutation={next => {
                 if (next.individualId !== selectedIndividualRef.current) return;
                 const { controllerToken, ...safeState } = next;
-                setVisualLease(controllerToken ? { individualId: next.individualId, sessionId: next.sessionId, token: controllerToken } : null);
-                requestEpoch.current++; setState(safeState);
+                setVisualLease(previous => controllerToken
+                  ? { individualId: next.individualId, sessionId: next.sessionId, token: controllerToken }
+                  : next.environmentAdapter?.attached && previous?.individualId === next.individualId && previous.sessionId === next.sessionId
+                    ? previous : null);
+                requestEpoch.current++;
+                setState(previous => {
+                  if (!previous || previous.individualId !== safeState.individualId || previous.sessionId !== safeState.sessionId
+                    || previous.commandSequence > safeState.commandSequence) return previous;
+                  if (previous.tick <= safeState.tick) return safeState;
+                  // Frames may finish while this command response is in transit. Keep their trajectory,
+                  // while a newer lifecycle command still owns paused/attached/enablement status.
+                  return { ...previous, commandSequence: safeState.commandSequence,
+                    ...(safeState.commandSequence > previous.commandSequence ? {
+                      status: safeState.status, environmentAdapter: safeState.environmentAdapter,
+                      encounterDynamics: safeState.encounterDynamics,
+                    } : {}) };
+                });
               }} />
               <details className="creative-panel"><summary>Music and pollen capture</summary>
               <CreativeControls key={state?.individualId} state={state} disabled={!available} onMutation={next => {
@@ -495,41 +511,17 @@ function App() {
         )}
         {tab === "Language" && (
           <section className="card content-panel language">
-            <span className="eyebrow">LANGUAGE INTERFACE / NOT CONFIGURED</span>
-            <h2>Let activity open a conversation.</h2>
-            <p>
-              The planned language bridge lets a defined neural readout request
-              an LLM after you enable a provider and a budget. Each request will
-              link to the neural window and encounters that triggered it.
-            </p>
-            <div className="language-path">
-              <span>Sensory event</span>
-              <b>→</b>
-              <span>Neural activity</span>
-              <b>→</b>
-              <span>Request gate</span>
-              <b>→</b>
-              <span>LLM interpreter</span>
-            </div>
-            <div className="empty-state">
-              No model connected.
-              <small>
-                {state?.capabilities.llm.reason ||
-                  "Language integration is planned."}
-              </small>
-            </div>
-            <label>
-              Ask the interpreter
-              <input
-                disabled
-                placeholder="Chat becomes available after provider integration"
-              />
-            </label>
-            <p className="muted">
-              Generated words will be labeled interpretation. They cannot prove
-              thoughts, feelings, or comprehension. No LLM requests are sent by
-              this preview.
-            </p>
+            <span className="eyebrow">LANGUAGE INTERFACE / EXPLICIT OPT-IN</span>
+            <LanguageControls key={`${state?.individualId}/${state?.sessionId}`} state={state} disabled={!available} onMutation={next => {
+              if (!next || next.individualId !== selectedIndividualRef.current) return;
+              requestEpoch.current++;
+              setState(previous => {
+                if (!previous || previous.individualId !== next.individualId || previous.sessionId !== next.sessionId
+                  || previous.commandSequence > next.commandSequence) return previous;
+                // Language mutates command ordering, never the neural trajectory.
+                return previous.tick > next.tick ? { ...previous, commandSequence: next.commandSequence } : next;
+              });
+            }} />
           </section>
         )}
         {tab === "Eidoverse" && (
