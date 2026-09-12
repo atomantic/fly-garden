@@ -23,7 +23,7 @@ npm run build
 npm start
 ```
 
-Open http://127.0.0.1:8790. Choose **Run fixture** to advance the synthetic circuit. State is currently session-only; restarting discards it and starts paused.
+Open http://127.0.0.1:8790. Choose **Run fixture** to advance the synthetic circuit. Use **Save checkpoint** to persist the current fixture state. Accepted optional encounters also save their exposure reservation before delivery. Restart restores the latest save with the same identity, a fresh command session and a paused clock; unsaved progress is discarded. **Restore saved state (paused)** explicitly returns to that checkpoint. Optional stimulation is canceled on restore while spent exposure reservations remain. See [checkpoint storage and lifecycle](docs/CHECKPOINTS.md).
 
 Separate, explicitly invoked [connectome research tools](docs/CONNECTOME_MODEL_CARD.md) acquire a pinned MaleCNS release and benchmark a local sparse LIF model. These tools do not select a backend in the observatory or control the illustrated fly. The app continues to expose its synthetic fixture; sensory/motor integration and biological validation remain future work.
 
@@ -39,7 +39,7 @@ pm2 stop fly-garden
 
 One forked process serves the built UI and API on loopback by default. Health is available at `/api/health` and distinguishes service availability from simulation and integration availability. PM2 waits for readiness; no simulation or provider work begins on startup. Ports are defined in `ecosystem.config.cjs`. For frontend development, run `npm run dev:server` and `npm run dev` in separate terminals; Vite uses port `8791`. Rebuild before restarting production after UI changes.
 
-PM2 daemon startup/resurrection is managed by your installation. Durable checkpoints, backup and full-runtime resource limits are future work. Do not use the current fixture for long-lived individuals.
+PM2 daemon startup/resurrection is managed by your installation. The synthetic fixture has durable explicit checkpoints; full connectome checkpoints, backup automation and resource-aware population admission remain future work. Do not treat fixture persistence as validated biological continuity.
 
 ## Respect is a design requirement
 

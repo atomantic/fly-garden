@@ -22,6 +22,48 @@ const exactKeys = (value, keys) => value && typeof value === 'object' && !Array.
   && Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value, key));
 const integer = value => Number.isSafeInteger(value) && value >= 0;
 const envelopeKeys = ['version', 'source', 'individualId', 'sessionId', 'simTimeMs', 'effect', 'targets', 'intensity', 'durationMs'];
+const validIdentity = id => typeof id === 'string' && id.length > 0 && id.length <= 128;
+
+/** Portable reservations are validated independently of the session-local authenticated rewind hook. */
+export function validateStimulusCheckpoint(saved, { individualId, timeMs } = {}) {
+  const invalid = () => { throw new StimulusPolicyError('Invalid durable stimulus checkpoint.'); };
+  if (!exactKeys(saved, ['version', 'individualId', 'timeMs', 'nextId', 'entries']) || saved.version !== 1
+    || !validIdentity(saved.individualId) || (individualId !== undefined && saved.individualId !== individualId)
+    || !integer(saved.timeMs) || saved.timeMs % 5 !== 0 || (timeMs !== undefined && saved.timeMs !== timeMs)
+    || !Number.isSafeInteger(saved.nextId) || saved.nextId < 1
+    || !Array.isArray(saved.entries) || saved.entries.length > 11) invalid();
+  let durationMs = 0;
+  let dose = 0;
+  let lastId = 0;
+  for (let i = 0; i < saved.entries.length; i++) {
+    const entry = saved.entries[i];
+    if (!exactKeys(entry, [...envelopeKeys, 'id', 'activeUntilMs'])) invalid();
+    const effect = effectFor(entry.effect);
+    if (entry.version !== 1 || !STIMULUS_SOURCES.includes(entry.source)
+      || entry.individualId !== saved.individualId || !validIdentity(entry.sessionId)
+      || !integer(entry.id) || entry.id <= lastId || entry.id >= saved.nextId
+      || !integer(entry.simTimeMs) || entry.simTimeMs % 5 !== 0 || entry.simTimeMs > saved.timeMs
+      || !effect || effect.id === 'quiet'
+      || !Number.isFinite(entry.intensity) || entry.intensity <= 0 || entry.intensity > effect.intensity
+      || !integer(entry.durationMs) || entry.durationMs === 0 || entry.durationMs % 5 !== 0 || entry.durationMs > effect.durationMs
+      || !Array.isArray(entry.targets) || entry.targets.length !== effect.targets.length
+      || effect.targets.some((target, index) => !Object.hasOwn(entry.targets, index) || entry.targets[index] !== target)
+      || !integer(entry.simTimeMs + entry.durationMs)
+      || entry.simTimeMs + entry.durationMs <= saved.timeMs - STIMULUS_LIMITS.windowMs
+      || !integer(entry.activeUntilMs) || entry.activeUntilMs % 5 !== 0
+      || entry.activeUntilMs < entry.simTimeMs || entry.activeUntilMs > entry.simTimeMs + entry.durationMs) invalid();
+    for (let previous = 0; previous < i; previous++) {
+      const earlier = saved.entries[previous];
+      const recovery = earlier.effect === entry.effect ? STIMULUS_LIMITS.effectRecoveryMs : STIMULUS_LIMITS.recoveryMs;
+      if (entry.simTimeMs - earlier.simTimeMs < recovery) invalid();
+    }
+    durationMs += entry.durationMs;
+    dose += entry.intensity * entry.durationMs;
+    lastId = entry.id;
+  }
+  if (durationMs > STIMULUS_LIMITS.maxDurationMs || dose > STIMULUS_LIMITS.maxDose) invalid();
+  return structuredClone(saved);
+}
 
 /**
  * Version 1 fixture envelope. Targets are exact server-owned mappings, not arbitrary neuron writes.
@@ -36,15 +78,17 @@ const envelopeKeys = ['version', 'source', 'individualId', 'sessionId', 'simTime
  * @property {number} intensity Nonnegative synthetic current per mapped target.
  * @property {number} durationMs Simulation milliseconds, on the 5 ms fixture grid.
  */
-export function createStimulusPolicy({ individualId, sessionId }) {
-  if (![individualId, sessionId].every(id => typeof id === 'string' && id.length > 0 && id.length <= 128)) {
+export function createStimulusPolicy({ individualId, sessionId, durableCheckpoint }) {
+  if (![individualId, sessionId].every(validIdentity)) {
     throw new StimulusPolicyError('Invalid policy identity.');
   }
+  const restored = durableCheckpoint === undefined ? null : validateStimulusCheckpoint(durableCheckpoint, { individualId });
   // Internal, session-local checkpoint authentication. Never returned through HTTP or snapshots.
   const key = randomBytes(32);
-  let timeMs = 0;
-  let nextId = 1;
-  let entries = [];
+  let timeMs = restored?.timeMs ?? 0;
+  let nextId = restored?.nextId ?? 1;
+  // Recovery starts paused: preserve reservations and their original source session, but never restart exposure.
+  let entries = restored?.entries.map(entry => ({ ...entry, activeUntilMs: Math.min(entry.activeUntilMs, timeMs) })) ?? [];
   const sign = payload => createHmac('sha256', key).update(JSON.stringify(payload)).digest('hex');
   const retained = entry => entry.simTimeMs + entry.durationMs > timeMs - STIMULUS_LIMITS.windowMs;
   const remaining = entry => Math.max(0, entry.activeUntilMs - timeMs);
@@ -91,6 +135,9 @@ export function createStimulusPolicy({ individualId, sessionId }) {
 
   function admit(source, request) {
     const effect = validate(request, source);
+    if (nextId >= Number.MAX_SAFE_INTEGER || !integer(timeMs + request.durationMs)) {
+      throw new StimulusPolicyError('Stimulus clock or sequence limit reached.', 409);
+    }
     // Quiet is cancellation, so spent budgets and recovery never prevent it.
     if (effect.id === 'quiet') {
       cancelOptional();
@@ -140,6 +187,10 @@ export function createStimulusPolicy({ individualId, sessionId }) {
     return { payload, signature: sign(payload) };
   }
 
+  function durableCheckpointSnapshot() {
+    return { version: 1, individualId, timeMs, nextId, entries: structuredClone(entries) };
+  }
+
   function restore(saved) {
     if (!exactKeys(saved, ['payload', 'signature']) || typeof saved.signature !== 'string' || !/^[a-f0-9]{64}$/.test(saved.signature)
       || !exactKeys(saved.payload, ['version', 'individualId', 'sessionId', 'timeMs', 'nextId', 'entries'])) {
@@ -158,5 +209,6 @@ export function createStimulusPolicy({ individualId, sessionId }) {
     cancelOptional();
   }
 
-  return { advance, envelope, admit, cancelOptional, snapshot, currents, checkpoint, restore };
+  return { advance, envelope, admit, cancelOptional, snapshot, currents, checkpoint, restore,
+    durableCheckpoint: durableCheckpointSnapshot };
 }
