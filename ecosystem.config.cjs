@@ -5,6 +5,7 @@ module.exports = {
     {
       name: "fly-garden",
       script: "server/index.js",
+      node_args: ["--env-file-if-exists=.env"],
       cwd: __dirname,
       env: { PORT: PORTS.api, NODE_ENV: "production" },
       autorestart: true,

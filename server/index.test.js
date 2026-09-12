@@ -1,4 +1,5 @@
 import test from 'node:test';
+import { request as httpRequest } from 'node:http';
 import assert from 'node:assert/strict';
 import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -6,11 +7,11 @@ import { join } from 'node:path';
 import { createServer } from './index.js';
 import { createRuntime } from './runtime.js';
 
-async function fixture(t) {
+async function fixture(t, options = {}) {
   const distDir = await mkdtemp(join(tmpdir(), 'fly-garden-test-'));
   await writeFile(join(distDir, 'index.html'), '<main>Fixture UI</main>');
   const runtime = createRuntime();
-  const server = createServer({ runtime, autoTick: false, distDir });
+  const server = createServer({ runtime, autoTick: false, distDir, ...options });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   t.after(async () => { await new Promise(resolve => server.close(resolve)); await rm(distDir, { recursive: true }); });
   const base = `http://127.0.0.1:${server.address().port}`;
@@ -117,4 +118,27 @@ test('deterministic fixture replay has finite bounded state and snapshots cannot
   }
   snapshot.neural.neurons[0].potential = NaN;
   assert.ok(Number.isFinite(a.snapshot().neural.neurons[0].potential));
+});
+
+
+test('configured tailnet host serves UI and controls while other hosts and origins remain rejected', async t => {
+  const { base, get } = await fixture(t, { allowedHosts: ['fly.example.ts.net'] });
+  const host = `fly.example.ts.net:${new URL(base).port}`;
+  const request = (path, options = {}) => new Promise((resolve, reject) => {
+    const req = httpRequest(`${base}${path}`, { method: options.method ?? 'GET', headers: { Host: host, ...options.headers } }, response => {
+      let text = '';
+      response.on('data', chunk => { text += chunk; });
+      response.on('end', () => resolve({ status: response.statusCode, text: async () => text }));
+    });
+    req.on('error', reject);
+    req.end(options.body);
+  });
+  assert.equal(await (await request('/')).text(), '<main>Fixture UI</main>');
+  assert.equal((await request('/api/health')).status, 200);
+  const control = { method: 'POST', body: JSON.stringify({ action: 'start' }), headers: { 'Content-Type': 'application/json', Origin: `http://${host}` } };
+  assert.equal((await request('/api/control', control)).status, 200);
+  assert.equal((await get()).status, 'running');
+  assert.equal((await request('/api/control', { ...control, headers: { ...control.headers, Origin: 'http://other.example.ts.net' } })).status, 403);
+  assert.equal((await request('/api/health', { headers: { Host: 'other.example.ts.net' } })).status, 403);
+  assert.equal((await request('/api/health', { headers: { Host: 'fly.example.ts.net.attacker.example' } })).status, 403);
 });
