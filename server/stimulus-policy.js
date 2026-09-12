@@ -144,6 +144,18 @@ export function createStimulusPolicy({ individualId, sessionId, durableCheckpoin
     for (const entry of entries) entry.activeUntilMs = Math.min(entry.activeUntilMs, timeMs);
   }
 
+  function cancelEntry(source, entryId) {
+    if (!STIMULUS_SOURCES.includes(source) || !Number.isSafeInteger(entryId) || entryId < 1) {
+      throw new StimulusPolicyError('Invalid scoped stimulus cancellation.');
+    }
+    const entry = entries.find(value => value.id === entryId);
+    if (!entry) return false; // An expired/pruned receipt already has no delivery.
+    if (entry.source !== source) throw new StimulusPolicyError('Stimulus cancellation source mismatch.');
+    const wasActive = entry.activeUntilMs > timeMs;
+    entry.activeUntilMs = Math.min(entry.activeUntilMs, timeMs);
+    return wasActive;
+  }
+
   function admit(source, request) {
     const effect = validate(request, source);
     if (nextId >= Number.MAX_SAFE_INTEGER || !integer(timeMs + request.durationMs)) {
@@ -220,6 +232,6 @@ export function createStimulusPolicy({ individualId, sessionId, durableCheckpoin
     cancelOptional();
   }
 
-  return { advance, envelope, admit, cancelOptional, snapshot, currents, checkpoint, restore,
+  return { advance, envelope, admit, cancelOptional, cancelEntry, snapshot, currents, checkpoint, restore,
     durableCheckpoint: durableCheckpointSnapshot };
 }

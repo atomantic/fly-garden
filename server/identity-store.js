@@ -2,6 +2,7 @@ import { randomUUID, createHash, randomBytes, timingSafeEqual } from 'node:crypt
 import { mkdirSync, openSync, closeSync, readFileSync, writeFileSync, fsyncSync, renameSync, unlinkSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import { createEncounterDynamics, ENCOUNTER_CATALOG, GARDEN_ENCOUNTER_FLOWERS } from './encounter-dynamics.js';
 import { createEnvironmentAdapter } from './environment-adapter.js';
 import { createRuntime, RuntimeError, branchRuntimeCheckpoint, assertCheckpointPolicyContinuity } from './runtime.js';
 
@@ -61,7 +62,7 @@ export function validateIdentityDocument(saved) {
 }
 
 /** Atomic whole-store replacement keeps checkpoint data and lineage in one transaction. No imported paths or credentials. */
-export function openIdentityStore(directory, { write = atomicWrite, loadPrimary = true, residentIds = [] } = {}) {
+export function openIdentityStore(directory, { write = atomicWrite, loadPrimary = true, residentIds = [], encounterFlowers = GARDEN_ENCOUNTER_FLOWERS } = {}) {
   if (!Array.isArray(residentIds) || residentIds.some(id => !uuid(id)) || new Set(residentIds).size !== residentIds.length) {
     throw new RuntimeError('Additional resident IDs must be a unique list of saved individual IDs.');
   }
@@ -73,6 +74,7 @@ export function openIdentityStore(directory, { write = atomicWrite, loadPrimary 
   const runtimes = new Map();
   const environments = new Map();
   const controllerTokens = new Map();
+  const encounterAdapters = new Map();
   const persistenceErrors = new Map();
   const persist = candidate => {
     const text = JSON.stringify(candidate);
@@ -122,7 +124,7 @@ export function openIdentityStore(directory, { write = atomicWrite, loadPrimary 
     if (!resident && !replicaSessions.has(id)) replicaSessions.set(id, randomUUID());
     const state = resident ? runtimes.get(id).snapshot() : createRuntime({ individualId: id, sessionId: replicaSessions.get(id),
       checkpoint: checkpointFor(record, record.head).payload }).snapshot();
-    return { ...state, environmentAdapter: environmentSnapshot(id, state), ...(resident ? {} : { status: 'saved-unloaded' }), persistence: { mode: 'durable-fixture',
+    return { ...state, environmentAdapter: environmentSnapshot(id, state), encounterDynamics: encounterDynamicsSnapshot(id, state), ...(resident ? {} : { status: 'saved-unloaded' }), persistence: { mode: 'durable-fixture',
       checkpointId: record.head, branchOf: structuredClone(record.branchOf), checkpointCount: record.checkpoints.length,
       savedSimTimeMs: checkpointFor(record, record.head).payload.dynamics.tick * 5,
       error: persistenceErrors.get(id) ?? null, resident,
@@ -139,6 +141,7 @@ export function openIdentityStore(directory, { write = atomicWrite, loadPrimary 
       const message = 'Persistence operation failed; previous checkpoint preserved.';
       persistenceErrors.set(id, message);
       runtimes.get(id)?.pauseFault(message);
+      revokeEncounters(id);
       throw error;
     }
   }
@@ -171,6 +174,7 @@ export function openIdentityStore(directory, { write = atomicWrite, loadPrimary 
       next.individuals.find(value => value.individualId === id).head = checkpoint.checkpointId;
       persist(next);
       detachEnvironment(id);
+      encounterAdapters.delete(id);
       runtimes.set(id, restored);
       return snapshot(id);
     });
@@ -214,6 +218,7 @@ export function openIdentityStore(directory, { write = atomicWrite, loadPrimary 
     detachEnvironment(id);
     runtime.control('pause');
     runtimes.delete(id);
+    encounterAdapters.delete(id);
     replicaSessions.delete(id);
     return snapshot(id);
   }
@@ -230,6 +235,7 @@ export function openIdentityStore(directory, { write = atomicWrite, loadPrimary 
     return { sessionId: replicaSessions.get(id) };
   }
   function detachEnvironment(id) {
+    revokeEncounters(id);
     environments.get(id)?.invalidate('Visual adapter explicitly detached.');
     environments.delete(id);
     controllerTokens.delete(id);
@@ -239,6 +245,7 @@ export function openIdentityStore(directory, { write = atomicWrite, loadPrimary 
     if (!['attach', 'detach'].includes(action)) throw new RuntimeError('Unknown environment action.');
     if (action === 'detach') detachEnvironment(id);
     else {
+      revokeEncounters(id);
       runtime.control('pause');
       if (environments.has(id)) environments.get(id).invalidate('Explicit controller takeover; paused with a new epoch.');
       else environments.set(id, createEnvironmentAdapter(runtime));
@@ -259,16 +266,65 @@ export function openIdentityStore(directory, { write = atomicWrite, loadPrimary 
       throw new RuntimeError('Controller lease missing or revoked; explicitly attach this tab to take control.', 409);
     }
     const { controllerToken, ...retinalFrame } = frame;
-    try { return { trace: adapter.accept(retinalFrame), environment: environmentSnapshot(id), state: snapshot(id) }; }
+    try {
+      const trace = adapter.accept(retinalFrame);
+      const runtimeState = requireResident(id).snapshot();
+      encounterAdapters.get(id)?.update({ individualId: id, sessionId: runtimeState.sessionId,
+        environmentEpoch: trace.environmentEpoch, frameId: trace.frameId, simTimeMs: runtimeState.simTimeMs,
+        pose: trace.pose, status: runtimeState.status });
+      if (requireResident(id).snapshot().status !== 'running') revokeEncounters(id);
+      return { trace, environment: environmentSnapshot(id), state: snapshot(id) };
+    }
     catch (error) { throw error.statusCode ? error : new RuntimeError(error.message, 409); }
   }
   function stepIndividual(id) {
     const runtime = requireResident(id);
     const adapter = environments.get(id);
-    if (adapter) adapter.checkFreshness();
+    if (adapter) { if (!adapter.checkFreshness()) revokeEncounters(id); }
     else runtime.step();
   }
-  return { environmentSnapshot, environmentControl, environmentFrame, create, createIndividual: create, load, unload, primaryId: saved.primaryId, snapshot, save, restore, replica,
+  function encounterDynamicsSnapshot(id, state) {
+    recordFor(id);
+    const adapter = encounterAdapters.get(id);
+    if (adapter) return adapter.snapshot();
+    return { version: 1, individualId: id, sessionId: (state ?? requireOrSavedState(id)).sessionId, enabled: false,
+      phase: 'disabled', environmentEpoch: null, contactIds: [], active: null, events: [],
+      geometry: structuredClone(encounterFlowers), catalog: structuredClone(ENCOUNTER_CATALOG),
+      disclosure: 'Optional engineered contact proxies are disabled. Explicit enablement is required in the running visual session; no biological chemistry or pharmacology.' };
+  }
+  function revokeEncounters(id) {
+    const adapter = encounterAdapters.get(id);
+    if (adapter?.snapshot().enabled) adapter.withdraw();
+  }
+  function durableEncounter(id, source, effectId) {
+    const runtime = requireResident(id), state = runtime.snapshot();
+    const staged = createRuntime({ individualId: id, sessionId: state.sessionId, checkpoint: runtime.checkpoint() });
+    staged.control('start');
+    staged.stimulate(source, staged.stimulusEnvelope(source, effectId));
+    return guarded(id, () => {
+      storeCheckpoint(id, staged.checkpoint());
+      runtime.stimulate(source, runtime.stimulusEnvelope(source, effectId));
+      return runtime.snapshot().stimulusPolicy.entries.at(-1);
+    });
+  }
+  function encounterDynamicsControl(id, enabled) {
+    const runtime = requireResident(id);
+    if (typeof enabled !== 'boolean') throw new RuntimeError('Encounter enablement must be boolean.');
+    if (!enabled) { revokeEncounters(id); return snapshot(id); }
+    const environment = environments.get(id);
+    if (!environment || runtime.snapshot().status !== 'running') throw new RuntimeError('Explicitly attach and run the visual controller before enabling encounters.', 409);
+    let adapter = encounterAdapters.get(id);
+    if (!adapter || adapter.snapshot().sessionId !== runtime.snapshot().sessionId) {
+      adapter = createEncounterDynamics({ individualId: id, sessionId: runtime.snapshot().sessionId, flowers: encounterFlowers,
+        policySnapshot: () => runtime.snapshot().stimulusPolicy,
+        admit: request => durableEncounter(id, 'garden', request.effectId),
+        cancel: request => runtime.cancelStimulus('garden', request.entryId) });
+      encounterAdapters.set(id, adapter);
+    }
+    adapter.setEnabled(true, environment.snapshot().environmentEpoch);
+    return snapshot(id);
+  }
+  return { encounterDynamicsSnapshot, encounterDynamicsControl, environmentSnapshot, environmentControl, environmentFrame, create, createIndividual: create, load, unload, primaryId: saved.primaryId, snapshot, save, restore, replica,
     list: () => saved.individuals.map(record => ({ individualId: record.individualId, branchOf: structuredClone(record.branchOf),
       dataset: structuredClone(checkpointFor(record, record.head).payload.dataset),
       checkpointId: record.head, resident: runtimes.has(record.individualId) })),
@@ -276,6 +332,7 @@ export function openIdentityStore(directory, { write = atomicWrite, loadPrimary 
     control: (id, action) => {
       const runtime = requireResident(id);
       if (!['start', 'pause', 'rest', 'home'].includes(action)) throw new RuntimeError('Unknown control action.');
+      revokeEncounters(id);
       if (action === 'home') detachEnvironment(id);
       else environments.get(id)?.invalidate('Explicit lifecycle command rotated the controller epoch.');
       runtime.control(action);

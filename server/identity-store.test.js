@@ -421,3 +421,73 @@ test('controller lease is private, survives pause/resume, and explicit takeover 
   assert.notEqual(third.controllerToken, second.controllerToken);
   assert.equal((await post(route + '/frames', frame(second.controllerToken))).status, 409);
 });
+
+function driveIntoEncounter(store, id, token, limit = 800) {
+  let state;
+  for (let i = 0; i < limit; i++) {
+    state = store.snapshot(id);
+    const environment = state.environmentAdapter;
+    store.environmentFrame(id, { controllerToken: token, version: 1, individualId: id, sessionId: state.sessionId,
+      environmentEpoch: environment.environmentEpoch, frameId: environment.lastFrameId + 1, simTimeMs: state.simTimeMs,
+      capturedAtMs: Date.now(), camera: 'controller', width: 8, height: 4, rgb: Array(96).fill(255) });
+    state = store.snapshot(id);
+    if (state.stimulusPolicy.entries.length || state.status === 'fault') return state;
+  }
+  throw new Error(`Fixture did not reach test contact: ${JSON.stringify(state.environmentAdapter.pose)}`);
+}
+const nearFlower = [{ id: 'test-contact', x: 0, z: 0.0001, radius: 0.00005, effectId: 'floral' }];
+
+test('accepted visual contact durably reserves garden input before delivery and lifecycle revokes enablement', t => {
+  const path = directory(t); let store, admissionWrites = 0;
+  store = openIdentityStore(path, { encounterFlowers: nearFlower, write(file, value) {
+    const document = JSON.parse(value);
+    if (store && document.individuals[0].checkpoints.at(-1).payload.stimulusPolicy.entries.some(e => e.source === 'garden')) {
+      admissionWrites++;
+      assert.equal(store.snapshot().stimulusPolicy.effects.find(e => e.id === 'floral').active, false);
+    }
+    writeFileSync(file, value);
+  } });
+  t.after(() => store.close());
+  const id = store.primaryId;
+  assert.throws(() => store.encounterDynamicsControl(id, true), /attach and run/);
+  const lease = store.environmentControl(id, 'attach'); store.control(id, 'start');
+  store.encounterDynamicsControl(id, true);
+  assert.equal(store.snapshot(id).stimulusPolicy.entries.length, 0);
+  const state = driveIntoEncounter(store, id, lease.controllerToken);
+  assert.equal(admissionWrites, 1); assert.equal(state.stimulusPolicy.entries[0].source, 'garden');
+  const durable = JSON.parse(readFileSync(join(path, 'identities.json'), 'utf8'));
+  assert.equal(durable.individuals[0].checkpoints.at(-1).payload.stimulusPolicy.entries[0].source, 'garden');
+  const spent = state.stimulusPolicy.reservedDose;
+  store.control(id, 'pause');
+  assert.equal(store.snapshot(id).encounterDynamics.enabled, false);
+  assert.equal(store.snapshot(id).stimulusPolicy.effects.find(e => e.id === 'floral').active, false);
+  assert.equal(store.snapshot(id).stimulusPolicy.reservedDose, spent);
+  store.control(id, 'start'); assert.equal(store.snapshot(id).encounterDynamics.enabled, false);
+  store.encounterDynamicsControl(id, true); store.environmentControl(id, 'attach');
+  assert.equal(store.snapshot(id).encounterDynamics.enabled, false);
+  store.control(id, 'start'); store.encounterDynamicsControl(id, true); store.control(id, 'rest');
+  assert.equal(store.snapshot(id).encounterDynamics.enabled, false);
+  const saved = store.save(id); store.restore(id, saved.persistence.checkpointId);
+  assert.equal(store.snapshot(id).encounterDynamics.enabled, false);
+});
+
+test('failed garden reservation stops only that recipient without delivering or recording a spent dose', t => {
+  const path = directory(t);
+  const store = openIdentityStore(path, { encounterFlowers: nearFlower, write(file, value) {
+    const document = JSON.parse(value);
+    if (document.individuals.some(r => r.checkpoints.at(-1).payload.stimulusPolicy.entries.some(e => e.source === 'garden'))) throw new Error('disk full');
+    writeFileSync(file, value);
+  } });
+  t.after(() => store.close());
+  const a = store.primaryId, b = store.create().individualId; store.load(b); store.control(b, 'start');
+  const lease = store.environmentControl(a, 'attach'); store.control(a, 'start'); store.encounterDynamicsControl(a, true);
+  const before = store.snapshot(b);
+  const failed = driveIntoEncounter(store, a, lease.controllerToken);
+  assert.equal(failed.status, 'fault'); assert.equal(failed.encounterDynamics.enabled, false);
+  assert.equal(failed.encounterDynamics.phase, 'disabled');
+  assert.equal(failed.stimulusPolicy.reservedDose, 0);
+  assert.equal(failed.stimulusPolicy.effects.some(e => e.active), false);
+  assert.deepEqual(store.snapshot(b).neural, before.neural); assert.equal(store.snapshot(b).status, 'running');
+  const disk = JSON.parse(readFileSync(join(path, 'identities.json'), 'utf8'));
+  assert.equal(disk.individuals[0].checkpoints.at(-1).payload.stimulusPolicy.entries.length, 0);
+});

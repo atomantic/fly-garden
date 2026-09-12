@@ -244,6 +244,12 @@ export function createRuntime({ individualId = 'synthetic-fixture', sessionId = 
     spikeHistory = nextHistory;
   }
 
-  return { snapshot, control, encounter, stimulate, step, checkpoint, pauseFault,
+  function cancelStimulus(source, entryId) {
+    const canceled = policy.cancelEntry(source, entryId);
+    if (canceled) log('policy', 'Scoped optional input canceled; spent reservation and recovery retained.', { source, entryId });
+    return canceled;
+  }
+
+  return { snapshot, control, encounter, stimulate, stimulusEnvelope: policy.envelope, cancelStimulus, step, checkpoint, pauseFault,
     checkpointStimulusPolicy: policy.checkpoint, restoreStimulusPolicy };
 }
