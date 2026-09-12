@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { openConnectomeBackend } from './connectome.js';
+import { validateNeuronSampleIds } from './sparse-lif.js';
 import { connectomeProfile } from './connectome-profiles.js';
 import { createCapacityPolicy } from './population-capacity.js';
 
@@ -202,7 +203,30 @@ export function createConnectomeRegistry({ identities = [], capacity = createCap
       }
     });
   }
-  return { register, load, command, list: () => [...records.values()].map(publicState), snapshot: id => publicState(record(id)),
+  function sample(id, envelope) {
+    const r = record(id);
+    if (!exact(envelope, ['protocolVersion', 'individualId', 'dataset', 'graphSha256', 'sessionEpoch', 'neuronIds'])
+      || envelope.protocolVersion !== 1 || envelope.individualId !== id || envelope.dataset !== r.dataset
+      || typeof envelope.graphSha256 !== 'string' || !/^[a-f0-9]{64}$/.test(envelope.graphSha256)
+      || typeof envelope.sessionEpoch !== 'string') throw new Error('Invalid connectome sample envelope');
+    validateNeuronSampleIds(envelope.neuronIds, envelope.dataset);
+    const request = { ...envelope, neuronIds: [...envelope.neuronIds] };
+    return enqueue(r, async () => {
+      if (!r.backend || !['paused', 'running', 'resting'].includes(r.lifecycle)) throw new Error('Connectome sample unavailable; explicitly load a healthy worker first');
+      if (request.sessionEpoch !== r.state?.sessionEpoch || request.graphSha256 !== r.state?.graphSha256) throw new Error('Stale connectome sample session or graph');
+      const backend = r.backend;
+      // Read failures do not send pause/start or alter Rest. Only a worker deadline
+      // invokes the existing fail-closed termination path and retains admission.
+      const value = await bounded(Promise.resolve().then(() => backend.sample(request.neuronIds)), () => {
+        void evict(r, 'Sample deadline; worker stopped and durable checkpoint retained.').catch(() => {});
+      });
+      if (r.backend !== backend || r.state?.sessionEpoch !== request.sessionEpoch) throw new Error('Connectome sample session ended');
+      if (value?.individualId !== id || value.dataset !== request.dataset || value.graphSha256 !== request.graphSha256
+        || value.sessionEpoch !== request.sessionEpoch) throw new Error('Connectome sample source mismatch');
+      return { ...value, status: r.lifecycle, commandSequence: r.sequence };
+    });
+  }
+  return { register, load, command, sample, list: () => [...records.values()].map(publicState), snapshot: id => publicState(record(id)),
     close: async () => { if (closed || closing) return; closing = true; await Promise.all([...records.values()].map(r => r.queue)); closed = true;
       await Promise.all([...records.values()].map(r => evict(r, 'Registry closed; only previously committed checkpoints can recover.'))); } };
 }

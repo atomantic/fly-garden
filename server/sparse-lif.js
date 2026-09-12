@@ -7,6 +7,18 @@ export const LIF_MODEL = Object.freeze({
   precision: 'float64', integration: 'exact exponential leak, then delayed instantaneous synaptic jumps',
 });
 
+export const MAX_NEURON_SAMPLE = 256;
+/** Validate the bounded request before graph lookup or result allocation. */
+export function validateNeuronSampleIds(neuronIds, dataset) {
+  if (!['male-cns:v1.0', 'banc:v888'].includes(dataset) || !Array.isArray(neuronIds)
+    || neuronIds.length < 1 || neuronIds.length > MAX_NEURON_SAMPLE) throw new Error('Sample requires 1–256 exact namespaced neuron IDs');
+  for (const id of neuronIds) {
+    if (typeof id !== 'string' || id.length > 128 || !id.startsWith(`${dataset}/`)
+      || !/^[1-9]\d*$/.test(id.slice(dataset.length + 1))) throw new Error('Sample neuron ID does not match the exact dataset namespace');
+  }
+  if (new Set(neuronIds).size !== neuronIds.length) throw new Error('Duplicate sample neuron ID');
+}
+
 export function validateGraph(graph) {
   const { ids, offsets, targets, contacts, signs } = graph;
   if (!Array.isArray(ids) || !(offsets instanceof Uint32Array) || !(targets instanceof Uint32Array) ||
@@ -120,6 +132,26 @@ export function createSparseLif(graph, { individualId = randomUUID(), dataset = 
     }
     return { tick, simTimeMs: tick * LIF_MODEL.dtMs, spikes, totalSpikes, traversedEdges, minimum, maximum };
   }
+  function sample(neuronIds) {
+    validateNeuronSampleIds(neuronIds, dataset);
+    // Only the requested lookup is allocated: no persistent all-neuron index or
+    // full-state copy changes the worker's measured resident memory footprint.
+    const requested = new Map(neuronIds.map(id => [id, -1]));
+    let found = 0;
+    for (let index = 0; index < ids.length && found < neuronIds.length; index++) {
+      if (requested.has(ids[index])) { requested.set(ids[index], index); found++; }
+    }
+    if (found !== neuronIds.length) throw new Error('Unknown sample neuron ID; no partial sample returned');
+    const simTimeMs = tick * model.dtMs;
+    return { protocolVersion: 1, kind: 'connectome-neuron-sample', source: 'connectome',
+      individualId, dataset, graphSha256, modelId: model.id, tick, simTimeMs,
+      timeWindow: { kind: 'instantaneous', startTick: tick, endTick: tick, startSimTimeMs: simTimeMs, endSimTimeMs: simTimeMs },
+      samples: neuronIds.map(neuronId => {
+        const index = requested.get(neuronId);
+        return { neuronId, potential: potential[index], firing: firing[index], refractoryStepsRemaining: refractory[index] };
+      }),
+      disclosure: 'Instantaneous modeled potential, pending one-step firing flag and refractory steps remaining. Not firing rates, recorded biology, learning, welfare or body-control evidence.' };
+  }
   function exportCheckpoint() {
     return { schemaVersion: 1, kind: 'sparse-lif', individualId, dataset, graphSha256,
       model: { ...model }, tick, totalSpikes, traversedEdges,
@@ -168,6 +200,6 @@ export function createSparseLif(graph, { individualId = randomUUID(), dataset = 
   if (checkpoint !== null) restore(checkpoint);
   // Graph ownership is transferred to the kernel; callers must not mutate CSR arrays.
   // Copies for small numerical diagnostics only; full graph benchmark uses summary().
-  return { step, seedProbe, summary, checkpoint: exportCheckpoint, restore, prepareRestore, commitRestore, individualId, graphSha256, model,
+  return { step, seedProbe, summary, sample, checkpoint: exportCheckpoint, restore, prepareRestore, commitRestore, individualId, graphSha256, model,
     inspect: () => ({ potential: potential.slice(), firing: firing.slice(), refractory: refractory.slice() }) };
 }

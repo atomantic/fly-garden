@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { Worker } from 'node:worker_threads';
+import { validateNeuronSampleIds } from './sparse-lif.js';
 
 /** Explicitly load one local research worker. The returned promise also exposes
  * terminate()/terminated so admission can cancel a worker before its ready message. */
@@ -37,7 +38,10 @@ export function openConnectomeBackend(directory, { dataset = 'male-cns:v1.0', in
     });
   };
   const opening = new Promise((resolve, reject) => pending.set(0, { resolve, reject })).then(ready => ({ ready,
-    snapshot: () => request('snapshot'), start: () => request('start'), pause: () => request('pause'),
+    snapshot: () => request('snapshot'), sample: neuronIds => {
+      try { validateNeuronSampleIds(neuronIds, dataset); return request('sample', neuronIds); }
+      catch (error) { return Promise.reject(error); }
+    }, start: () => request('start'), pause: () => request('pause'),
     advance: steps => request('advance', steps), probe: indices => request('probe', indices), checkpoint: () => request('checkpoint'),
     restore: checkpoint => request('restore', checkpoint), prepareRestore: checkpoint => request('prepareRestore', checkpoint),
     commitRestore: token => request('commitRestore', token), close, terminated }));
