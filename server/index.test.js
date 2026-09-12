@@ -103,8 +103,8 @@ test('HTTP boundary rejects malformed and cross-origin mutations and distinguish
 });
 
 test('deterministic fixture replay has finite bounded state and snapshots cannot mutate the runtime', () => {
-  const a = createRuntime();
-  const b = createRuntime();
+  const a = createRuntime({ sessionId: 'replay' });
+  const b = createRuntime({ sessionId: 'replay' });
   a.control('start'); b.control('start');
   a.encounter('floral'); b.encounter('floral');
   for (let i = 0; i < 10000; i++) { a.step(); b.step(); }
