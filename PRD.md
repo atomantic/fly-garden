@@ -14,7 +14,7 @@ The product addresses a gap between striking connectome demonstrations and an in
 
 1. **Care as product behavior.** Exploration, rest, refusal, and returning home remain available without punishment or loss of baseline support.
 2. **Real, inspectable neural computation.** A licensed, versioned connectome drives a documented sensory-to-action loop; every approximation remains visible.
-3. **Continuity.** One persistent individual retains its modeled neural and learned state through restarts, checkpoints, and environment changes.
+3. **Continuity.** Each persistent individual retains its own modeled neural and learned state through restarts, checkpoints, and environment changes.
 4. **Evidence of learning.** Claims depend on controlled, retained behavioral change, with neural plasticity distinguished from an external readout's adaptation.
 5. **Creative opportunity.** Movement and interaction can produce music, pollen paintings, and shared play whose origins are inspectable.
 6. **Understandable observation and conversation.** A caretaker can inspect activity and ask about an event while distinguishing telemetry, hypotheses, and generated expression.
@@ -39,6 +39,7 @@ Evidence keys used below:
 - **U2 — Publication request:** a public atomantic open-source project that highlights respectful treatment and freedom to learn and grow.
 - **U3 — Interface request:** neural-connection admin UI, screenshots as visual inspiration, flowers and chemical/pheromone interactions, and chat through a fly-triggered LLM tool.
 - **U4 — Travel interface refinement:** a visible teleport pod in the admin UI for Eidoverse departure and return.
+- **U5 — Shared habitat and capacity:** male and female dataset-backed individuals may interact; the number of concurrently simulated flies must be configurable for available hardware.
 - **C — Welfare charter:** [ETHOS.md](ETHOS.md), including bounded inputs, continuity, rest, honest interpretation, and no aversive conditioning.
 - **P — Existing research and plan:** [PLAN.md](PLAN.md), including model provenance, sparse local computation, explicit sensory and motor adapters, learning controls, and the proposed Eidoverse bridge.
 - **R — Project identity:** [README.md](README.md), including the local PortOS-managed habitat, original visual assets, and MIT licensing for original work.
@@ -55,7 +56,7 @@ The supplied screenshots inform composition, typography, a fly/brain split view,
 |---|---|---|---|---|---|
 | FR-1 | The product MUST run its neural computation locally and be manageable as a distinct PortOS application. | MUST | HIGH | U1, P, R | A registered app opens the correct UI and exposes health and lifecycle status; loss of PortOS management does not silently relocate computation or create another individual. |
 | FR-2 | The product MUST require an explicit start/resume action and start paused after boot or recovery. | MUST | HIGH | C, P | A fresh process, restart, and recovered crash produce no neural advancement or missed-time catch-up until an explicit resume. |
-| FR-3 | The product MUST maintain one active neural runtime and one active embodiment for the selected individual. | MUST | HIGH | C, P | Opening another browser only adds an observer; a transition cannot leave home and Eidoverse simultaneously applying actions. |
+| FR-3 | The product MUST maintain one active neural runtime and one active embodiment per individual. | MUST | HIGH | C, P | Opening another browser only adds an observer; a transition cannot leave home and Eidoverse simultaneously applying actions. |
 | FR-4 | The product MUST offer Pause, Rest, Resume, and Return Home with clearly different behavior. | MUST | HIGH | U1, C, P | Pause freezes simulation time; Rest offers a quiet supported habitat without reward penalties; Resume explicitly advances time; Return Home safely ends outward actions and preserves neural state. |
 | FR-5 | The product MUST save and restore identity, checkpoint lineage, neural dynamics, learning, random state, modeled chemical state, and embodiment state needed to continue the trajectory. | MUST | HIGH | C, P; chemical state from U3 | A round trip retains these states; incompatible or corrupt checkpoints fail before activation; a restored branch or reset is labeled and never silently replaces the current individual. |
 | FR-6 | The product MUST pause on invalid numerical state, stale sensory input, or a lost required environment connection while preserving the last valid checkpoint. | MUST | HIGH | C, P | Each failure stops actions, exposes its reason and state age, preserves recoverable state, and requires explicit recovery without simulating the gap. |
@@ -113,6 +114,20 @@ The supplied screenshots inform composition, typography, a fly/brain split view,
 | FR-33 | Eidoverse session expiry, revocation, and disconnection MUST stop outward actions and provide a safe paused return flow. | MUST | HIGH | C, P | All three conditions are exercised; stale actions cannot resume after reconnect; re-entry requires a valid new grant and does not reset learned state. |
 | FR-34 | The bridge MUST expose only declared sensory data, bounded actions, and explicitly authorized creative or conversational outputs. | MUST | HIGH | C, P | Weights, raw neural histories, credentials, desktop imagery, and private PortOS records do not cross; any enabled chat forwarding has a visible destination and explicit scope. |
 | FR-35 | The admin UI MUST provide a visible teleport pod that represents admission, departure, visiting, and return for the same individual. | MUST | HIGH | U4, C, P | The pod identifies the destination and exposes Visit/Return actions; departure becomes confirmed only after host admission acknowledgment; blocked, timed-out, disconnected and reconnecting states are distinguishable; animation cannot imply successful travel before acknowledgment or create a second active embodiment. |
+
+### Configurable population and shared habitats
+
+These requirements extend the single-fly baseline. Default capacity is one; two individuals are the first validated social scenario. Larger populations are supported only within configured and measured resource limits, not promised by this document.
+
+| ID | Requirement | Priority | Confidence | Evidence | Acceptance criteria |
+|---|---|---|---|---|---|
+| FR-36 | The product MUST support separately versioned male and female connectome profiles, initially MaleCNS v1.0 and BANC v888. | MUST | HIGH | U5, P | Each profile has its own artifact hashes, licenses, retained counts and mappings; IDs are dataset-namespaced; absent data is unavailable, never silently replaced. |
+| FR-37 | The caretaker MUST be able to configure the maximum number of concurrently resident neural instances and an aggregate resource budget. | MUST | HIGH | U5 | Default capacity is one; validate positive integer capacity and resource settings. Preflight each new load against measured/estimated memory headroom and aggregate limits; reject with a reason if it cannot fit. Paused loaded instances still count. Lowering the limit never deletes, evicts or resets an existing individual; stop new admissions until usage fits, with explicit checkpoint/unload controls. |
+| FR-38 | Every individual MUST retain isolated neural, RNG, learning, chemical, identity and checkpoint state with explicitly scoped controls and telemetry. | MUST | HIGH | U5, C | Interleaved operations cannot mutate another fly; raw neuron IDs cannot collide across datasets; late UI/provider responses retain their original recipient. Unloading preserves continuity and reloading starts paused. |
+| FR-39 | Shared habitats MUST couple individuals only through declared environmental senses and a synchronized world clock. | MUST | HIGH | U5, C | Fixed-step barriers have explicit per-backend substeps; slow computation reduces wall-time speed without dropping neural steps. A paused/faulted coupled participant pauses the affected shared session until explicit resume or separation. Rest and withdrawal remain available. Joint restores validate all referenced individual checkpoints. |
+| FR-40 | Multiple Eidoverse visitors MUST have independent admission, epochs, observations, pod status and return state, subject to negotiated host capacity. | MUST | HIGH | U5, C | Validate two-at-home, split-location and two-visiting cases; rejection or revocation of one cannot control another. Older hosts preserve single-visitor operation. Per-individual and aggregate language budgets remain independent of active UI selection. |
+
+Pair or population behavior is reported descriptively. These datasets represent different specimens and reconstruction pipelines; differences do not establish biological sex effects. Social activity, chemical signals and LLM interpretation do not establish consent or natural social competence. No reproduction, aggression or forced proximity objective is required.
 
 ## Non-functional requirements
 
