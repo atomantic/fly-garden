@@ -1,4 +1,32 @@
-# Local fixture backup and recovery
+# Local backup and recovery
+
+
+## Unified installation backup
+
+Use the explicit `backup-all` command to preserve the entire supported saved installation under `FLY_GARDEN_DATA_DIR`: fixture identities and joint checkpoints, capacity settings, `connectomes/catalog.json` and its referenced immutable checkpoint history, and `recordings/` observation history. Missing optional stores retain their absence. Bulk graph/atlas arrays, memory measurements, environment files, broker/provider credentials, camera leases, external visitor grants and private machine paths are excluded. Source datasets retain their separate licenses; checkpoints retain exact dataset/model/graph identity.
+
+First explicitly save or checkpoint/unload the residents whose current progress matters, then stop **all** app/development writers using this directory. Stop standalone capacity writers too. Unsaved progress is not implicitly checkpointed. The command holds the fixture and, if present, connectome writer locks across the capture; a missing or partial catalog is an error, never a fresh empty replacement.
+
+```sh
+node scripts/identity-backup.js backup-all ./data/identities ./fly-garden-full-backup
+node scripts/identity-backup.js restore-all ./fly-garden-full-backup ./data/restored-installation
+```
+
+Both destination arguments must name nonexistent directories. Restore produces fixture files directly in the new root, with `connectomes/` and `recordings/` below it, matching the app's layout. Select that root explicitly with `FLY_GARDEN_DATA_DIR`; neither command edits configuration, launches PM2, loads a neural worker, starts capture or advances time. Research individuals remain unloaded until separate explicit admission. Any fixture loaded by the selected startup policy is paused with a fresh command session. An interrupted recording is restored as partial observation history, available through replay, and never resumed automatically. Existing intentional recording gaps remain disclosed; an indexed missing/corrupt chunk fails backup rather than silently declaring success.
+
+The archive is a directory of allowlisted files plus a final `manifest.json` with SHA-256 and byte lengths for every component. Its manifest is capped at 1 MiB, fixture archive at 17 MiB, connectome catalog at 2 MiB, individual connectome checkpoints at 16 MiB, recording exports at 32 MiB in aggregate, and all archive data at 1,100 MiB. Checkpoint histories are validated/copied one file at a time; all neural histories are not retained together in RAM. Directory names, file identities, models, graph hashes, selected heads and restore lineage are validated independently of the outer checksums. Extra files, path traversal, symlinks, overlap and incompatible profile substitutions are rejected. SHA-256 detects corruption, not malicious rewriting by a local administrator.
+
+`server/portable-connectome-profiles.js` uses the checked-in graph manifest locks and canonical graph hashes recorded by the complete paused measurements in [CONNECTOME_MEMORY.md](CONNECTOME_MEMORY.md). This permits offline checkpoint validation without loading or copying graph arrays. These descriptors provide **no runtime memory admission evidence**. On the destination machine, separately prepare the exact licensed graph files, configure their local paths, and explicitly obtain current memory evidence before loading. An unavailable graph or capacity estimate cannot cause fixture substitution.
+
+All archived components are validated before a restore destination is created. A fresh directory is reserved exclusively and a `.restore-in-progress` marker is written and synced before any components. Startup and backup refuse this marker, even if a valid fixture catalog is already present. Child stores are written first, and fixture identity data and `RESTORE_COMPLETE.json` are published last. After all components and the completion marker are synced, the in-progress marker is removed and its directory synced. Existing directories are never overwritten or merged. Normal pre-completion write failures remove only the newly created destination. A failure confirming final marker removal reports `RESTORE_DURABILITY_UNCERTAIN` and preserves the completed destination for offline verification. A process/machine crash can leave an incomplete fresh directory; do not select it as an installation unless the restore finished successfully and its completion marker exists. Retry into another new directory, preserving the archive and original stores. The backup likewise publishes its manifest last; a directory without it is not a valid archive. This is a tested local recovery contract, not a power-loss guarantee for arbitrary filesystems.
+
+Focused verification uses tiny synthetic graph fixtures and no downloads or full neural workers:
+
+```sh
+node --test server/application-backup.test.js server/identity-backup.test.js server/connectome-store.test.js server/recording-store.test.js
+```
+
+## Legacy fixture-only archive
 
 These commands preserve the supported synthetic fixture store. Schema-v2 stores also preserve shared fixture checkpoint references and committed poses. These backups do not include real connectome workers, learned state or external embodiments. No backup command runs simulation, calls a provider or starts PM2.
 

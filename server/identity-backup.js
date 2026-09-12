@@ -35,6 +35,17 @@ function writeExclusive(path, text) {
   catch (error) { try { unlinkSync(path); } catch {} throw error; }
   finally { closeSync(fd); }
 }
+/** Caller must hold the fixture writer lock for a coherent multi-store capture. */
+export function readIdentityBackup(directory) {
+  const identities = readBounded(join(directory, 'identities.json'), 16 * 1024 * 1024);
+  let capacity = null;
+  try { capacity = readBounded(join(directory, 'capacity.json'), 4096); }
+  catch (error) { if (error.code !== 'ENOENT') throw error; }
+  const data = { identities, capacity };
+  return validateIdentityBackup({ schemaVersion: 1, kind: 'fly-garden-identity-backup',
+    createdAt: new Date().toISOString(), data, sha256: digest(data) });
+}
+
 /** Run while the app is stopped. The service's own writer lock excludes concurrent saves. */
 export function backupIdentities(directory, archivePath) {
   directory = resolve(directory);
@@ -42,13 +53,8 @@ export function backupIdentities(directory, archivePath) {
   statSync(join(directory, 'identities.json'));
   const release = acquireIdentityStoreLock(directory);
   try {
-    const identities = readBounded(join(directory, 'identities.json'), 16 * 1024 * 1024);
-    let capacity = null;
-    try { capacity = readBounded(join(directory, 'capacity.json'), 4096); }
-    catch (error) { if (error.code !== 'ENOENT') throw error; }
-    const data = { identities, capacity };
-    const archive = validateIdentityBackup({ schemaVersion: 1, kind: 'fly-garden-identity-backup',
-      createdAt: new Date().toISOString(), data, sha256: digest(data) });
+    const archive = readIdentityBackup(directory);
+    const { identities, capacity } = archive.data;
     writeExclusive(archivePath, JSON.stringify(archive));
     return { individualCount: identities.individuals.length,
       checkpointCount: identities.individuals.reduce((sum, item) => sum + item.checkpoints.length, 0),
