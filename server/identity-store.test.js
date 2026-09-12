@@ -327,3 +327,97 @@ test('boot may defer primary residency until explicit capacity admission', t => 
   store.step();
   assert.equal(store.snapshot().tick, 0);
 });
+
+test('visual adapter owns only attached recipient steps and detaches on restore/home/unload', t => {
+  const store = openIdentityStore(directory(t)); t.after(() => store.close());
+  const a = store.primaryId, b = store.create().individualId; store.load(b);
+  assert.equal(store.environmentSnapshot(a).attached, false);
+  const lease = store.environmentControl(a, 'attach');
+  store.control(a, 'start'); store.control(b, 'start');
+  store.step(); assert.equal(store.snapshot(a).tick, 0); assert.equal(store.snapshot(b).tick, 1);
+  const state = store.snapshot(a), env = store.environmentSnapshot(a);
+  const frame = { controllerToken: lease.controllerToken, version: 1, individualId: a, sessionId: state.sessionId, environmentEpoch: env.environmentEpoch,
+    frameId: 0, simTimeMs: 0, capturedAtMs: Date.now(), camera: 'controller', width: 8, height: 4, rgb: Array(96).fill(255) };
+  const result = store.environmentFrame(a, frame);
+  assert.equal(result.state.tick, 1); assert.equal(store.snapshot(b).tick, 1);
+  assert.ok(Math.abs(result.environment.pose.x) <= 2); assert.ok(Math.abs(result.environment.pose.z) <= 2);
+  assert.throws(() => store.environmentFrame(b, frame), /attach/);
+  const saved = store.save(a); store.restore(a, saved.persistence.checkpointId);
+  assert.equal(store.environmentSnapshot(a).attached, false);
+  store.environmentControl(a, 'attach'); store.control(a, 'home'); assert.equal(store.environmentSnapshot(a).attached, false);
+  store.environmentControl(a, 'attach'); store.unload(a); store.load(a);
+  assert.equal(store.environmentSnapshot(a).attached, false); assert.equal(store.snapshot(a).status, 'paused');
+});
+
+test('environment HTTP enforces command/origin and separate frame epochs with recipient capture hook', async t => {
+  const store = openIdentityStore(directory(t));
+  const captures = [];
+  const server = createServer({ identities: store, autoTick: false, onEnvironmentFrame: state => captures.push(state) });
+  server.listen(0, '127.0.0.1'); await once(server, 'listening');
+  t.after(() => new Promise(resolve => server.close(resolve)));
+  const base = `http://127.0.0.1:${server.address().port}`, id = store.primaryId;
+  const post = (path, body, headers = {}) => fetch(base + path, { method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify(body) });
+  const route = `/api/individuals/${id}/environment`;
+  let state = store.snapshot();
+  const command = { protocolVersion: 1, individualId: id, sessionId: state.sessionId, sequence: 1, action: 'attach' };
+  assert.equal((await post(route, command, { Origin: 'https://invalid.example' })).status, 403);
+  let response = await post(route, command); assert.equal(response.status, 200); state = await response.json();
+  assert.equal(state.environmentAdapter.attached, true); assert.equal(state.commandSequence, 1);
+  const controllerToken = state.controllerToken;
+  response = await post(`/api/individuals/${id}/control`, { ...command, sequence: 2, action: 'start' }); state = await response.json();
+  const frame = { controllerToken, version: 1, individualId: id, sessionId: state.sessionId, environmentEpoch: state.environmentAdapter.environmentEpoch,
+    frameId: 0, simTimeMs: 0, capturedAtMs: Date.now(), camera: 'controller', width: 8, height: 4, rgb: Array(96).fill(0) };
+  assert.equal((await post(route + '/frames', frame, { Origin: 'https://invalid.example' })).status, 403);
+  response = await post(route + '/frames', frame); assert.equal(response.status, 200);
+  const accepted = await response.json(); assert.equal(accepted.state.tick, 1); assert.equal(accepted.state.commandSequence, 2);
+  assert.equal(captures.length, 1); assert.equal(captures[0].environmentTrace.frameId, 0); assert.equal(captures[0].individualId, id);
+  assert.equal((await post(route + '/frames', frame)).status, 409); assert.equal(captures.length, 1);
+  assert.equal((await fetch(base + route).then(r => r.json())).attached, true);
+});
+
+test('controller lease is private, survives pause/resume, and explicit takeover revokes the old producer', async t => {
+  const store = openIdentityStore(directory(t));
+  const captures = [];
+  const server = createServer({ identities: store, autoTick: false, onEnvironmentFrame: state => captures.push(state) });
+  server.listen(0, '127.0.0.1'); await once(server, 'listening');
+  t.after(() => new Promise(resolve => server.close(resolve)));
+  const base = `http://127.0.0.1:${server.address().port}`, id = store.primaryId;
+  const route = `/api/individuals/${id}/environment`;
+  const post = (path, body) => fetch(base + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  let sequence = 0;
+  const command = async (path, action) => {
+    const s = store.snapshot(id);
+    const response = await post(path, { protocolVersion: 1, individualId: id, sessionId: s.sessionId, sequence: ++sequence, action });
+    assert.equal(response.status, 200); return response.json();
+  };
+  const first = await command(route, 'attach'), token = first.controllerToken;
+  assert.match(token, /^[0-9a-f]{64}$/);
+  await command(`/api/individuals/${id}/control`, 'start');
+  const frame = controllerToken => {
+    const s = store.snapshot(id), e = s.environmentAdapter;
+    return { controllerToken, version: 1, individualId: id, sessionId: s.sessionId, environmentEpoch: e.environmentEpoch,
+      frameId: e.lastFrameId + 1, simTimeMs: s.simTimeMs, capturedAtMs: Date.now(), camera: 'controller', width: 8, height: 4, rgb: Array(96).fill(0) };
+  };
+  const missingLease = frame(token); delete missingLease.controllerToken;
+  assert.equal((await post(route + '/frames', missingLease)).status, 409); assert.equal(store.snapshot(id).tick, 0);
+  let response = await post(route + '/frames', frame(token)); assert.equal(response.status, 200);
+  assert.equal(JSON.stringify(await response.json()).includes(token), false);
+  for (const path of ['/api/state', '/api/health', `/api/individuals/${id}`, route]) {
+    const text = await fetch(base + path).then(r => r.text());
+    assert.equal(text.includes(token), false); assert.equal(text.includes('controllerToken'), false);
+  }
+  assert.equal(JSON.stringify(captures).includes(token), false);
+  const beforePause = store.environmentSnapshot(id).environmentEpoch;
+  await command(`/api/individuals/${id}/control`, 'pause'); await command(`/api/individuals/${id}/control`, 'start');
+  assert.notEqual(store.environmentSnapshot(id).environmentEpoch, beforePause);
+  assert.equal((await post(route + '/frames', frame(token))).status, 200);
+  const second = await command(route, 'attach');
+  assert.notEqual(second.controllerToken, token); assert.equal(second.status, 'paused');
+  await command(`/api/individuals/${id}/control`, 'start');
+  const tick = store.snapshot(id).tick;
+  assert.equal((await post(route + '/frames', frame(token))).status, 409); assert.equal(store.snapshot(id).tick, tick);
+  assert.equal((await post(route + '/frames', frame(second.controllerToken))).status, 200);
+  await command(route, 'detach'); const third = await command(route, 'attach'); await command(`/api/individuals/${id}/control`, 'start');
+  assert.notEqual(third.controllerToken, second.controllerToken);
+  assert.equal((await post(route + '/frames', frame(second.controllerToken))).status, 409);
+});

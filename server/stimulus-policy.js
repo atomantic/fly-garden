@@ -11,6 +11,17 @@ export const STIMULUS_SOURCES = Object.freeze(['ui', 'garden', 'learning', 'lang
 export const STIMULUS_LIMITS = Object.freeze({
   windowMs: 10000, maxDurationMs: 1000, maxDose: 40, recoveryMs: 1000, effectRecoveryMs: 3000,
 });
+// Continuous sensory current is distinct from optional appetitive exposure. It cannot reserve,
+// erase or replenish that ledger; this shared boundary validates both input classes.
+export const SENSORY_LIMITS = Object.freeze({ source: 'controller-retina', neuronCount: 32, maxCurrent: 0.02 });
+export function validateRetinalCurrents(currents) {
+  if (!Array.isArray(currents) || currents.length !== SENSORY_LIMITS.neuronCount
+    || !Array.from({ length: currents.length }, (_, i) => Object.hasOwn(currents, i)
+      && Number.isFinite(currents[i]) && currents[i] >= 0 && currents[i] <= SENSORY_LIMITS.maxCurrent).every(Boolean)) {
+    throw new StimulusPolicyError('Retinal sensory current exceeds the declared per-neuron bounds.');
+  }
+  return [...currents];
+}
 const definitions = [
   { id: 'nectar', label: 'Nectar', description: 'Brief synthetic input; no biological reward claim.', durationMs: 300, intensity: 0.045, targets: ['fixture-0', 'fixture-1', 'fixture-2', 'fixture-3'] },
   { id: 'floral', label: 'Floral scent', description: 'Brief synthetic input; not a receptor or pheromone model.', durationMs: 500, intensity: 0.025, targets: ['fixture-16', 'fixture-17', 'fixture-18', 'fixture-19'] },

@@ -1,11 +1,18 @@
 import { useEffect, useRef, useState } from "react";
+import { environmentKey, topDownRetinalRGB } from "./retinal-frame.js";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 
 // Original procedural art. Coordinates are illustrative, not anatomical data.
-export default function Scene({ neural, brain = false }) {
+export default function Scene({ neural, brain = false, state = null, controllerToken = null, onEnvironmentFrame = () => {} }) {
   const host = useRef(null);
   const live = useRef(neural);
+  const source = useRef({ state, controllerToken, onEnvironmentFrame, observedAt: performance.now() });
+  const [retinal, setRetinal] = useState(null);
+  const [frameError, setFrameError] = useState('');
+  useEffect(() => { source.current = { state, controllerToken, onEnvironmentFrame, observedAt: performance.now() }; }, [state]);
+  useEffect(() => { source.current.controllerToken = controllerToken; }, [controllerToken]);
+  useEffect(() => { source.current.onEnvironmentFrame = onEnvironmentFrame; }, [onEnvironmentFrame]);
   const [failed, setFailed] = useState(false);
   useEffect(() => {
     live.current = neural;
@@ -69,7 +76,56 @@ export default function Scene({ neural, brain = false }) {
       );
       return o;
     };
-    let points, pointIds;
+    let points, pointIds, body;
+    const controllerCamera = new THREE.PerspectiveCamera(90, 2, 0.05, 30);
+    const retinalTarget = new THREE.WebGLRenderTarget(8, 4, { minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter });
+    retinalTarget.texture.colorSpace = THREE.SRGBColorSpace;
+    const rgba = new Uint8Array(8 * 4 * 4);
+    let stopped = false, inFlight = false, requestController = null, boundKey = null, boundToken = null, acceptedState = null, faulted = false, previousStatus = null;
+    async function sendRetina() {
+      const current = source.current.state, key = environmentKey(current), token = source.current.controllerToken;
+      if (key !== boundKey || token !== boundToken) {
+        requestController?.abort(); boundKey = key; boundToken = token; acceptedState = null; faulted = false; setFrameError(''); setRetinal(null);
+      }
+      if (previousStatus !== 'running' && current?.status === 'running') { faulted = false; setFrameError(''); }
+      previousStatus = current?.status;
+      if (brain || stopped || inFlight || !key || typeof token !== 'string' || !token || current.status !== 'running' || faulted) return;
+      if (performance.now() - source.current.observedAt > 1000) { faulted = true; setFrameError('Live state is stale. Controller frames stopped; reconnect and explicitly resume.'); return; }
+      const latest = acceptedState && acceptedState.commandSequence === current.commandSequence && acceptedState.simTimeMs > current.simTimeMs ? acceptedState : current;
+      const environment = latest.environmentAdapter, pose = environment.pose;
+      if (!pose || ![pose.x, pose.z, pose.yaw].every(Number.isFinite)) { faulted = true; setFrameError('Authoritative controller pose unavailable.'); return; }
+      controllerCamera.position.set(pose.x + Math.sin(pose.yaw) * 0.95, 1.0, pose.z + Math.cos(pose.yaw) * 0.95);
+      controllerCamera.lookAt(pose.x + Math.sin(pose.yaw) * 3, 1.0, pose.z + Math.cos(pose.yaw) * 3);
+      inFlight = true; requestController = new AbortController();
+      const timeout = setTimeout(() => requestController?.abort(), 1000);
+      try {
+        // Only original garden geometry enters the offscreen controller camera. Never sample desktop or observer camera.
+        if (body) body.visible = false;
+        renderer.setRenderTarget(retinalTarget); renderer.render(scene, controllerCamera);
+        renderer.readRenderTargetPixels(retinalTarget, 0, 0, 8, 4, rgba);
+        renderer.setRenderTarget(null); if (body) body.visible = true;
+        const rgb = topDownRetinalRGB(rgba);
+        const response = await fetch(`/api/individuals/${current.individualId}/environment/frames`, {
+          method: 'POST', signal: requestController.signal, headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ controllerToken: token, version: 1, individualId: current.individualId, sessionId: current.sessionId,
+            environmentEpoch: environment.environmentEpoch, frameId: environment.lastFrameId + 1,
+            simTimeMs: latest.simTimeMs, capturedAtMs: Date.now(), camera: 'controller', width: 8, height: 4, rgb }),
+        });
+        const value = await response.json();
+        if (!response.ok) throw new Error(typeof value.error === 'string' ? value.error : value.error?.message || 'Controller frame rejected');
+        if (stopped || source.current.controllerToken !== token || environmentKey(source.current.state) !== key || environmentKey(value.state) !== key) return;
+        const observed = source.current.state;
+        if (value.state.commandSequence < observed.commandSequence || value.state.simTimeMs < observed.simTimeMs
+          || value.state.environmentAdapter.lastFrameId < observed.environmentAdapter.lastFrameId) return;
+        acceptedState = value.state;
+        setRetinal({ rgb, trace: value.trace });
+        source.current.onEnvironmentFrame(value.state);
+      } catch (error) {
+        if (!stopped && source.current.controllerToken === token && environmentKey(source.current.state) === key) { faulted = true; setFrameError(`Controller frames stopped: ${error.message}. Pause and explicitly resume after recovery.`); }
+      } finally {
+        clearTimeout(timeout); if (!stopped) { renderer.setRenderTarget(null); if (body) body.visible = true; } inFlight = false;
+      }
+    }
     if (brain) {
       const nodes = live.current?.neurons || [];
       pointIds = nodes.map((n) => n.id);
@@ -189,6 +245,7 @@ export default function Scene({ neural, brain = false }) {
         sphere(center, scene, [x, h + 0.03, z], [0.11, 0.07, 0.11]);
       }
       const fly = new THREE.Group();
+      body = fly;
       fly.position.set(-0.55, 0.67, 0.65);
       fly.rotation.y = -0.3;
       scene.add(fly);
@@ -285,11 +342,20 @@ export default function Scene({ neural, brain = false }) {
         });
         colors.needsUpdate = true;
       }
+      const current = source.current.state;
+      const key = environmentKey(current);
+      const shown = key && environmentKey(acceptedState) === key && acceptedState.commandSequence === current.commandSequence && acceptedState.simTimeMs > current.simTimeMs ? acceptedState : current;
+      const pose = shown?.environmentAdapter?.attached && shown.environmentAdapter.pose;
+      if (body && pose) { body.position.set(pose.x, 0.67, pose.z); body.rotation.y = pose.yaw + Math.PI; }
+      else if (body) { body.position.set(-0.55, 0.67, 0.65); body.rotation.y = -0.3; }
       renderer.render(scene, camera);
+      void sendRetina();
     };
     render();
     return () => {
+      stopped = true; requestController?.abort();
       cancelAnimationFrame(frame);
+      retinalTarget.dispose();
       observer.disconnect();
       controls.dispose();
       scene.traverse((o) => {
@@ -304,6 +370,7 @@ export default function Scene({ neural, brain = false }) {
     };
   }, [brain, neural?.neurons?.length]);
   return (
+    <>
     <div
       className="scene"
       ref={host}
@@ -321,5 +388,18 @@ export default function Scene({ neural, brain = false }) {
         </div>
       )}
     </div>
+    {!brain && state?.environmentAdapter?.attached && <section className="retinal-inspector" aria-label="Controller retina">
+      <p>Engineered fixture control · dedicated 8×4 controller camera. Observer orbit does not supply pixels. No biological vision or learned movement claim.</p>
+      {!controllerToken && <p>Observer only. This view has no controller lease; detach and explicitly attach here to control the camera.</p>}
+      {frameError && <p role="alert">{frameError}</p>}
+      {retinal ? <>
+        <div role="img" aria-label="Latest accepted controller-camera RGB pixels, 8 columns and 4 rows" style={{ display: 'grid', gridTemplateColumns: 'repeat(8, 18px)', width: 144 }}>
+          {Array.from({ length: 32 }, (_, i) => <span key={i} style={{ height: 18, background: `rgb(${retinal.rgb.slice(i * 3, i * 3 + 3).join(',')})` }} />)}
+        </div>
+        <p>Accepted frame {retinal.trace.frameId} · simulation {retinal.trace.inputSimTimeMs}→{retinal.trace.outputSimTimeMs} ms · forward {retinal.trace.motor.forward.toFixed(4)} units/s · yaw {retinal.trace.motor.yaw.toFixed(4)} rad/s</p>
+        <details><summary>32 engineered luminance currents (maximum 0.02 each)</summary><p>{retinal.trace.retinalCurrents.map(v => v.toFixed(4)).join(', ')}</p></details>
+      </> : <p>No accepted controller frame. Use Run fixture after explicitly attaching the camera.</p>}
+    </section>}
+    </>
   );
 }

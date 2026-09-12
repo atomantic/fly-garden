@@ -786,3 +786,7 @@ td button[aria-pressed="true"] {
     scroll-behavior: auto !important;
   }
 }
+
+.operations-panel > summary, .creative-panel > summary { cursor: pointer; padding: 14px; font-weight: 600; }
+.environment-controls { padding: 14px; }
+.environment-controls p { margin: 8px 0; font-size: 0.9rem; }
