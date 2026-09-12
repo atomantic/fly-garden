@@ -3,14 +3,38 @@ import AtlasCanvas from './AtlasCanvas.jsx';
 
 const PROFILES = [['male-cns-v1', 'MaleCNS v1.0'], ['banc-v888', 'BANC v888']];
 const LABELS = { 'visual-system': 'Visual system', 'central-brain': 'Central brain', 'ventral-nerve-cord': 'Ventral nerve cord', interregional: 'Interregional', unknown: 'Unclassified' };
-async function json(url, signal) { const response = await fetch(url, { signal }); if (!response.ok) throw new Error('Anatomical data could not be read.'); return response.json(); }
+async function json(url, signal) {
+  const response = await fetch(url, { signal }), result = await response.json();
+  if (!response.ok) throw new Error(typeof result.reason === 'string' ? result.reason : typeof result.error === 'string' ? result.error : 'Anatomical data could not be read.');
+  return result;
+}
+const count = value => Number.isSafeInteger(value) && value >= 0;
+function validateEdges(result, data, limit) {
+  const n = data.nodes.length;
+  if (result.available !== true || result.dataset !== data.manifest.dataset || result.atlasManifestSha256 !== data.manifestSha256 || result.graphManifestSha256 !== data.manifest.graphManifestSha256
+    || !['retainedEdges', 'anatomicalContacts'].every(key => count(result[key])) || result.retainedNeurons !== n
+    || !Array.isArray(result.edges) || result.edges.length > limit) throw new Error('Connectivity does not match this exact anatomical dataset.');
+  const seen = new Set();
+  for (const edge of result.edges) {
+    if (!edge || !count(edge.edgeIndex) || edge.edgeIndex >= result.retainedEdges || seen.has(edge.edgeIndex)
+      || !count(edge.sourceIndex) || edge.sourceIndex >= n || !count(edge.targetIndex) || edge.targetIndex >= n
+      || edge.sourceId !== data.nodes[edge.sourceIndex][0] || edge.targetId !== data.nodes[edge.targetIndex][0]
+      || !count(edge.anatomicalContacts) || edge.anatomicalContacts < 1 || ![-1, 0, 1].includes(edge.engineeredSign)
+      || !Number.isFinite(edge.engineeredWeight) || typeof edge.positioned !== 'boolean') throw new Error('Invalid anatomical connection data.');
+    seen.add(edge.edgeIndex);
+  }
+}
+
 
 export default function NervousSystem() {
+  const [connectionsEnabled, setConnectionsEnabled] = useState(false), [edgeLimit, setEdgeLimit] = useState(1000), [edgeOpacity, setEdgeOpacity] = useState(0.15);
+  const [connectivity, setConnectivity] = useState(null), [connectivityError, setConnectivityError] = useState('');
+  const [adjacency, setAdjacency] = useState(null), [adjacencyError, setAdjacencyError] = useState(''), [edgeOffset, setEdgeOffset] = useState(0);
   const [profile, setProfile] = useState(PROFILES[0][0]), [data, setData] = useState(null), [error, setError] = useState('');
   const [visibleGroups, setVisibleGroups] = useState([]), [filter, setFilter] = useState(''), [selectedIndex, setSelectedIndex] = useState(null), [pointSize, setPointSize] = useState(2);
   useEffect(() => {
     const controller = new AbortController(); let current = true;
-    setData(null); setError(''); setFilter(''); setSelectedIndex(null); setVisibleGroups([]);
+    setData(null); setError(''); setConnectionsEnabled(false); setConnectivity(null); setConnectivityError(''); setAdjacency(null); setAdjacencyError(''); setEdgeOffset(0); setFilter(''); setSelectedIndex(null); setVisibleGroups([]);
     async function load() {
       const status = await json(`/api/atlas/${profile}`, controller.signal);
       if (!status.available) throw new Error(status.reason || 'Pinned anatomical data is unavailable. No synthetic anatomy is substituted.');
@@ -35,18 +59,51 @@ export default function NervousSystem() {
       for (let i = 0; i < n; i++) if (![0, 1].includes(valid[i]) || groups[i] >= manifest.groups.length
         || !Array.isArray(nodes[i]) || nodes[i].length !== 6 || nodes[i].some(value => typeof value !== 'string')
         || !positions.subarray(i * 3, i * 3 + 3).every(Number.isFinite)) throw new Error('Invalid anatomical cell data.');
-      if (current) { setData({ ...status, positions, valid, groups, nodes }); setVisibleGroups(manifest.groups.map((_, i) => i)); }
+      if (current) { setData({ ...status, profile, positions, valid, groups, nodes }); setVisibleGroups(manifest.groups.map((_, i) => i)); }
     }
     load().catch(e => { if (current) setError(e.message); });
     return () => { current = false; controller.abort(); };
   }, [profile]);
+  function selectCell(index) { setSelectedIndex(index); setEdgeOffset(0); setAdjacency(null); setAdjacencyError(''); }
+  useEffect(() => {
+    const controller = new AbortController(); let current = true;
+    setConnectivity(null); setConnectivityError('');
+    if (connectionsEnabled && data?.profile === profile) json(`/api/atlas/${profile}/connectivity?limit=${edgeLimit}`, controller.signal).then(result => {
+      if (result.available === false) throw new Error(result.reason || 'Verified connectivity is unavailable.');
+      validateEdges(result, data, edgeLimit);
+      if (!result.sampling || !['consideredEdges', 'omittedMissingPositions', 'displayedEdges'].every(key => count(result.sampling[key]))
+        || result.sampling.displayedEdges !== result.edges.length || result.sampling.consideredEdges > edgeLimit
+        || result.sampling.omittedMissingPositions + result.edges.length !== result.sampling.consideredEdges) throw new Error('Invalid anatomical sample counts.');
+      if (current) setConnectivity(result);
+    }).catch(e => { if (current) setConnectivityError(e.message); });
+    return () => { current = false; controller.abort(); };
+  }, [connectionsEnabled, data, profile, edgeLimit]);
+  useEffect(() => {
+    const controller = new AbortController(); let current = true;
+    setAdjacency(null); setAdjacencyError('');
+    if (connectionsEnabled && data?.profile === profile && selectedIndex !== null) {
+      const id = data.nodes[selectedIndex][0];
+      json(`/api/atlas/${profile}/adjacency?neuron=${encodeURIComponent(id)}&offset=${edgeOffset}&limit=100&direction=both`, controller.signal).then(result => {
+        if (result.available === false) throw new Error(result.reason || 'Adjacency is unavailable.');
+        validateEdges(result, data, 100);
+        if (result.selectedId !== id || result.selectedIndex !== selectedIndex || result.offset !== edgeOffset || result.limit !== 100
+          || result.direction !== 'both' || !['totalIncoming', 'totalOutgoing', 'incomingContacts', 'outgoingContacts', 'returnedEdges', 'totalMatching'].every(key => count(result[key]))
+          || result.returnedEdges !== result.edges.length || result.returnedEdges > result.totalMatching
+          || (result.nextOffset !== null && (!count(result.nextOffset) || result.nextOffset !== edgeOffset + result.returnedEdges || result.nextOffset >= result.totalMatching))
+          || result.edges.some(edge => !['incoming', 'outgoing', 'self'].includes(edge.direction) || (edge.sourceIndex !== selectedIndex && edge.targetIndex !== selectedIndex))) throw new Error('Adjacency source does not match the selected cell.');
+        if (current) setAdjacency(result);
+      }).catch(e => { if (current) setAdjacencyError(e.message); });
+    }
+    return () => { current = false; controller.abort(); };
+  }, [connectionsEnabled, data, profile, selectedIndex, edgeOffset]);
   const deferredFilter = useDeferredValue(filter);
   const matches = useMemo(() => {
     if (!data) return { count: 0, rows: [] };
     const query = deferredFilter.trim().toLowerCase(), rows = []; let count = 0;
+    const exactId = /^[1-9]\d*$/.test(query) || query.startsWith(`${data.manifest.dataset}/`);
     for (let i = 0; i < data.nodes.length; i++) {
       const row = data.nodes[i];
-      if (query && !row.some(value => value.toLowerCase().includes(query))) continue;
+      if (query && (exactId ? row[0] !== query && row[1] !== query : !row.some(value => value.toLowerCase().includes(query)))) continue;
       count++; if (rows.length < 50) rows.push(i);
     }
     return { count, rows };
@@ -60,12 +117,14 @@ export default function NervousSystem() {
       || kind === 'brain' && ['visual-system', 'central-brain'].includes(name)
       || kind === 'cord' && name === 'ventral-nerve-cord').map(({ index }) => index));
   }
+  const displayEdges = useMemo(() => connectivity?.edges.filter(edge => data?.valid[edge.sourceIndex] && data.valid[edge.targetIndex]
+    && visibleGroups.includes(data.groups[edge.sourceIndex]) && visibleGroups.includes(data.groups[edge.targetIndex])) ?? [], [connectivity, data, visibleGroups]);
   const selected = data && selectedIndex !== null ? data.nodes[selectedIndex] : null;
   return <section className="card content-panel" aria-label="Full nervous-system atlas">
     <span className="eyebrow">ANATOMY ONLY / PINNED DATASET</span>
     <h2>Brain and nerve cord</h2>
     <p>Measured anatomical positions, independently browsed from the live fixture. These are cell locations, not complete skeletons, synaptic morphologies or a full peripheral nervous system. No activity or learning is inferred from their appearance.</p>
-    <label>Atlas dataset <select value={profile} onChange={e => setProfile(e.target.value)}>{PROFILES.map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></label>
+    <label>Atlas dataset <select value={profile} onChange={e => { setData(null); setConnectionsEnabled(false); setConnectivity(null); selectCell(null); setProfile(e.target.value); }}>{PROFILES.map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></label>
     {error && <p role="alert">{error} Generate the pinned atlas with the documented local importer, then reload this view.</p>}
     {!data && !error && <p role="status">Loading and validating pinned anatomical data…</p>}
     {data && <>
@@ -78,15 +137,35 @@ export default function NervousSystem() {
         {data.manifest.groups.map((name, index) => <label key={name} style={{ display: 'inline-flex', gap: 5, marginRight: 15 }}><input type="checkbox" checked={visibleGroups.includes(index)} onChange={e => setVisibleGroups(current => e.target.checked ? [...current, index] : current.filter(value => value !== index))} />{LABELS[name] || name}</label>)}
       </fieldset>
       <label>Point size <input type="range" min="1" max="6" step="0.5" value={pointSize} onChange={e => setPointSize(Number(e.target.value))} /> {pointSize} pixels</label>
-      <AtlasCanvas positions={data.positions} valid={data.valid} groups={data.groups} visibleGroups={visibleGroups} selectedIndex={selectedIndex} pointSize={pointSize} onSelect={setSelectedIndex} />
-      <p>Connections are not loaded in this atlas increment. Activity overlay is unavailable: the running 32-neuron fixture does not match either anatomical dataset. Brain/cord presets use annotation groups; unclassified and interregional cells remain available in the whole-system view.</p>
+      <fieldset><legend>Optional anatomical connections</legend>
+        <label><input type="checkbox" checked={connectionsEnabled} onChange={e => setConnectionsEnabled(e.target.checked)} /> Load the complete verified connectivity index and display a bounded sample</label>
+        <p>This explicit read may require hundreds of megabytes of local memory. Lines connect measured cell positions; they are not neurite paths. The full graph remains unchanged.</p>
+        {connectionsEnabled && <><label>Sample ceiling <select value={edgeLimit} onChange={e => setEdgeLimit(Number(e.target.value))}>{[1000, 5000, 20000].map(n => <option key={n} value={n}>{n.toLocaleString()} connections</option>)}</select></label>
+          <label>Line opacity <input type="range" min="0.02" max="0.6" step="0.02" value={edgeOpacity} onChange={e => setEdgeOpacity(Number(e.target.value))} /></label>
+          {connectivityError ? <p role="alert">{connectivityError}</p> : !connectivity ? <p role="status">Loading verified connectivity…</p> : <p>{connectivity.retainedEdges.toLocaleString()} retained directed edges · {connectivity.anatomicalContacts.toLocaleString()} anatomical contacts. Evenly spaced CSR sample: {connectivity.sampling.consideredEdges.toLocaleString()} considered, {connectivity.sampling.omittedMissingPositions.toLocaleString()} omitted for missing positions, {displayEdges.length.toLocaleString()} displayed after group filters. Display capping never alters the neural graph.</p>}
+        </>}
+      </fieldset>
+      <AtlasCanvas edges={displayEdges} edgeOpacity={edgeOpacity} positions={data.positions} valid={data.valid} groups={data.groups} visibleGroups={visibleGroups} selectedIndex={selectedIndex} pointSize={pointSize} onSelect={selectCell} />
+      <p>Connection lines are anatomical illustrations rather than reconstructed morphology. Activity overlay is unavailable: the running 32-neuron fixture does not match either anatomical dataset. Brain/cord presets use annotation groups; unclassified and interregional cells remain available in the whole-system view.</p>
       <label>Search cells by exact ID, type or region <input value={filter} onChange={e => setFilter(e.target.value)} placeholder="Exact ID, type or annotation" /></label>
       <p>{matches.count.toLocaleString()} matches; showing the first {matches.rows.length}. Search includes cells without coordinates.</p>
       <div style={{ overflowX: 'auto' }}><table><thead><tr><th>Cell</th><th>Type</th><th>Region</th><th>Position</th></tr></thead><tbody>
-        {matches.rows.map(i => <tr key={data.nodes[i][0]}><td><button aria-pressed={i === selectedIndex} onClick={() => setSelectedIndex(i)}>{data.nodes[i][1]}</button></td><td>{data.nodes[i][2] || 'Unclassified'}</td><td>{data.nodes[i][4] || 'Unclassified'}</td><td>{data.nodes[i][5]}</td></tr>)}
+        {matches.rows.map(i => <tr key={data.nodes[i][0]}><td><button aria-pressed={i === selectedIndex} onClick={() => selectCell(i)}>{data.nodes[i][1]}</button></td><td>{data.nodes[i][2] || 'Unclassified'}</td><td>{data.nodes[i][4] || 'Unclassified'}</td><td>{data.nodes[i][5]}</td></tr>)}
       </tbody></table></div>
       <section aria-label="Anatomical cell inspector" aria-live="polite"><h3 style={{overflowWrap: "anywhere"}}>{selected ? selected[0] : 'Select an anatomical cell'}</h3>
         {selected && <><p>Type: {selected[2] || 'Unclassified'} · class: {selected[3] || 'Unclassified'} · region: {selected[4] || 'Unclassified'}.</p><p>{selected[5]} {data.valid[selectedIndex] ? `Coordinates (${data.manifest.coordinates.units}): ${Array.from(data.positions.subarray(selectedIndex * 3, selectedIndex * 3 + 3)).map(v => v.toFixed(3)).join(', ')}. ${visibleGroups.includes(data.groups[selectedIndex]) ? '' : 'Its display group is currently hidden.'}` : 'No point is drawn; coordinates are never invented.'}</p></>}
+        {selected && connectionsEnabled && <>
+          <h4>Incoming and outgoing anatomical connections</h4>
+          {adjacencyError ? <p role="alert">{adjacencyError}</p> : !adjacency ? <p role="status">Reading selected-cell adjacency…</p> : <>
+            <p>{adjacency.totalIncoming.toLocaleString()} incoming / {adjacency.totalOutgoing.toLocaleString()} outgoing edges; {adjacency.incomingContacts.toLocaleString()} incoming / {adjacency.outgoingContacts.toLocaleString()} outgoing contacts. Showing {adjacency.returnedEdges} of {adjacency.totalMatching.toLocaleString()} matching edges. Signs and weights below are engineered model mappings, not measured synaptic efficacy or learning.</p>
+            <div style={{overflowX: 'auto'}}><table><thead><tr><th>Direction</th><th>Neighbor</th><th>Contacts</th><th>Engineered sign</th><th>Engineered weight</th><th>Position</th></tr></thead><tbody>{adjacency.edges.map(edge => {
+              const neighbor = edge.sourceIndex === selectedIndex ? edge.targetIndex : edge.sourceIndex;
+              return <tr key={edge.edgeIndex}><td>{edge.direction}</td><td><button onClick={() => selectCell(neighbor)}>{data.nodes[neighbor][1]}</button></td><td>{edge.anatomicalContacts}</td><td>{edge.engineeredSign === -1 ? 'Inhibitory' : edge.engineeredSign === 1 ? 'Excitatory' : 'Unmapped'}</td><td>{edge.engineeredWeight.toPrecision(4)}</td><td>{data.nodes[neighbor][5]}</td></tr>;
+            })}</tbody></table></div>
+            <button disabled={edgeOffset === 0} onClick={() => { setAdjacency(null); setEdgeOffset(Math.max(0, edgeOffset - 100)); }}>Previous connections</button>
+            <button disabled={adjacency.nextOffset === null} onClick={() => { setAdjacency(null); setEdgeOffset(adjacency.nextOffset); }}>Next connections</button>
+          </>}
+        </>}
       </section>
       <details><summary>Dataset provenance and display limitations</summary><p>{data.manifest.source.attribution} · {data.manifest.source.license}</p>
         <p>Source SHA-256: <code style={{overflowWrap: "anywhere"}}>{data.manifest.source.sha256}</code></p><p>Atlas manifest SHA-256: <code style={{overflowWrap: "anywhere"}}>{data.manifestSha256}</code></p>

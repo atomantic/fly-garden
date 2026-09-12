@@ -13,6 +13,7 @@ export function createAtlasHttp({ directory, load = loadAtlas }) {
   const cache = new Map();
   return async (request, response, pathname) => {
     if (!pathname.startsWith('/api/atlas/')) return false;
+    if (/^\/api\/atlas\/[a-z0-9-]+\/(connectivity|adjacency)$/.test(pathname)) return false;
     const match = /^\/api\/atlas\/([a-z0-9-]+)(?:\/([^/]+))?$/.exec(pathname);
     if (!match || !Object.hasOwn(PROFILES, match[1]) || (match[2] && !ATLAS_FILES.includes(match[2]))) {
       sendJson(response, 404, { error: 'Atlas route not found.' }); return true;
