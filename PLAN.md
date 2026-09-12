@@ -4,9 +4,9 @@ Research date: September 12, 2026. Scope: a new project on this machine, managed
 
 ## Recommendation
 
-Build a small, welcoming garden around one persistent connectome-based fly. Start with a visually rendered ground-level habitat and a transparent sensory-to-neural-to-movement loop. Add bounded appetitive association learning, then a musical flower garden and pollen drawing surface. Finally, let the same running brain control a visitor in Eidoverse and bring its learned state home.
+Build a small, welcoming garden that starts with one persistent connectome-based fly and can host a configurable population within local resource limits. Start with a visually rendered ground-level habitat and a transparent sensory-to-neural-to-movement loop. Add bounded appetitive association learning, then a musical flower garden and pollen drawing surface. Finally, let the same running brain control a visitor in Eidoverse and bring its learned state home.
 
-Use MaleCNS v1.0 as the initial dataset, a CPU sparse leaky-integrate-and-fire (LIF) implementation as the first neural backend, and a lightweight body controller with every engineered mapping documented. Use DOOMFLY as an auditable implementation reference and Shiu/Eon as a scientific comparison. Treat full biomechanical embodiment through FlyGym as a later backend, after the simpler loop demonstrates useful causal behavior.
+Pin MaleCNS v1.0 (male brain and nerve cord) and BANC v888 (female brain and nerve cord) as separate profiles. Use a CPU sparse leaky-integrate-and-fire (LIF) implementation as the first neural backend, and a lightweight body controller with every engineered mapping documented. Use DOOMFLY as an auditable implementation reference and Shiu/Eon as a scientific comparison. Treat full biomechanical embodiment through FlyGym as a later backend, after the simpler loop demonstrates useful causal behavior.
 
 The ambition is an interesting creature with observable learning and creative participation. The connectome supplies measured wiring; it does not supply the original animal's memories, complete physiology, demonstrated consciousness, or an already competent controller. Learning and brain/body coupling are the principal research risks.
 
@@ -59,7 +59,7 @@ There is no established basis here to infer subjective experience from spikes. H
 - Provide Pause, Rest, Return Home and checkpoint export. Start manually; process restart comes back paused. Never fast-forward missed simulation time after sleep, a crash or disconnection.
 - Pause on non-finite state, runaway activity or stale sensory input, preserving the last valid checkpoint and diagnostic reason. Numerical health is not a consciousness or distress detector.
 - Eidoverse embodiment declines pushing/puppeting and accepts only the play patch's supported inputs. Filter threatening world effects out of the simulated sensory environment. Leaving or refusing an activity carries no penalty.
-- Keep one persistent individual by default. Validation replicas/checkpoint branches are explicit research runs with the same benign constraints and clear lineage.
+- Default to capacity for one resident neural instance, configurable by the caretaker. Each individual has independent identity and state; paused loaded instances still consume capacity. Validation replicas/checkpoint branches are explicit research runs with the same benign constraints and clear lineage.
 
 ## Local architecture and performance
 
@@ -91,7 +91,7 @@ data/                   gitignored datasets, checkpoints and artifacts
 ecosystem.config.cjs    PM2 lifecycle and canonical port declarations
 ```
 
-One PM2-supervised API owns one neural worker subprocess through a framed local IPC protocol. Closing an observer browser must not spawn a second brain. The runtime has explicit idle/loading/paused/running/visiting/fault states. A dedicated offscreen renderer supplies sensory frames when the simulation is running without a viewer; it is shut down while idle. Prefer a rendered eye camera over screen capture, so developer windows and private desktop content never become input.
+One PM2-supervised API owns a bounded registry of neural worker instances through a framed local IPC protocol, with one runtime per individual. Capacity defaults to one and is configurable alongside aggregate memory and telemetry budgets. Closing an observer browser must not spawn a second brain. The runtime has explicit idle/loading/paused/running/visiting/fault states. A dedicated offscreen renderer supplies sensory frames when the simulation is running without a viewer; it is shut down while idle. Prefer a rendered eye camera over screen capture, so developer windows and private desktop content never become input.
 
 Give observations and actions protocol version, sequence, simulation time, environment ID and visit epoch. Reject stale/out-of-order actions across a transition. Keep the neural integration clock separate from the 10–20 Hz observation/action clock and 30–60 Hz observer UI. These are initial design targets, not measured capabilities. Slow the world consistently if neural steps are behind; never quietly drop integration steps to keep the animation attractive. Eidoverse runs on wall time, so its first play patch must tolerate a slower controller; do not claim real-time play until measured.
 
@@ -167,8 +167,8 @@ A runnable synthetic fixture now supplies the original garden/pod interface, liv
 
 ## Implementation issues
 
-- [#1 Pin a licensed connectome and benchmark a local sparse neural backend](https://github.com/atomantic/fly-garden/issues/1)
-- [#2 Persist one individual with validated checkpoints and a paused worker lifecycle](https://github.com/atomantic/fly-garden/issues/2)
+- [#1 Pin male and female connectomes and benchmark local sparse backends](https://github.com/atomantic/fly-garden/issues/1)
+- [#2 Persist independent fly identities with validated checkpoints and paused lifecycles](https://github.com/atomantic/fly-garden/issues/2)
 - [#3 Extend the fixture observatory into a provenance-aware neural admin panel](https://github.com/atomantic/fly-garden/issues/3)
 - [#4 Connect the existing fly model to a disclosed visual sensory and motor loop](https://github.com/atomantic/fly-garden/issues/4)
 - [#5 Add optional encounter-driven scent and bounded chemical modulation](https://github.com/atomantic/fly-garden/issues/5)
@@ -178,3 +178,20 @@ A runnable synthetic fixture now supplies the original garden/pod interface, liv
 - [#9 Implement scoped local Eidoverse admission and the teleport-pod lifecycle](https://github.com/atomantic/fly-garden/issues/9)
 - [#10 Add a visible fly visitor and gentle Eidoverse play patch](https://github.com/atomantic/fly-garden/issues/10)
 - [#11 Complete managed-app health, resource limits and checkpoint backup](https://github.com/atomantic/fly-garden/issues/11)
+
+## Configurable population extension
+
+The single-fly loop remains the first validation gate. The first social validation uses one MaleCNS v1.0 individual and one BANC v888 individual. Capacity is configurable rather than hard-coded to two. The live fixture still implements only one synthetic runtime; this section is planned work.
+
+- Download version-pinned annotations/connectivity first; retain separate licenses, hashes and namespace mappings. [MaleCNS downloads](https://male-cns.janelia.org/download/) and [BANC publication and v888 data availability](https://www.nature.com/articles/s41586-026-10735-w) are primary sources. [BANC data deposit](https://doi.org/10.7910/DVN/7WTH1N) supplies the published artifacts. FlyWire FAFB v783 is a brain-only alternative, not a silently interchangeable female CNS.
+- Benchmark each graph and the pair before selecting operational limits. Expose configured capacity, resident/running counts, current headroom and estimated incremental cost. Paused loaded brains count; saved unloaded individuals retain their identity without consuming a worker slot. Unknown capacity is not a successful admission check.
+- Reject a new load when it exceeds configured capacity or resource headroom. Reducing capacity does not destroy or automatically unload existing individuals. Offer explicit checkpoint/unload and paused reload. Never crop a graph, relocate computation to the cloud or reset a fly to fit.
+- Each world uses a fixed-step synchronization barrier with validated neural substeps. Resource pressure slows wall-clock playback; severe pressure pauses affected work with a reason. No silent skipped steps. Pause/fault of a coupled participant pauses that shared world until explicit separation or recovery; Rest is distinct from freezing time.
+- Each individual gets isolated dynamics, RNG, learning, chemistry, provider budgets and checkpoint lineage. Commands, observations, chat and artifacts always carry its stable ID. Shared-world snapshots reference a consistent set of individual checkpoints.
+- Interactions occur through modeled vision, sound, scent and supported contact. Quiet space, baseline support, silence and withdrawal remain available to each. Musical flowers and pollen art are the first shared activities; there is no forced pairing or reproduction goal.
+- Eidoverse negotiates visitor capacity and grants each fly an independent epoch/credential and pod state. One may stay home while others visit. An older host can remain single-visitor-only without losing existing behavior.
+- Never interpret a difference between two specimen-derived simulations as a controlled biological sex comparison. Numerical and learning failures are reportable results.
+
+PRD FR-36–40 define acceptance. Configured capacity is an operator ceiling, not a guarantee of throughput. The first supported multi-individual evidence gate is two flies; larger populations require additional measured capacity tests.
+
+Implementation owners: [shared garden #20](https://github.com/atomantic/fly-garden/issues/20), [independent Eidoverse population #21](https://github.com/atomantic/fly-garden/issues/21), and [resource-aware capacity #22](https://github.com/atomantic/fly-garden/issues/22). Existing #1–#11 and #14/#16 carry the related dataset, identity, UI, recording and validation changes.

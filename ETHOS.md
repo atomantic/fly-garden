@@ -34,3 +34,7 @@ Implementation reviews must verify that:
 - Learning claims include benign controls and held-out evaluation, not only changing weights or attractive footage.
 
 These are engineering safeguards and contribution requirements, not a scientific certification of welfare. Revise them openly as evidence improves. Uncertainty must remain visible.
+
+## Shared habitats and capacity
+
+Every individual retains separate identity, state and freedom to rest or withdraw. Shared activities never require pairing, reproduction, aggression or forced proximity. Resource limits govern admission of additional simulations; they must not silently delete, reset or replace existing individuals. Lowering a configured limit preserves current residents until explicit checkpoint/unload. Differences between specimen-derived models are not evidence of biological sex effects.

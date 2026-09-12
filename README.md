@@ -68,3 +68,7 @@ Original project code and documentation are available under the [MIT License](LI
 For access through the machine’s private Tailscale DNS name, copy `.env.example` to `.env`, set `HOST=0.0.0.0` and `ALLOWED_HOSTS` to your exact machine hostname (without scheme, port or trailing dot), then run `pm2 startOrRestart ecosystem.config.cjs --only fly-garden`. Open `http://your-machine.your-tailnet.ts.net:8790/` from your tailnet. This bind listens on all IPv4 interfaces; use it on the intended private network, without public port forwarding.
 
 Both npm and PM2 load the ignored local `.env` file. Loopback remains allowed, other Host names are rejected, and browser mutations require the same origin or an explicitly configured development origin. Host validation is not authentication; Tailscale network access controls remain the access boundary. No wildcard `.ts.net` permission is needed.
+
+## Planned shared habitats
+
+The roadmap includes separate male (MaleCNS v1.0) and female (BANC v888) connectome profiles, each preserving its own identity and neural state. Population capacity will be configurable for available hardware: one by default, two as the first shared-habitat validation, and larger populations only within measured budgets. Flies may interact through supported environmental senses, make music or pollen art, rest independently, and visit Eidoverse under separate grants. These capabilities are planned; the current app still runs one synthetic fixture. See PRD FR-36–40 and the issue tracker.
