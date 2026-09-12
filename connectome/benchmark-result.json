@@ -1,0 +1,125 @@
+{
+  "schemaVersion": 1,
+  "runtime": "v26.0.0",
+  "platform": "darwin",
+  "architecture": "arm64",
+  "processMaxRssKiB": 330992,
+  "runs": [
+    {
+      "mode": "quiet",
+      "probeNeuronCount": 0,
+      "provenance": {
+        "dataset": "male-cns:v1.0",
+        "selection": "status-traced-v1",
+        "manifestSha256": "12759115c299175db5afa38b4a94a9a702f19a4e453c2bebb7dfaa85e5a3b915",
+        "neuronCount": 165122,
+        "edgeCount": 25563197,
+        "contactCount": 124025046
+      },
+      "model": {
+        "id": "malecns-traced-lif-v1",
+        "dtMs": 1,
+        "tauMs": 20,
+        "threshold": 1,
+        "reset": 0,
+        "refractorySteps": 2,
+        "delaySteps": 1,
+        "contactGain": 0.001,
+        "restingDrive": 0,
+        "precision": "float64",
+        "integration": "exact exponential leak, then delayed instantaneous synaptic jumps"
+      },
+      "loadWallMs": 192.233167,
+      "sampledPeakRssBytes": 329416704,
+      "workerArrayBufferBytes": 211391344,
+      "measurements": [
+        {
+          "simulatedMs": 1000,
+          "wallMs": 605.493375,
+          "simulatedWallRatio": 1.6515457332625645,
+          "tick": 1000,
+          "simTimeMs": 1000,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "simulatedMs": 10000,
+          "wallMs": 6243.547292,
+          "simulatedWallRatio": 1.6016536004801676,
+          "tick": 10000,
+          "simTimeMs": 10000,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        }
+      ]
+    },
+    {
+      "mode": "one-time-probe",
+      "probeNeuronCount": 1652,
+      "provenance": {
+        "dataset": "male-cns:v1.0",
+        "selection": "status-traced-v1",
+        "manifestSha256": "12759115c299175db5afa38b4a94a9a702f19a4e453c2bebb7dfaa85e5a3b915",
+        "neuronCount": 165122,
+        "edgeCount": 25563197,
+        "contactCount": 124025046
+      },
+      "model": {
+        "id": "malecns-traced-lif-v1",
+        "dtMs": 1,
+        "tauMs": 20,
+        "threshold": 1,
+        "reset": 0,
+        "refractorySteps": 2,
+        "delaySteps": 1,
+        "contactGain": 0.001,
+        "restingDrive": 0,
+        "precision": "float64",
+        "integration": "exact exponential leak, then delayed instantaneous synaptic jumps"
+      },
+      "loadWallMs": 182.64950000000044,
+      "sampledPeakRssBytes": 338919424,
+      "workerArrayBufferBytes": 211391344,
+      "measurements": [
+        {
+          "simulatedMs": 1000,
+          "wallMs": 756.7958330000001,
+          "simulatedWallRatio": 1.3213603410525119,
+          "tick": 1000,
+          "simTimeMs": 1000,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 248801,
+          "minimum": -3.611225000768655e-22,
+          "maximum": 1.991141465892655e-22
+        },
+        {
+          "simulatedMs": 10000,
+          "wallMs": 7109.305250000001,
+          "simulatedWallRatio": 1.406607206801255,
+          "tick": 10000,
+          "simTimeMs": 10000,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 248801,
+          "minimum": -1.3339442886838022e-217,
+          "maximum": 7.355043747824226e-218
+        }
+      ]
+    }
+  ],
+  "limitations": "CPU research benchmark, no renderer or plasticity. Probe is a single engineered initial spike pattern, not sensory input, reward, or learning. Quiet throughput is not an active-workload guarantee. No body/readout mapping. Sampled RSS includes both parent and worker; process max RSS is the OS high-water mark.",
+  "measuredAt": "2026-09-12",
+  "importVerification": {
+    "runs": 2,
+    "sameManifestAndArrayHashes": true,
+    "firstImportWallSeconds": 103.97423766704742,
+    "repeatImportWallSeconds": 41.76793904101942
+  }
+}

@@ -25,6 +25,8 @@ npm start
 
 Open http://127.0.0.1:8790. Choose **Run fixture** to advance the synthetic circuit. State is currently session-only; restarting discards it and starts paused.
 
+Separate, explicitly invoked [connectome research tools](docs/CONNECTOME_MODEL_CARD.md) acquire a pinned MaleCNS release and benchmark a local sparse LIF model. These tools do not select a backend in the observatory or control the illustrated fly. The app continues to expose its synthetic fixture; sensory/motor integration and biological validation remain future work.
+
 ## PortOS and PM2
 
 Register this repository in PortOS with process name `fly-garden`, API/UI port `8790`, build command `npm run build`, and fallback start command `npm start`. The checked-in `ecosystem.config.cjs` is the canonical PM2 configuration. PortOS can start/stop the named process using it.
