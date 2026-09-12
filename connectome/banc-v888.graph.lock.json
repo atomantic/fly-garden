@@ -1,0 +1,86 @@
+{
+  "manifest": {
+    "annotationStatusCounts": {
+      "excludedNonNeuron": 13107,
+      "excludedUnproofread": 19543,
+      "retainedProofread": 150802,
+      "retainedRoughlyProofread": 5056
+    },
+    "contactCount": 41845636,
+    "dataset": "banc:v888",
+    "edgeCount": 13366670,
+    "files": {
+      "contacts.u32": {
+        "bytes": 53466680,
+        "sha256": "6fa51cda243e3f383990bbfa0ad48d148d2b1ab234efcde296495f296fe7be93"
+      },
+      "ids.json": {
+        "bytes": 3273020,
+        "sha256": "511a322968c63610ebb65f740c876e1145bcd5f15c2a14482c5ea84bcb914e0a"
+      },
+      "offsets.u32": {
+        "bytes": 623436,
+        "sha256": "e305c31eb6a6a61655231f7c7de8592b7ed3ef37c367a59c9ce95c8b26875720"
+      },
+      "signs.i8": {
+        "bytes": 155858,
+        "sha256": "3b4e7ef3bc4cebb07a5957e6b91e75296cd237f2c991586120ed18885df20c54"
+      },
+      "targets.u32": {
+        "bytes": 53466680,
+        "sha256": "81f8bada8ac6cff31087f359e858823fe1349de0409d31901eba1e13e971bfec"
+      }
+    },
+    "graphCounts": {
+      "bothExcludedContacts": 7265,
+      "bothExcludedEdgeRows": 4473,
+      "postExcludedContacts": 264782,
+      "postExcludedEdgeRows": 151305,
+      "preExcludedContacts": 191938,
+      "preExcludedEdgeRows": 98417,
+      "retainedContacts": 41845636,
+      "retainedEdgeRows": 13366670,
+      "selfContacts": 0,
+      "selfEdgeRows": 0,
+      "silentTransmitterEdgeRows": 1710158,
+      "singleContactEdgeRows": 7195317,
+      "sourceContacts": 42309621,
+      "sourceEdgeRows": 13620865
+    },
+    "neuronCount": 155858,
+    "retainedSuperclassCounts": {
+      "ascending": 1849,
+      "ascending_visceral_circulatory": 5,
+      "central_brain_intrinsic": 30936,
+      "descending": 1316,
+      "motor": 805,
+      "null": 11937,
+      "optic_lobe_intrinsic": 72074,
+      "sensory": 15622,
+      "sensory_ascending": 516,
+      "sensory_descending": 13,
+      "ventral_nerve_cord_intrinsic": 12835,
+      "visceral_circulatory": 221,
+      "visual_centrifugal": 470,
+      "visual_projection": 7259
+    },
+    "schemaVersion": 1,
+    "selection": "proofread-or-roughly-neurons-v3-synapses-v1",
+    "sourceCounts": {
+      "annotations": 188508
+    },
+    "sourceLockSha256": "1d8f0ecb6005512d2015141354119ca4f54dfa09aa1eb1738339431661511d68",
+    "transmitterCounts": {
+      "acetylcholine": 85501,
+      "dopamine": 8092,
+      "gaba": 20915,
+      "glutamate": 24101,
+      "histamine": 7130,
+      "octopamine": 2078,
+      "serotonin": 1671,
+      "tyramine": 212,
+      "unknown": 6158
+    }
+  },
+  "manifestSha256": "6d24b3d65b879c1d456fc48e2ac84e81ecae61fdf17749de0c58b3b9c1b5ac99"
+}

@@ -60,7 +60,10 @@ export function validateIdentityDocument(saved) {
 }
 
 /** Atomic whole-store replacement keeps checkpoint data and lineage in one transaction. No imported paths or credentials. */
-export function openIdentityStore(directory, { write = atomicWrite, loadPrimary = true } = {}) {
+export function openIdentityStore(directory, { write = atomicWrite, loadPrimary = true, residentIds = [] } = {}) {
+  if (!Array.isArray(residentIds) || residentIds.some(id => !uuid(id)) || new Set(residentIds).size !== residentIds.length) {
+    throw new RuntimeError('Additional resident IDs must be a unique list of saved individual IDs.');
+  }
   directory = resolve(directory);
   mkdirSync(directory, { recursive: true, mode: 0o700 });
   const release = acquireIdentityStoreLock(directory);
@@ -83,18 +86,20 @@ export function openIdentityStore(directory, { write = atomicWrite, loadPrimary 
       saved = validateIdentityDocument(JSON.parse(readFileSync(path, 'utf8')));
     } catch (error) {
       if (error.code !== 'ENOENT') throw error;
+      if (residentIds.length) throw new RuntimeError('Cannot select saved residents when initializing a new store.');
       const individualId = randomUUID();
       runtime = createRuntime({ individualId });
       const checkpoint = entry(runtime.checkpoint());
       persist({ schemaVersion: 1, primaryId: individualId, individuals: [{ individualId,
         createdAt: checkpoint.createdAt, branchOf: null, head: checkpoint.checkpointId, checkpoints: [checkpoint] }] });
     }
-    const record = saved.individuals.find(value => value.individualId === saved.primaryId);
-    runtime = createRuntime({ individualId: saved.primaryId,
-      checkpoint: record.checkpoints.find(value => value.checkpointId === record.head).payload });
+    // The caller's admission layer selects residency; browser reads never do.
+    for (const id of new Set([...(loadPrimary ? [saved.primaryId] : []), ...residentIds])) {
+      const record = recordFor(id);
+      runtimes.set(id, createRuntime({ individualId: id, checkpoint: checkpointFor(record, record.head).payload }));
+    }
   } catch (error) { release(); throw error; }
 
-  if (loadPrimary) runtimes.set(saved.primaryId, runtime);
 
   function recordFor(id) {
     if (closed) throw new RuntimeError('Identity store is closed.', 503);
@@ -207,8 +212,9 @@ export function openIdentityStore(directory, { write = atomicWrite, loadPrimary 
     replicaSessions.delete(id);
     return snapshot(id);
   }
-  return { create, load, unload, primaryId: saved.primaryId, snapshot, save, restore, replica,
+  return { create, createIndividual: create, load, unload, primaryId: saved.primaryId, snapshot, save, restore, replica,
     list: () => saved.individuals.map(record => ({ individualId: record.individualId, branchOf: structuredClone(record.branchOf),
+      dataset: structuredClone(checkpointFor(record, record.head).payload.dataset),
       checkpointId: record.head, resident: runtimes.has(record.individualId) })),
     checkpoints: id => recordFor(id).checkpoints.map(({ payload, ...metadata }) => ({ ...metadata, simTimeMs: payload.dynamics.tick * 5 })),
     control: (id, action) => { const runtime = requireResident(id); runtime.control(action); return snapshot(id); },

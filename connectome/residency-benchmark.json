@@ -1,0 +1,605 @@
+{
+  "schemaVersion": 1,
+  "measuredDate": "2026-09-12",
+  "scenarios": [
+    {
+      "scenario": "banc",
+      "schemaVersion": 2,
+      "runtime": "v26.0.0",
+      "platform": "darwin",
+      "architecture": "arm64",
+      "processMaxRssKiB": 258704,
+      "runs": [
+        {
+          "mode": "quiet",
+          "status": "measured",
+          "residentCount": 1,
+          "residents": [
+            {
+              "probeNeuronCount": 0,
+              "provenance": {
+                "dataset": "banc:v888",
+                "selection": "proofread-or-roughly-neurons-v3-synapses-v1",
+                "manifestSha256": "6d24b3d65b879c1d456fc48e2ac84e81ecae61fdf17749de0c58b3b9c1b5ac99",
+                "neuronCount": 155858,
+                "edgeCount": 13366670,
+                "contactCount": 41845636
+              },
+              "model": {
+                "id": "banc-proofread-lif-v1",
+                "dtMs": 1,
+                "tauMs": 20,
+                "threshold": 1,
+                "reset": 0,
+                "refractorySteps": 2,
+                "delaySteps": 1,
+                "contactGain": 0.001,
+                "restingDrive": 0,
+                "precision": "float64",
+                "integration": "exact exponential leak, then delayed instantaneous synaptic jumps"
+              },
+              "loadWallMs": 153.02783300000002
+            }
+          ],
+          "combinedLoadWallMs": 171.364666,
+          "sampledPeakProcessRssBytes": 263274496,
+          "residentArrayBufferBytes": [
+            115370317
+          ],
+          "combinedArrayBufferBytes": 115370317,
+          "measurements": [
+            {
+              "simulatedMsPerResident": 1000,
+              "wallMs": 575.996375,
+              "simulatedWallRatio": 1.7361220372263628,
+              "residents": [
+                {
+                  "tick": 1000,
+                  "simTimeMs": 1000,
+                  "spikes": 0,
+                  "totalSpikes": 0,
+                  "traversedEdges": 0,
+                  "minimum": 0,
+                  "maximum": 0
+                }
+              ]
+            },
+            {
+              "simulatedMsPerResident": 10000,
+              "wallMs": 5742.601834,
+              "simulatedWallRatio": 1.74137094805936,
+              "residents": [
+                {
+                  "tick": 10000,
+                  "simTimeMs": 10000,
+                  "spikes": 0,
+                  "totalSpikes": 0,
+                  "traversedEdges": 0,
+                  "minimum": 0,
+                  "maximum": 0
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "mode": "one-time-probe",
+          "status": "measured",
+          "residentCount": 1,
+          "residents": [
+            {
+              "probeNeuronCount": 1559,
+              "provenance": {
+                "dataset": "banc:v888",
+                "selection": "proofread-or-roughly-neurons-v3-synapses-v1",
+                "manifestSha256": "6d24b3d65b879c1d456fc48e2ac84e81ecae61fdf17749de0c58b3b9c1b5ac99",
+                "neuronCount": 155858,
+                "edgeCount": 13366670,
+                "contactCount": 41845636
+              },
+              "model": {
+                "id": "banc-proofread-lif-v1",
+                "dtMs": 1,
+                "tauMs": 20,
+                "threshold": 1,
+                "reset": 0,
+                "refractorySteps": 2,
+                "delaySteps": 1,
+                "contactGain": 0.001,
+                "restingDrive": 0,
+                "precision": "float64",
+                "integration": "exact exponential leak, then delayed instantaneous synaptic jumps"
+              },
+              "loadWallMs": 145.63795899999968
+            }
+          ],
+          "combinedLoadWallMs": 159.25433299999986,
+          "sampledPeakProcessRssBytes": 264781824,
+          "residentArrayBufferBytes": [
+            112097297
+          ],
+          "combinedArrayBufferBytes": 112097297,
+          "measurements": [
+            {
+              "simulatedMsPerResident": 1000,
+              "wallMs": 700.1092920000001,
+              "simulatedWallRatio": 1.4283484184923514,
+              "residents": [
+                {
+                  "tick": 1000,
+                  "simTimeMs": 1000,
+                  "spikes": 0,
+                  "totalSpikes": 0,
+                  "traversedEdges": 129712,
+                  "minimum": -5.474625211721157e-23,
+                  "maximum": 7.664475296409624e-23
+                }
+              ]
+            },
+            {
+              "simulatedMsPerResident": 10000,
+              "wallMs": 6721.827292,
+              "simulatedWallRatio": 1.4876907075404222,
+              "residents": [
+                {
+                  "tick": 10000,
+                  "simTimeMs": 10000,
+                  "spikes": 0,
+                  "totalSpikes": 0,
+                  "traversedEdges": 129712,
+                  "minimum": -2.0222625375891353e-218,
+                  "maximum": 2.831167552624831e-218
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "limitations": "CPU research benchmark without renderer or plasticity. Each resident has independent state and a single engineered initial probe, not sensory input, reward, or learning. Pair ratio uses simulated time per resident, not the sum. RSS is process-wide and must not be summed across workers; array buffers are per-worker. Load includes hash/structure validation with warm cache. No admission guarantee for sustained activity, rendered embodiment, or larger populations."
+    },
+    {
+      "scenario": "male",
+      "schemaVersion": 2,
+      "runtime": "v26.0.0",
+      "platform": "darwin",
+      "architecture": "arm64",
+      "processMaxRssKiB": 348256,
+      "runs": [
+        {
+          "mode": "quiet",
+          "status": "measured",
+          "residentCount": 1,
+          "residents": [
+            {
+              "probeNeuronCount": 0,
+              "provenance": {
+                "dataset": "male-cns:v1.0",
+                "selection": "status-traced-v1",
+                "manifestSha256": "12759115c299175db5afa38b4a94a9a702f19a4e453c2bebb7dfaa85e5a3b915",
+                "neuronCount": 165122,
+                "edgeCount": 25563197,
+                "contactCount": 124025046
+              },
+              "model": {
+                "id": "malecns-traced-lif-v1",
+                "dtMs": 1,
+                "tauMs": 20,
+                "threshold": 1,
+                "reset": 0,
+                "refractorySteps": 2,
+                "delaySteps": 1,
+                "contactGain": 0.001,
+                "restingDrive": 0,
+                "precision": "float64",
+                "integration": "exact exponential leak, then delayed instantaneous synaptic jumps"
+              },
+              "loadWallMs": 223.55191699999997
+            }
+          ],
+          "combinedLoadWallMs": 244.1995,
+          "sampledPeakProcessRssBytes": 356548608,
+          "residentArrayBufferBytes": [
+            211394031
+          ],
+          "combinedArrayBufferBytes": 211394031,
+          "measurements": [
+            {
+              "simulatedMsPerResident": 1000,
+              "wallMs": 626.0040829999999,
+              "simulatedWallRatio": 1.597433670412658,
+              "residents": [
+                {
+                  "tick": 1000,
+                  "simTimeMs": 1000,
+                  "spikes": 0,
+                  "totalSpikes": 0,
+                  "traversedEdges": 0,
+                  "minimum": 0,
+                  "maximum": 0
+                }
+              ]
+            },
+            {
+              "simulatedMsPerResident": 10000,
+              "wallMs": 6228.701999999999,
+              "simulatedWallRatio": 1.605470931182773,
+              "residents": [
+                {
+                  "tick": 10000,
+                  "simTimeMs": 10000,
+                  "spikes": 0,
+                  "totalSpikes": 0,
+                  "traversedEdges": 0,
+                  "minimum": 0,
+                  "maximum": 0
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "mode": "one-time-probe",
+          "status": "measured",
+          "residentCount": 1,
+          "residents": [
+            {
+              "probeNeuronCount": 1652,
+              "provenance": {
+                "dataset": "male-cns:v1.0",
+                "selection": "status-traced-v1",
+                "manifestSha256": "12759115c299175db5afa38b4a94a9a702f19a4e453c2bebb7dfaa85e5a3b915",
+                "neuronCount": 165122,
+                "edgeCount": 25563197,
+                "contactCount": 124025046
+              },
+              "model": {
+                "id": "malecns-traced-lif-v1",
+                "dtMs": 1,
+                "tauMs": 20,
+                "threshold": 1,
+                "reset": 0,
+                "refractorySteps": 2,
+                "delaySteps": 1,
+                "contactGain": 0.001,
+                "restingDrive": 0,
+                "precision": "float64",
+                "integration": "exact exponential leak, then delayed instantaneous synaptic jumps"
+              },
+              "loadWallMs": 226.7309580000001
+            }
+          ],
+          "combinedLoadWallMs": 243.28270800000064,
+          "sampledPeakProcessRssBytes": 353042432,
+          "residentArrayBufferBytes": [
+            211394031
+          ],
+          "combinedArrayBufferBytes": 211394031,
+          "measurements": [
+            {
+              "simulatedMsPerResident": 1000,
+              "wallMs": 752.2948750000005,
+              "simulatedWallRatio": 1.3292660009148665,
+              "residents": [
+                {
+                  "tick": 1000,
+                  "simTimeMs": 1000,
+                  "spikes": 0,
+                  "totalSpikes": 0,
+                  "traversedEdges": 248801,
+                  "minimum": -3.611225000768655e-22,
+                  "maximum": 1.991141465892655e-22
+                }
+              ]
+            },
+            {
+              "simulatedMsPerResident": 10000,
+              "wallMs": 7424.271917000001,
+              "simulatedWallRatio": 1.3469334248254203,
+              "residents": [
+                {
+                  "tick": 10000,
+                  "simTimeMs": 10000,
+                  "spikes": 0,
+                  "totalSpikes": 0,
+                  "traversedEdges": 248801,
+                  "minimum": -1.3339442886838022e-217,
+                  "maximum": 7.355043747824226e-218
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "limitations": "CPU research benchmark without renderer or plasticity. Each resident has independent state and a single engineered initial probe, not sensory input, reward, or learning. Pair ratio uses simulated time per resident, not the sum. RSS is process-wide and must not be summed across workers; array buffers are per-worker. Load includes hash/structure validation with warm cache. No admission guarantee for sustained activity, rendered embodiment, or larger populations."
+    },
+    {
+      "scenario": "pair",
+      "schemaVersion": 2,
+      "runtime": "v26.0.0",
+      "platform": "darwin",
+      "architecture": "arm64",
+      "processMaxRssKiB": 543104,
+      "runs": [
+        {
+          "mode": "quiet",
+          "status": "measured",
+          "residentCount": 2,
+          "residents": [
+            {
+              "probeNeuronCount": 0,
+              "provenance": {
+                "dataset": "banc:v888",
+                "selection": "proofread-or-roughly-neurons-v3-synapses-v1",
+                "manifestSha256": "6d24b3d65b879c1d456fc48e2ac84e81ecae61fdf17749de0c58b3b9c1b5ac99",
+                "neuronCount": 155858,
+                "edgeCount": 13366670,
+                "contactCount": 41845636
+              },
+              "model": {
+                "id": "banc-proofread-lif-v1",
+                "dtMs": 1,
+                "tauMs": 20,
+                "threshold": 1,
+                "reset": 0,
+                "refractorySteps": 2,
+                "delaySteps": 1,
+                "contactGain": 0.001,
+                "restingDrive": 0,
+                "precision": "float64",
+                "integration": "exact exponential leak, then delayed instantaneous synaptic jumps"
+              },
+              "loadWallMs": 155.193125
+            },
+            {
+              "probeNeuronCount": 0,
+              "provenance": {
+                "dataset": "male-cns:v1.0",
+                "selection": "status-traced-v1",
+                "manifestSha256": "12759115c299175db5afa38b4a94a9a702f19a4e453c2bebb7dfaa85e5a3b915",
+                "neuronCount": 165122,
+                "edgeCount": 25563197,
+                "contactCount": 124025046
+              },
+              "model": {
+                "id": "malecns-traced-lif-v1",
+                "dtMs": 1,
+                "tauMs": 20,
+                "threshold": 1,
+                "reset": 0,
+                "refractorySteps": 2,
+                "delaySteps": 1,
+                "contactGain": 0.001,
+                "restingDrive": 0,
+                "precision": "float64",
+                "integration": "exact exponential leak, then delayed instantaneous synaptic jumps"
+              },
+              "loadWallMs": 228.045667
+            }
+          ],
+          "combinedLoadWallMs": 416.04391699999996,
+          "sampledPeakProcessRssBytes": 556023808,
+          "residentArrayBufferBytes": [
+            115370317,
+            211394031
+          ],
+          "combinedArrayBufferBytes": 326764348,
+          "measurements": [
+            {
+              "simulatedMsPerResident": 1000,
+              "wallMs": 653.4770000000001,
+              "simulatedWallRatio": 1.53027574038566,
+              "residents": [
+                {
+                  "tick": 1000,
+                  "simTimeMs": 1000,
+                  "spikes": 0,
+                  "totalSpikes": 0,
+                  "traversedEdges": 0,
+                  "minimum": 0,
+                  "maximum": 0
+                },
+                {
+                  "tick": 1000,
+                  "simTimeMs": 1000,
+                  "spikes": 0,
+                  "totalSpikes": 0,
+                  "traversedEdges": 0,
+                  "minimum": 0,
+                  "maximum": 0
+                }
+              ]
+            },
+            {
+              "simulatedMsPerResident": 10000,
+              "wallMs": 6584.4815,
+              "simulatedWallRatio": 1.5187224688838445,
+              "residents": [
+                {
+                  "tick": 10000,
+                  "simTimeMs": 10000,
+                  "spikes": 0,
+                  "totalSpikes": 0,
+                  "traversedEdges": 0,
+                  "minimum": 0,
+                  "maximum": 0
+                },
+                {
+                  "tick": 10000,
+                  "simTimeMs": 10000,
+                  "spikes": 0,
+                  "totalSpikes": 0,
+                  "traversedEdges": 0,
+                  "minimum": 0,
+                  "maximum": 0
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "mode": "one-time-probe",
+          "status": "measured",
+          "residentCount": 2,
+          "residents": [
+            {
+              "probeNeuronCount": 1559,
+              "provenance": {
+                "dataset": "banc:v888",
+                "selection": "proofread-or-roughly-neurons-v3-synapses-v1",
+                "manifestSha256": "6d24b3d65b879c1d456fc48e2ac84e81ecae61fdf17749de0c58b3b9c1b5ac99",
+                "neuronCount": 155858,
+                "edgeCount": 13366670,
+                "contactCount": 41845636
+              },
+              "model": {
+                "id": "banc-proofread-lif-v1",
+                "dtMs": 1,
+                "tauMs": 20,
+                "threshold": 1,
+                "reset": 0,
+                "refractorySteps": 2,
+                "delaySteps": 1,
+                "contactGain": 0.001,
+                "restingDrive": 0,
+                "precision": "float64",
+                "integration": "exact exponential leak, then delayed instantaneous synaptic jumps"
+              },
+              "loadWallMs": 173.3583749999998
+            },
+            {
+              "probeNeuronCount": 1652,
+              "provenance": {
+                "dataset": "male-cns:v1.0",
+                "selection": "status-traced-v1",
+                "manifestSha256": "12759115c299175db5afa38b4a94a9a702f19a4e453c2bebb7dfaa85e5a3b915",
+                "neuronCount": 165122,
+                "edgeCount": 25563197,
+                "contactCount": 124025046
+              },
+              "model": {
+                "id": "malecns-traced-lif-v1",
+                "dtMs": 1,
+                "tauMs": 20,
+                "threshold": 1,
+                "reset": 0,
+                "refractorySteps": 2,
+                "delaySteps": 1,
+                "contactGain": 0.001,
+                "restingDrive": 0,
+                "precision": "float64",
+                "integration": "exact exponential leak, then delayed instantaneous synaptic jumps"
+              },
+              "loadWallMs": 223.203125
+            }
+          ],
+          "combinedLoadWallMs": 428.7635419999997,
+          "sampledPeakProcessRssBytes": 554483712,
+          "residentArrayBufferBytes": [
+            112097297,
+            211394031
+          ],
+          "combinedArrayBufferBytes": 323491328,
+          "measurements": [
+            {
+              "simulatedMsPerResident": 1000,
+              "wallMs": 806.9751669999996,
+              "simulatedWallRatio": 1.2391955055043231,
+              "residents": [
+                {
+                  "tick": 1000,
+                  "simTimeMs": 1000,
+                  "spikes": 0,
+                  "totalSpikes": 0,
+                  "traversedEdges": 129712,
+                  "minimum": -5.474625211721157e-23,
+                  "maximum": 7.664475296409624e-23
+                },
+                {
+                  "tick": 1000,
+                  "simTimeMs": 1000,
+                  "spikes": 0,
+                  "totalSpikes": 0,
+                  "traversedEdges": 248801,
+                  "minimum": -3.611225000768655e-22,
+                  "maximum": 1.991141465892655e-22
+                }
+              ]
+            },
+            {
+              "simulatedMsPerResident": 10000,
+              "wallMs": 7809.215166999999,
+              "simulatedWallRatio": 1.2805384134192854,
+              "residents": [
+                {
+                  "tick": 10000,
+                  "simTimeMs": 10000,
+                  "spikes": 0,
+                  "totalSpikes": 0,
+                  "traversedEdges": 129712,
+                  "minimum": -2.0222625375891353e-218,
+                  "maximum": 2.831167552624831e-218
+                },
+                {
+                  "tick": 10000,
+                  "simTimeMs": 10000,
+                  "spikes": 0,
+                  "totalSpikes": 0,
+                  "traversedEdges": 248801,
+                  "minimum": -1.3339442886838022e-217,
+                  "maximum": 7.355043747824226e-218
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "limitations": "CPU research benchmark without renderer or plasticity. Each resident has independent state and a single engineered initial probe, not sensory input, reward, or learning. Pair ratio uses simulated time per resident, not the sum. RSS is process-wide and must not be summed across workers; array buffers are per-worker. Load includes hash/structure validation with warm cache. No admission guarantee for sustained activity, rendered embodiment, or larger populations."
+    }
+  ],
+  "numericalComparisons": [
+    {
+      "dataset": "banc:v888",
+      "manifestSha256": "6d24b3d65b879c1d456fc48e2ac84e81ecae61fdf17749de0c58b3b9c1b5ac99",
+      "backend": "CPU float64 sparse LIF",
+      "steps": 120,
+      "probeNeuronCount": 1559,
+      "comparedSpikes": 0,
+      "maxAbsoluteVoltageError": 2.7755575615628914e-16,
+      "tolerance": {
+        "voltageAbsolute": 1e-12,
+        "spikes": "exact",
+        "refractory": "exact"
+      },
+      "result": "pass",
+      "limitations": "Agreement with the declared engineered discrete model, not biological validation. Probe is initialized once; no reward or sensory controller."
+    },
+    {
+      "dataset": "male-cns:v1.0",
+      "manifestSha256": "12759115c299175db5afa38b4a94a9a702f19a4e453c2bebb7dfaa85e5a3b915",
+      "backend": "CPU float64 sparse LIF",
+      "steps": 120,
+      "probeNeuronCount": 1652,
+      "comparedSpikes": 0,
+      "maxAbsoluteVoltageError": 9.992007221626409e-16,
+      "tolerance": {
+        "voltageAbsolute": 1e-12,
+        "spikes": "exact",
+        "refractory": "exact"
+      },
+      "result": "pass",
+      "limitations": "Agreement with the declared engineered discrete model, not biological validation. Probe is initialized once; no reward or sensory controller."
+    }
+  ],
+  "admission": {
+    "operationalCapacityEstablished": false,
+    "reason": "Measured quiet and single-probe CPU-only residency. No sustained spiking, renderer, plasticity, operational overhead or larger population validation. Do not use these timings as an admission guarantee."
+  },
+  "validation": {
+    "maleExistingManifestReproduced": true,
+    "bancArrayHashesReproduced": true,
+    "profileSwapRejected": true,
+    "missingOrIncompatibleBancDoesNotStopMale": true,
+    "initialStatePaused": true,
+    "advancementIndependent": true
+  }
+}
