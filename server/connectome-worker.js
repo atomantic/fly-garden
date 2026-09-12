@@ -1,35 +1,28 @@
+import { randomUUID } from 'node:crypto';
 import { parentPort, workerData } from 'node:worker_threads';
 import { performance } from 'node:perf_hooks';
 import { loadConnectome } from './connectome-data.js';
 import { createSparseLif, LIF_MODEL } from './sparse-lif.js';
 import { connectomeProfile } from './connectome-profiles.js';
 
-let status = 'loading', reason = null, kernel = null, provenance = null, loadWallMs = 0, model = null;
-const snapshot = () => ({ protocolVersion: 1, source: 'connectome', status, available: !!kernel && status !== 'fault',
-  reason, dataset: workerData.dataset, model, provenance, loadWallMs,
-  neural: kernel?.summary() ?? null, memory: process.memoryUsage(),
-  limitations: 'Research LIF backend only. No sensory/motor mapping, plasticity, retained learning, or biological validation. No automatic advancement.' });
-
-const start = performance.now();
-try {
-  const profile = connectomeProfile(workerData.dataset);
-  const { graph, manifest, manifestSha256 } = await loadConnectome(workerData.directory, workerData.dataset);
-  kernel = createSparseLif(graph);
-  model = { ...LIF_MODEL, id: profile.modelId };
-  provenance = { dataset: manifest.dataset, selection: manifest.selection, manifestSha256,
-    neuronCount: manifest.neuronCount, edgeCount: manifest.edgeCount, contactCount: manifest.contactCount };
-  status = 'paused';
-} catch {
-  status = 'unavailable';
-  reason = 'Pinned connectome files are missing, incompatible, or unreadable. No fixture substituted.';
-}
-loadWallMs = performance.now() - start;
-parentPort.postMessage({ id: 0, value: snapshot() });
-
-parentPort.on('message', ({ id, action, value }) => {
-  try {
-    if (action === 'snapshot') return parentPort.postMessage({ id, value: snapshot() });
-    if (!kernel || status === 'fault') throw new Error('Connectome is unavailable or faulted');
+/** Explicit controller factory also permits small numerical fixtures in tests. */
+export function createConnectomeSession({ graph, dataset, individualId = randomUUID(), checkpoint = null, provenance = null, loadWallMs = 0 }) {
+  const kernel = createSparseLif(graph, { dataset, individualId, checkpoint });
+  let status = 'paused', reason = null, sessionEpoch = randomUUID();
+  const snapshot = () => ({ protocolVersion: 1, source: 'connectome', status, available: status !== 'fault',
+    reason, individualId, sessionEpoch, dataset, model: kernel.model, graphSha256: kernel.graphSha256, provenance, loadWallMs,
+    neural: kernel.summary(), memory: process.memoryUsage(),
+    limitations: 'Research LIF backend only. No sensory/motor mapping, plasticity, retained learning, or biological validation. No automatic advancement.' });
+  function dispatch({ action, value, sessionEpoch: suppliedEpoch }) {
+    if (action === 'snapshot') return snapshot();
+    if (suppliedEpoch !== sessionEpoch) throw new Error('Stale connectome session epoch');
+    if (action === 'restore') {
+      kernel.restore(value);
+      status = 'paused'; reason = null; sessionEpoch = randomUUID();
+      return snapshot();
+    }
+    if (action === 'checkpoint') return kernel.checkpoint();
+    if (status === 'fault') throw new Error('Connectome is unavailable or faulted');
     if (action === 'start') status = 'running';
     else if (action === 'pause') status = 'paused';
     else if (action === 'probe') {
@@ -38,16 +31,39 @@ parentPort.on('message', ({ id, action, value }) => {
     } else if (action === 'advance') {
       if (status !== 'running') throw new Error('Explicit start required before advancement');
       if (!Number.isInteger(value) || value < 1 || value > 1000) throw new Error('Advance must be 1–1000 steps');
-      try {
-        for (let i = 0; i < value; i++) kernel.step();
-      } catch {
-        status = 'fault';
-        reason = 'Numerical fault; last valid state retained and advancement stopped.';
+      try { for (let i = 0; i < value; i++) kernel.step(); }
+      catch {
+        status = 'fault'; reason = 'Numerical fault; last valid state retained and advancement stopped.';
         throw new Error(reason);
       }
     } else throw new Error('Unknown backend operation');
-    parentPort.postMessage({ id, value: snapshot() });
-  } catch (error) {
-    parentPort.postMessage({ id, error: error.message });
+    return snapshot();
   }
-});
+  return { snapshot, dispatch };
+}
+
+if (parentPort) {
+  let session, unavailable;
+  const start = performance.now();
+  try {
+    connectomeProfile(workerData.dataset);
+    const { graph, manifest, manifestSha256 } = await loadConnectome(workerData.directory, workerData.dataset);
+    session = createConnectomeSession({ graph, dataset: workerData.dataset, individualId: workerData.individualId,
+      checkpoint: workerData.checkpoint ?? null,
+      provenance: { dataset: manifest.dataset, selection: manifest.selection, manifestSha256,
+        neuronCount: manifest.neuronCount, edgeCount: manifest.edgeCount, contactCount: manifest.contactCount },
+      loadWallMs: performance.now() - start });
+  } catch {
+    unavailable = { protocolVersion: 1, source: 'connectome', status: 'unavailable', available: false,
+      reason: 'Pinned connectome files or checkpoint are missing, incompatible, or unreadable. No fixture substituted.',
+      dataset: workerData.dataset, individualId: workerData.individualId, model: null, provenance: null,
+      loadWallMs: performance.now() - start, neural: null, memory: process.memoryUsage() };
+  }
+  parentPort.postMessage({ id: 0, value: session ? session.snapshot() : unavailable });
+  parentPort.on('message', message => {
+    try {
+      if (!session && message.action !== 'snapshot') throw new Error('Connectome is unavailable or faulted');
+      parentPort.postMessage({ id: message.id, value: session ? session.dispatch(message) : unavailable });
+    } catch (error) { parentPort.postMessage({ id: message.id, error: error.message }); }
+  });
+}

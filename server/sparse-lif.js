@@ -1,3 +1,5 @@
+import { createHash, randomUUID } from 'node:crypto';
+import { connectomeProfile } from './connectome-profiles.js';
 /** Original research kernel. Anatomy is measured; every parameter below is engineered. */
 export const LIF_MODEL = Object.freeze({
   id: 'malecns-traced-lif-v1', dtMs: 1, tauMs: 20, threshold: 1, reset: 0,
@@ -26,9 +28,30 @@ export function validateGraph(graph) {
   }
 }
 
-export function createSparseLif(graph) {
+export function createSparseLif(graph, { individualId = randomUUID(), dataset = null, checkpoint = null } = {}) {
   validateGraph(graph);
   const { ids, offsets, targets, contacts, signs } = graph;
+  if (typeof individualId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/.test(individualId)) throw new Error('Invalid individual identity');
+  const namespace = ids[0].includes('/') ? ids[0].split('/')[0] : null;
+  if (dataset === null && namespace) dataset = namespace;
+  if (dataset !== null && (!connectomeProfile(dataset) || namespace !== dataset)) throw new Error('Graph dataset namespace mismatch');
+  if (namespace && dataset !== namespace) throw new Error('Explicit graph dataset required');
+  const model = Object.freeze({ ...LIF_MODEL, id: dataset ? connectomeProfile(dataset).modelId : LIF_MODEL.id });
+  const hash = createHash('sha256');
+  hash.update(JSON.stringify(ids));
+  // Canonical little-endian words, independent of host typed-array byte order.
+  const word = Buffer.alloc(4);
+  const chunk = Buffer.allocUnsafe(65536);
+  for (const array of [offsets, targets, contacts]) {
+    word.writeUInt32LE(array.length); hash.update(word);
+    for (let start = 0; start < array.length; start += chunk.length / 4) {
+      const count = Math.min(array.length - start, chunk.length / 4);
+      for (let i = 0; i < count; i++) chunk.writeUInt32LE(array[start + i], i * 4);
+      hash.update(chunk.subarray(0, count * 4));
+    }
+  }
+  hash.update(Buffer.from(signs.buffer, signs.byteOffset, signs.byteLength));
+  const graphSha256 = hash.digest('hex');
   const n = ids.length;
   let potential = new Float64Array(n);
   let firing = new Uint8Array(n);
@@ -75,6 +98,7 @@ export function createSparseLif(graph) {
         spikes++;
       }
     }
+    if (![tick + 1, totalSpikes + spikes, traversedEdges + visited].every(Number.isSafeInteger)) throw new Error('Neural clock/counter limit; last valid state retained');
     [potential, nextPotential] = [nextPotential, potential];
     [firing, nextFiring] = [nextFiring, firing];
     [refractory, nextRefractory] = [nextRefractory, refractory];
@@ -92,7 +116,42 @@ export function createSparseLif(graph) {
     }
     return { tick, simTimeMs: tick * LIF_MODEL.dtMs, spikes, totalSpikes, traversedEdges, minimum, maximum };
   }
+  function exportCheckpoint() {
+    return { schemaVersion: 1, kind: 'sparse-lif', individualId, dataset, graphSha256,
+      model: { ...model }, tick, totalSpikes, traversedEdges,
+      potential: Array.from(potential), firing: Array.from(firing), refractory: Array.from(refractory) };
+  }
+  function restore(saved) {
+    const expected = ['schemaVersion', 'kind', 'individualId', 'dataset', 'graphSha256', 'model', 'tick', 'totalSpikes', 'traversedEdges', 'potential', 'firing', 'refractory'];
+    if (!saved || typeof saved !== 'object' || Object.keys(saved).length !== expected.length || expected.some(k => !Object.hasOwn(saved, k)) ||
+      saved.schemaVersion !== 1 || saved.kind !== 'sparse-lif' || saved.individualId !== individualId || saved.dataset !== dataset || saved.graphSha256 !== graphSha256 ||
+      !saved.model || Object.keys(saved.model).length !== Object.keys(model).length || Object.entries(model).some(([k,v]) => saved.model[k] !== v)) throw new Error('Incompatible neural checkpoint identity/model/graph');
+    if (![saved.tick, saved.totalSpikes, saved.traversedEdges].every(v => Number.isSafeInteger(v) && v >= 0)) throw new Error('Invalid neural checkpoint clock/counters');
+    if (![saved.potential, saved.firing, saved.refractory].every(a => Array.isArray(a) && a.length === n)) throw new Error('Invalid neural checkpoint dimensions');
+    let pendingSpikes = 0;
+    for (let i = 0; i < n; i++) {
+      const v = saved.potential[i], f = saved.firing[i], r = saved.refractory[i];
+      if (!Number.isFinite(v) || v >= model.threshold || ![0, 1].includes(f) || !Number.isInteger(r) || r < 0 || r > model.refractorySteps ||
+        (r > 0 && v !== model.reset) || ((f === 1) !== (r === model.refractorySteps))) throw new Error('Invalid neural checkpoint state');
+      // Before the first step only seedProbe may change state: reset voltage and
+      // either unseeded (0,0) or pending probe (1,refractorySteps), with no counters.
+      if (saved.tick === 0 && (v !== model.reset || (r !== 0 && r !== model.refractorySteps))) throw new Error('Invalid initial neural checkpoint state');
+      pendingSpikes += f;
+    }
+    // One update emits at most n spikes and traverses each directed edge at most
+    // once. BigInt keeps these bounds exact even when tick*n exceeds safe Number.
+    if (BigInt(saved.totalSpikes) > BigInt(saved.tick) * BigInt(n)
+      || BigInt(saved.traversedEdges) > BigInt(saved.tick) * BigInt(targets.length)
+      || (saved.tick > 0 && pendingSpikes > saved.totalSpikes)) throw new Error('Inconsistent neural checkpoint history');
+    // Allocate and validate everything before replacing any authoritative state.
+    const p = Float64Array.from(saved.potential), f = Uint8Array.from(saved.firing), r = Uint8Array.from(saved.refractory);
+    potential = p; firing = f; refractory = r;
+    tick = saved.tick; totalSpikes = saved.totalSpikes; traversedEdges = saved.traversedEdges;
+    return summary();
+  }
+  if (checkpoint !== null) restore(checkpoint);
+  // Graph ownership is transferred to the kernel; callers must not mutate CSR arrays.
   // Copies for small numerical diagnostics only; full graph benchmark uses summary().
-  return { step, seedProbe, summary,
+  return { step, seedProbe, summary, checkpoint: exportCheckpoint, restore, individualId, graphSha256, model,
     inspect: () => ({ potential: potential.slice(), firing: firing.slice(), refractory: refractory.slice() }) };
 }
