@@ -1,0 +1,329 @@
+{
+  "executionPerformed": false,
+  "kind": "annotation-candidate-inventory",
+  "profiles": [
+    {
+      "dataset": "male-cns:v1.0",
+      "groups": {
+        "descending_class": {
+          "count": 1314,
+          "examples": [
+            {
+              "neuronId": "male-cns:v1.0/10001",
+              "sourceType": "DNp01"
+            },
+            {
+              "neuronId": "male-cns:v1.0/10010",
+              "sourceType": "DNp01"
+            },
+            {
+              "neuronId": "male-cns:v1.0/10026",
+              "sourceType": "DNp18"
+            }
+          ],
+          "sideCounts": {
+            "L": 656,
+            "M": 10,
+            "R": 648
+          }
+        },
+        "kenyon_class": {
+          "count": 4064,
+          "examples": [
+            {
+              "neuronId": "male-cns:v1.0/11862",
+              "sourceType": "KCab-s"
+            },
+            {
+              "neuronId": "male-cns:v1.0/13173",
+              "sourceType": "KCab-c"
+            },
+            {
+              "neuronId": "male-cns:v1.0/14292",
+              "sourceType": "KCg-m"
+            }
+          ],
+          "sideCounts": {
+            "L": 2019,
+            "R": 2045
+          }
+        },
+        "mbon_class": {
+          "count": 97,
+          "examples": [
+            {
+              "neuronId": "male-cns:v1.0/10013",
+              "sourceType": "MBON01"
+            },
+            {
+              "neuronId": "male-cns:v1.0/10079",
+              "sourceType": "MBON06"
+            },
+            {
+              "neuronId": "male-cns:v1.0/10267",
+              "sourceType": "MBON14"
+            }
+          ],
+          "sideCounts": {
+            "L": 48,
+            "R": 49
+          }
+        },
+        "motor_class": {
+          "count": 815,
+          "examples": [
+            {
+              "neuronId": "male-cns:v1.0/10047",
+              "sourceType": "MNx02"
+            },
+            {
+              "neuronId": "male-cns:v1.0/10156",
+              "sourceType": "CvN6"
+            },
+            {
+              "neuronId": "male-cns:v1.0/10331",
+              "sourceType": "MN9"
+            }
+          ],
+          "sideCounts": {
+            "L": 409,
+            "R": 406
+          }
+        },
+        "pam_type_prefix": {
+          "count": 316,
+          "examples": [
+            {
+              "neuronId": "male-cns:v1.0/28434",
+              "sourceType": "PAM10"
+            },
+            {
+              "neuronId": "male-cns:v1.0/29565",
+              "sourceType": "PAM10"
+            },
+            {
+              "neuronId": "male-cns:v1.0/32865",
+              "sourceType": "PAM10"
+            }
+          ],
+          "sideCounts": {
+            "L": 158,
+            "R": 158
+          }
+        },
+        "visual_receptor_class": {
+          "count": 4107,
+          "examples": [
+            {
+              "neuronId": "male-cns:v1.0/11139",
+              "sourceType": "R1-R6"
+            },
+            {
+              "neuronId": "male-cns:v1.0/15479",
+              "sourceType": "R8p"
+            },
+            {
+              "neuronId": "male-cns:v1.0/15625",
+              "sourceType": "R8y"
+            }
+          ],
+          "sideCounts": {
+            "L": 19,
+            "R": 10,
+            "unknown": 4078
+          }
+        }
+      },
+      "retainedRows": 165122,
+      "selection": "status == Traced",
+      "sourceBytes": 14483314,
+      "sourceColumns": [
+        "bodyId",
+        "status",
+        "class",
+        "superclass",
+        "type",
+        "somaSide",
+        "assignedOlHex1",
+        "assignedOlHex2"
+      ],
+      "sourceRows": 211577,
+      "sourceSha256": "2177e246113e4cfbf1e7772ec37c6da1955ff22e8063d0b1f833101f99a9a3b2",
+      "visualRetinotopy": {
+        "completeHexPairs": 0
+      },
+      "visualTypes": {
+        "R1-R6": 1394,
+        "R7R8_unclear": 85,
+        "R7_unclear": 404,
+        "R7d": 82,
+        "R7p": 332,
+        "R7y": 481,
+        "R8_unclear": 442,
+        "R8d": 76,
+        "R8p": 330,
+        "R8y": 481
+      }
+    },
+    {
+      "dataset": "banc:v888",
+      "groups": {
+        "descending_class": {
+          "count": 1318,
+          "examples": [
+            {
+              "neuronId": "banc:v888/720575941352057904",
+              "sourceType": "DNpe054"
+            },
+            {
+              "neuronId": "banc:v888/720575941352918576",
+              "sourceType": "DNg70"
+            },
+            {
+              "neuronId": "banc:v888/720575941353080624",
+              "sourceType": "DNge036"
+            }
+          ],
+          "sideCounts": {
+            "left": 653,
+            "right": 665
+          }
+        },
+        "kenyon_class": {
+          "count": 4447,
+          "examples": [
+            {
+              "neuronId": "banc:v888/720575941351040048",
+              "sourceType": "KCab"
+            },
+            {
+              "neuronId": "banc:v888/720575941351118640",
+              "sourceType": "KCa'b'"
+            },
+            {
+              "neuronId": "banc:v888/720575941351883568",
+              "sourceType": "KCapbp-ap1"
+            }
+          ],
+          "sideCounts": {
+            "left": 2241,
+            "right": 2206
+          }
+        },
+        "mbon_class": {
+          "count": 104,
+          "examples": [
+            {
+              "neuronId": "banc:v888/720575941353646640",
+              "sourceType": "MBON23"
+            },
+            {
+              "neuronId": "banc:v888/720575941393641732",
+              "sourceType": "MBON19"
+            },
+            {
+              "neuronId": "banc:v888/720575941394436502",
+              "sourceType": "MBON03"
+            }
+          ],
+          "sideCounts": {
+            "left": 55,
+            "right": 49
+          }
+        },
+        "motor_class": {
+          "count": 805,
+          "examples": [
+            {
+              "neuronId": "banc:v888/720575941350444592",
+              "sourceType": "trochanter_flexor_MesoALN_posterior_soma"
+            },
+            {
+              "neuronId": "banc:v888/720575941353301552",
+              "sourceType": "sternal_posterior_rotator_miller_32"
+            },
+            {
+              "neuronId": "banc:v888/720575941390352388",
+              "sourceType": "DProN9"
+            }
+          ],
+          "sideCounts": {
+            "left": 392,
+            "right": 413
+          }
+        },
+        "pam_type_prefix": {
+          "count": 279,
+          "examples": [
+            {
+              "neuronId": "banc:v888/720575941352199472",
+              "sourceType": "PAM06"
+            },
+            {
+              "neuronId": "banc:v888/720575941391990788",
+              "sourceType": "PAM11"
+            },
+            {
+              "neuronId": "banc:v888/720575941392524438",
+              "sourceType": "PAM05"
+            }
+          ],
+          "sideCounts": {
+            "left": 142,
+            "right": 137
+          }
+        },
+        "visual_receptor_class": {
+          "count": 1842,
+          "examples": [
+            {
+              "neuronId": "banc:v888/720575941351768112",
+              "sourceType": "R7"
+            },
+            {
+              "neuronId": "banc:v888/720575941353632048",
+              "sourceType": "R8"
+            },
+            {
+              "neuronId": "banc:v888/720575941353699376",
+              "sourceType": "R8"
+            }
+          ],
+          "sideCounts": {
+            "left": 245,
+            "right": 1597
+          }
+        }
+      },
+      "pamSubclassCount": 278,
+      "retainedRows": 155858,
+      "selection": "(proofread == TRUE or roughly_proofread == TRUE) and super_class not glia/trachea/not_a_neuron",
+      "sourceBytes": 57550610,
+      "sourceColumns": [
+        "banc_888_id",
+        "root_888",
+        "proofread",
+        "roughly_proofread",
+        "cell_class",
+        "cell_sub_class",
+        "super_class",
+        "cell_type",
+        "side"
+      ],
+      "sourceRows": 188508,
+      "sourceSha256": "819bbcff476e52702d6f8d8604ce1f12d1d7b11942281df2f49df2a73a6f15a5",
+      "visualRetinotopy": {
+        "completeHexPairs": null,
+        "reason": "No equivalent retinotopy columns in this source schema."
+      },
+      "visualTypes": {
+        "R7": 922,
+        "R7_unclear": 2,
+        "R7p": 1,
+        "R8": 912,
+        "unknown": 5
+      }
+    }
+  ],
+  "schemaVersion": 1
+}

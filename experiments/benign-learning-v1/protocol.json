@@ -1,0 +1,180 @@
+{
+  "schemaVersion": 1,
+  "protocolId": "benign-landmark-association-v1",
+  "status": "design-frozen-execution-gated",
+  "executionAllowed": false,
+  "executionPerformed": false,
+  "datasets": [
+    "male-cns:v1.0",
+    "banc:v888"
+  ],
+  "mappingManifestSha256": null,
+  "requiredGates": [
+    "exact-per-neuron-sensory-mapping",
+    "fixed-causal-motor-readout",
+    "compartment-specific-plasticity-validation",
+    "complete-plasticity-world-rng-checkpoint",
+    "isolated-experiment-catalog-and-capacity",
+    "reviewed-bound-manifest-and-explicit-start"
+  ],
+  "conditions": [
+    "paired-local-plasticity",
+    "frozen-neural-and-readout",
+    "balanced-shuffled-cue-plasticity",
+    "external-readout-only"
+  ],
+  "seedIndices": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7
+  ],
+  "seedDerivation": "SHA256(protocolArtifactSha256 + | + dataset + | + seedIndex + | + streamName); first 16 hex digits interpreted as unsigned 64-bit integer",
+  "streams": [
+    "training-layout",
+    "heldout-layout",
+    "retention-layout",
+    "shuffle",
+    "analysis"
+  ],
+  "neuralNoise": "off",
+  "timeStepMs": 1,
+  "phases": [
+    {
+      "name": "baseline",
+      "trials": 8,
+      "trialMs": 2000,
+      "gateAllowed": false
+    },
+    {
+      "name": "training",
+      "trials": 16,
+      "trialMs": 2000,
+      "gateAllowed": true
+    },
+    {
+      "name": "washout",
+      "trials": 1,
+      "trialMs": 10000,
+      "gateAllowed": false
+    },
+    {
+      "name": "immediate-heldout",
+      "trials": 8,
+      "trialMs": 2000,
+      "gateAllowed": false
+    },
+    {
+      "name": "quiet-retention-delay",
+      "trials": 1,
+      "trialMs": 10000,
+      "gateAllowed": false
+    },
+    {
+      "name": "retention-native",
+      "trials": 8,
+      "trialMs": 2000,
+      "gateAllowed": false
+    },
+    {
+      "name": "retention-restored",
+      "trials": 8,
+      "trialMs": 2000,
+      "gateAllowed": false
+    }
+  ],
+  "budget": {
+    "runs": 64,
+    "maxConcurrentWorkers": 1,
+    "maxStepsPerRunIncludingRestoreBranch": 116000,
+    "maxStepsTotal": 7424000,
+    "maxWallSecondsPerRun": 300,
+    "maxWallSecondsTotal": 21600,
+    "maxCheckpointsPerRun": 3,
+    "maxCheckpointBytesTotal": 1073741824,
+    "automaticRetries": 0
+  },
+  "appetitiveGate": {
+    "meaning": "engineered nonnegative plasticity scalar, not inferred dopamine or subjective reward",
+    "maxIntensity": 1,
+    "pulseMs": 50,
+    "maxEventsPerTrainingTrial": 1,
+    "maxEventsPerRun": 16,
+    "maxOnTimeMsPerRun": 800,
+    "minimumOffTimeMs": 1950,
+    "trigger": "first voluntary contact with assigned cue during training only"
+  },
+  "plasticityCandidate": {
+    "status": "unvalidated-assumption",
+    "edges": "validated compartment-matched existing KC-to-MBON edges only",
+    "baselineSignsAndTopology": "immutable",
+    "gainRange": [
+      0.8,
+      1.2
+    ],
+    "initialGain": 1,
+    "traceTauMs": 100,
+    "etaPerSecond": 0.01,
+    "rule": "gain = clip(gain - eta * gate * normalizedPreTrace * normalizedPostTrace * dtSeconds, 0.8, 1.2)",
+    "traceRange": [
+      0,
+      1
+    ],
+    "testPhaseUpdates": false,
+    "traceUpdate": "decay by exp(-dtMs/100), add binary spike, clamp [0,1]; traces initially zero; update gains after spikes, effective weights next tick"
+  },
+  "analysis": {
+    "trialScore": {
+      "firstTargetContact": 1,
+      "firstFoilContact": -1,
+      "noContact": 0,
+      "simultaneousContact": 0
+    },
+    "primary": "seed-paired difference in retention-native minus baseline mean score, paired-local-plasticity versus each frozen and shuffled control",
+    "minimumEffect": 0.15,
+    "bootstrapResamples": 10000,
+    "twoSidedConfidence": 0.9875,
+    "confirmatoryContrasts": 4,
+    "passRequires": "both contrast lower bounds > 0 and both point effects >= 0.15 within a dataset; all assigned runs complete; exact restore equivalence",
+    "poolDatasets": false,
+    "externalReadout": "separate descriptive outcome, never neural-learning evidence",
+    "missingRuns": "incomplete evaluation; never drop or impute as successful",
+    "noChoice": "valid observed outcome"
+  },
+  "retention": {
+    "checkpointBoundary": "after quiet-retention-delay, before either retention branch",
+    "restoredBoot": "paused",
+    "branchWorldAndRng": "identical to native branch",
+    "equivalence": "exact initial mutable-state digests and deterministic event, motor and choice sequences",
+    "plasticityEnabled": false
+  },
+  "prohibited": [
+    "punishment",
+    "deprivation",
+    "inactivity-penalty",
+    "aversive-stimuli",
+    "automatic-escalation",
+    "unbounded-reward",
+    "automatic-start",
+    "language-or-provider-calls",
+    "biological-sex-effect-inference"
+  ],
+  "externalReadoutCandidate": {
+    "channels": [
+      "left",
+      "right"
+    ],
+    "initialGain": 1,
+    "gainRange": [
+      0.8,
+      1.2
+    ],
+    "rule": "gain = clip(gain + 0.01 * gate * clamp(abs(baseChannel), 0, 1) * dtSeconds, 0.8, 1.2)",
+    "neuralWeights": "frozen",
+    "status": "engineered control; fixed base readout mapping unresolved"
+  }
+}
