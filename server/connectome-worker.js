@@ -16,6 +16,10 @@ export function createConnectomeSession({ graph, dataset, individualId = randomU
   function dispatch({ action, value, sessionEpoch: suppliedEpoch }) {
     if (action === 'snapshot') return snapshot();
     if (suppliedEpoch !== sessionEpoch) throw new Error('Stale connectome session epoch');
+    if (action === 'sample') {
+      if (status === 'fault') throw new Error('Connectome is unavailable or faulted');
+      return { ...kernel.sample(value), sessionEpoch, status, provenance };
+    }
     if (action === 'prepareRestore') {
       const candidate = kernel.prepareRestore(value), token = randomUUID();
       pendingRestore = { token, candidate };
