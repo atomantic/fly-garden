@@ -10,7 +10,9 @@ The project is intended to run locally and be managed by [PortOS](https://github
 
 *AI-generated design concept, not a screenshot or anatomical evidence. [Design notes and concepts](docs/DESIGN.md).*
 
-**Status: runnable foundation, September 12, 2026.** The local observatory includes an original Three.js fly and garden, a visible teleport pod, live inspection of a synthetic 32-neuron / 64-edge circuit, bounded fixture inputs, and an event journal. It starts paused. The body is illustrative by default; an explicitly attached controller camera can drive a disclosed synthetic visual-to-motor loop. Real connectome execution in the observatory, persistent learning and Eidoverse travel remain tracked milestones. Optional local language interpretation requires separate verified provider configuration and explicit per-individual arming; it is unavailable by default.
+**Status: local research foundation, September 12, 2026.** The opening **Nervous system** view displays pinned MaleCNS and BANC anatomy. **Connectome lab** manages complete local sparse-LIF graphs: 165,122 MaleCNS neurons / 25,563,197 directed edges and 155,858 BANC neurons / 13,366,670 edges. Create, load, start, advance, save, restore and unload are separate explicit actions. Boot leaves research individuals unloaded; loading and recovery stay paused. No neural timer or sensory input is attached to this lab.
+
+The separate **Fixture garden** and **Fixture circuit** retain the original procedural fly and synthetic 32-neuron test circuit for engineered body/vision, encounter, creative and visitor integration tests. Full-connectome body control and retained learning remain planned. Optional local language interpretation and managed fixture visitors are disabled without separate explicit configuration.
 
 ## Run locally
 
@@ -23,7 +25,11 @@ npm run build
 npm start
 ```
 
-Open http://127.0.0.1:8790. Choose **Run fixture** to advance the synthetic circuit. Use **Save checkpoint** to persist the current fixture state. Accepted optional encounters also save their exposure reservation before delivery. Restart restores the latest save with the same identity, a fresh command session and a paused clock; unsaved progress is discarded. **Restore saved state (paused)** explicitly returns to that checkpoint. Optional stimulation is canceled on restore while spent exposure reservations remain. See [checkpoint storage and lifecycle](docs/CHECKPOINTS.md).
+Open http://127.0.0.1:8790. The atlas reads locally prepared anatomical files. Use [complete dataset preparation](docs/DATASET_PREPARATION.md) for the pinned sources, graphs and atlas, and the separate [paused memory measurement](docs/CONNECTOME_MEMORY.md) before loading. Nothing is downloaded or simulated on startup.
+
+In **Connectome lab**, create a saved, unloaded individual, then choose **Load complete graph (paused)**. Loading requires matching local memory evidence and enough configured capacity. **Start** only permits an explicit bounded **Advance**; it does not begin background execution. Checkpoint history preserves exact source lineage. See [the full-graph service and controls](docs/CONNECTOME_HTTP.md).
+
+In **Fixture garden**, explicitly load the test fixture and choose **Run fixture**. **Save checkpoint** persists its state; optional encounters also save their exposure reservation before delivery. Restart preserves identity and the latest save with a fresh paused session, discarding unsaved progress. **Restore saved state (paused)** cancels optional input and retains spent exposure reservations. See [fixture checkpoint storage](docs/CHECKPOINTS.md).
 
 The [visual fixture controller](docs/ENVIRONMENT_ADAPTER.md) owns a dedicated camera lease and pauses when frames go stale. [Movement capture](docs/CREATIVE_ARTIFACTS.md) exports attributed JSON/MIDI/SVG/PNG; it is not evidence of learned creativity. Body pose is session-only, and no real connectome controls this view.
 
@@ -31,13 +37,13 @@ Optional [garden encounter controls](docs/ENCOUNTER_DYNAMICS.md) enable declared
 
 The [optional telemetry interpreter](docs/LANGUAGE_SERVICE.md) keeps per-individual evidence windows, explicit call/token/cooldown budgets and aggregate session spend limits. Detector requests require separate consent; generated text cannot change neural state, stimuli or tools. The [local Ollama adapter](docs/OLLAMA_LANGUAGE.md) is disabled by default and has only been tested with synthetic provider responses, not a live model.
 
-Separate, explicitly invoked [connectome research tools](docs/CONNECTOME_MODEL_CARD.md) acquire a pinned MaleCNS release and benchmark a local sparse LIF model. These tools do not select a backend in the observatory or control the illustrated fly. The app continues to expose its synthetic fixture; sensory/motor integration and biological validation remain future work.
+The [connectome model card](docs/CONNECTOME_MODEL_CARD.md) separates measured wiring from engineered LIF dynamics and transmitter-sign mapping. The complete graph can be loaded and stepped in the lab; it does not control the illustrated garden fly. Silence under the zero-drive baseline is an expected result, not a learning or biological validation claim.
 
 For an explicit one-command preparation workflow per full retained profile, see [local dataset preparation](docs/DATASET_PREPARATION.md). It verifies and reuses local sources, graphs and atlases without starting a simulation.
 
 ## Anatomical atlas
 
-The **Nervous system** tab independently displays the pinned MaleCNS v1.0 soma positions and BANC v888 root/representative positions, with whole-system, brain and nerve-cord filters and exact-ID search. Missing positions remain in the table. An optional [connection view](docs/ATLAS_CONNECTIVITY.md) shows a bounded sample and paginated incoming/outgoing neighbors with measured contact counts and separately labeled engineered signs/weights. This is anatomical data, separate from the synthetic live circuit; no matching activity overlay or full morphology is claimed. Data is generated locally and remains unavailable in a fresh clone until the [atlas importer](docs/ANATOMICAL_ATLAS.md) is run. No datasets are downloaded on app startup.
+The **Nervous system** tab independently displays the pinned MaleCNS v1.0 soma positions and BANC v888 root/representative positions, with whole-system, brain and nerve-cord filters and exact-ID search. Missing positions remain in the table. An optional [connection view](docs/ATLAS_CONNECTIVITY.md) shows a bounded sample and paginated incoming/outgoing neighbors with measured contact counts and separately labeled engineered signs/weights. This is anatomical data, separate from the synthetic live circuit; no matching activity overlay or full morphology is claimed. Data is prepared locally and remains unavailable in a fresh clone until [dataset preparation](docs/DATASET_PREPARATION.md) is run. No datasets are downloaded on app startup.
 
 ## PortOS and PM2
 
@@ -51,7 +57,7 @@ pm2 stop fly-garden
 
 One forked process serves the built UI and API on loopback by default. Health is available at `/api/health` and distinguishes service availability from simulation and integration availability. PM2 waits for readiness; no simulation or provider work begins on startup. Ports are defined in `ecosystem.config.cjs`. For frontend development, run `npm run dev:server` and `npm run dev` in separate terminals; Vite uses port `8791`. Rebuild before restarting production after UI changes.
 
-PM2 daemon startup/resurrection is managed by your installation. Synthetic individuals have durable explicit checkpoints, configurable resource admission, explicit paused load/unload, bounded recording/replay, and an offline backup CLI. Full connectome checkpoints and automated backup remain future work. See [capacity](docs/POPULATION_CAPACITY.md), [recording](docs/RECORDINGS.md), and [backup recovery](docs/BACKUP_RECOVERY.md). Do not treat fixture persistence as validated biological continuity.
+PM2 daemon startup/resurrection is managed by your installation. Synthetic individuals have durable explicit checkpoints, configurable resource admission, explicit paused load/unload, bounded recording/replay, and an offline backup CLI. Full connectomes have a separate [durable catalog and offline backup API](docs/CONNECTOME_STORE.md); unified automated backup remains planned. See [capacity](docs/POPULATION_CAPACITY.md), [recording](docs/RECORDINGS.md), and [backup recovery](docs/BACKUP_RECOVERY.md). Do not treat fixture persistence as validated biological continuity.
 
 ## Respect is a design requirement
 

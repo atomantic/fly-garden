@@ -1,0 +1,18 @@
+.connectome-lab { min-width: 0; }
+.connectome-lab .lab-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,270px),1fr)); gap:16px; margin:18px 0; }
+.connectome-lab fieldset { min-width:0; border:1px solid #3d5044; border-radius:8px; padding:16px; }
+.connectome-lab label { display:flex; flex-direction:column; gap:7px; margin:10px 0; }
+.connectome-lab select,.connectome-lab input { width:100%; min-width:0; max-width:100%; padding:10px; color:inherit; background:#14251f; border:1px solid #526b59; border-radius:6px; font:inherit; }
+.connectome-lab button { min-height:42px; }
+.connectome-lab .lab-actions { display:flex; flex-wrap:wrap; gap:8px; margin:16px 0; }
+.connectome-lab .lab-advance { display:flex; align-items:end; flex-wrap:wrap; gap:12px; }
+.connectome-lab .lab-advance label { flex:0 1 240px; margin:0; }
+.connectome-lab .lab-metrics { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,190px),1fr)); gap:12px; }
+.connectome-lab .lab-metrics div { padding:12px; background:#12221d; border-radius:7px; }
+.connectome-lab dt { color:#b1c4b6; font-size:0.85rem; }
+.connectome-lab dd { margin:6px 0 12px; overflow-wrap:anywhere; }
+.connectome-lab .lab-id,.connectome-lab .lab-provenance { overflow-wrap:anywhere; }
+.connectome-lab .lab-history { overflow-x:auto; max-width:100%; margin-top:14px; }
+.connectome-lab .lab-history td { max-width:220px; overflow-wrap:anywhere; min-width:130px; vertical-align:top; }
+.connectome-lab details { margin-top:18px; }
+.connectome-lab [role=alert] { padding:12px; border-left:3px solid #d6b975; background:#302b1e; overflow-wrap:anywhere; }

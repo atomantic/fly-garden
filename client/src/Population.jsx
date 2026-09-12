@@ -38,7 +38,7 @@ export default function Population() {
       <p>Service memory: {population.aggregateMemoryBytes === null ? 'unknown' : `${(population.aggregateMemoryBytes / 1024 ** 2).toFixed(1)} MiB`}. Host free memory: {population.availableMemoryBytes === null ? 'unknown' : `${(population.availableMemoryBytes / 1024 ** 2).toFixed(1)} MiB`}.</p>
       {population.excessResidents > 0 && <p role="status">{population.excessResidents} residents above the new ceiling. All are preserved; unload explicitly to free capacity.</p>}
       <p>{population.disclosure}</p>
-      {population.admission && <p>Next load: {population.admission.reason}</p>}
+      {population.admission && <p>Next synthetic fixture load: {population.admission.reason}</p>}
     </>}
     {limits && <form onSubmit={save}>
       {Object.entries({ maxResidentFlies: 'Resident ceiling', maxAggregateMemoryBytes: 'Aggregate service budget (bytes)', minFreeMemoryBytes: 'Reserved host headroom (bytes)' }).map(([key, label]) => <label key={key} style={{ display: 'block', marginBottom: 12 }}>{label} <input type="number" min="1" step="1" required disabled={busy} value={limits[key]} onChange={event => setLimits({ ...limits, [key]: Number(event.target.value) })} /></label>)}

@@ -14,6 +14,9 @@ import { createManagedVisitorBridge } from './managed-visitor-bridge.js';
 import { createSharedHttp } from './shared-http.js';
 import { createAtlasHttp } from './atlas-http.js';
 import { createAtlasConnectivityHttp } from './atlas-connectivity-http.js';
+import { createConnectomeService } from './connectome-service.js';
+import { createConnectomeHttp } from './connectome-http.js';
+import { prepareConnectomeCatalog } from './connectome-descriptors.js';
 import { freemem } from 'node:os';
 
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon' };
@@ -40,7 +43,7 @@ async function readBody(request) {
 }
 
 /** Polling observers share the selected resident runtimes. Wall-clock gaps never catch up simulation time. */
-export function createServer({ runtime = createRuntime(), identities = null, distDir = fileURLToPath(new URL('../dist/', import.meta.url)), autoTick = true, capacity = createCapacityPolicy(), resourceUsage = () => ({ aggregateMemoryBytes: process.memoryUsage().rss, availableMemoryBytes: freemem() }), incrementalMemoryBytes = null, recordings = null, creativeSessions = createCreativeSessions(), onEnvironmentFrame = null, languageProviders = [], languageService = null, visitorTransport = undefined, atlasDirectory = fileURLToPath(new URL('../data/atlas/', import.meta.url)), atlasGraphDirectory = fileURLToPath(new URL('../data/', import.meta.url)), allowedOrigins = [], allowedHosts = [] } = {}) {
+export function createServer({ runtime = createRuntime(), identities = null, distDir = fileURLToPath(new URL('../dist/', import.meta.url)), autoTick = true, capacity = createCapacityPolicy(), resourceUsage = () => ({ aggregateMemoryBytes: process.memoryUsage().rss, availableMemoryBytes: freemem() }), incrementalMemoryBytes = null, recordings = null, creativeSessions = createCreativeSessions(), onEnvironmentFrame = null, languageProviders = [], languageService = null, visitorTransport = undefined, connectomeCatalog = null, connectomeProfiles = {}, connectomeReason = 'No verified local research catalog is configured.', connectomeBackend = undefined, atlasDirectory = fileURLToPath(new URL('../data/atlas/', import.meta.url)), atlasGraphDirectory = fileURLToPath(new URL('../data/', import.meta.url)), allowedOrigins = [], allowedHosts = [] } = {}) {
   const root = resolve(distDir);
   const atlasHttp = createAtlasHttp({ directory: atlasDirectory });
   const atlasConnectivityHttp = createAtlasConnectivityHttp({ atlasDirectory, graphDirectory: atlasGraphDirectory });
@@ -51,9 +54,13 @@ export function createServer({ runtime = createRuntime(), identities = null, dis
   let environmentCaptureFailure = null;
   const resources = () => {
     const all = identities?.list() ?? [];
-    return { ...resourceUsage(), savedCount: all.length,
-      residents: all.filter(value => value.resident).map(value => ({ ...value, status: identities.snapshot(value.individualId).status })) };
+    const research = connectomes?.list() ?? [];
+    return { ...resourceUsage(), savedCount: all.length + research.length,
+      residents: [...all.filter(value => value.resident).map(value => ({ ...value, status: identities.snapshot(value.individualId).status })),
+        ...research.filter(value => value.resident).map(value => ({ individualId: value.individualId, status: value.status }))] };
   };
+  const connectomes = createConnectomeService({ store: connectomeCatalog, profiles: connectomeProfiles, reason: connectomeCatalog ? null : connectomeReason,
+    capacity, getResources: resources, openBackend: connectomeBackend });
   const population = () => ({ ...capacity.snapshot(resources()), incrementalMemoryBytes,
     admission: capacity.preflight({ ...resources(), incrementalMemoryBytes }) });
   const checkLoad = id => {
@@ -114,12 +121,14 @@ export function createServer({ runtime = createRuntime(), identities = null, dis
       }
     },
   });
+  const connectomeHttp = createConnectomeHttp({ service: connectomes, readBody, json, checkOrigin });
   const server = createHttpServer(async (request, response) => {
     try {
       const base = new URL(`http://${request.headers.host ?? 'localhost'}`);
       if (!isLoopback(base.hostname) && !allowedHosts.includes(base.hostname)) throw new RuntimeError('Host is not allowed.', 403);
       const url = new URL(request.url, base);
       if (url.pathname === '/api' || url.pathname.startsWith('/api/')) {
+        if (await connectomeHttp(request, response, url, base)) return;
         if (url.pathname.startsWith('/api/shared/')) {
           if (request.method !== 'GET') checkOrigin(request, base);
           if (await sharedHttp(request, response, url)) return;
@@ -128,9 +137,15 @@ export function createServer({ runtime = createRuntime(), identities = null, dis
         if (await atlasConnectivityHttp(request, response, url)) return;
         if (request.method === 'GET' && url.pathname === '/api/health') {
           const state = snapshot();
+          const research = connectomes.view();
           return json(response, 200, { service: 'online', mode: state.source,
             simulation: state.status, persistence: identities ? 'durable-fixture' : 'session-only',
-            connectome: state.capabilities.connectome, eidoverse: state.capabilities.eidoverse,
+            connectome: { available: research.available, mode: 'sparse-lif-research',
+              reason: research.reason ?? (research.available ? 'Complete local graph research is available; explicit paused load and bounded steps only. No garden body coupling.' : 'No verified local connectome catalog is available.'),
+              residentCount: research.individuals.filter(value => value.resident).length,
+              runningCount: research.individuals.filter(value => value.status === 'running').length,
+              profiles: research.profiles.map(({ dataset, available, neuronCount, edgeCount, measurement }) => ({ dataset, available, neuronCount, edgeCount, measuredMemoryAvailable: measurement.available })),
+              embodiment: false }, eidoverse: state.capabilities.eidoverse,
             llm: state.capabilities.llm, population: identities ? population() : null,
             environmentCaptureFailure,
             recording: recordings ? { ...recordings.status(), failure: recordingFailure } : { available: false } });
@@ -312,7 +327,10 @@ export function createServer({ runtime = createRuntime(), identities = null, dis
             else if (operation === 'encounters') state = identities.encounter(id, body.compoundId);
             else if (operation === 'checkpoints') state = identities.save(id);
             else if (operation === 'restore') state = identities.restore(id, body.checkpointId);
-            else if (operation === 'load') { checkLoad(id); state = identities.load(id); }
+            else if (operation === 'load') state = await connectomes.withAdmission(() => {
+              if (body.sessionId !== stateFor(id).sessionId || body.sequence !== sequenceFor(id)) throw new RuntimeError('Queued fixture load was superseded; refresh state before retrying.', 409);
+              checkLoad(id); return identities.load(id);
+            });
             else if (operation === 'unload') state = identities.unload(id);
             else state = identities.replica(id, body.checkpointId);
             return json(response, 200, snapshot(state.individualId));
@@ -356,6 +374,7 @@ export function createServer({ runtime = createRuntime(), identities = null, dis
     if (visitors) for (const resident of identities.list().filter(value => value.resident)) {
       if (stateFor(resident.individualId).externalOwner) visitors.tick(resident.individualId).catch(() => { visitors.lifecycle(resident.individualId).catch(() => {}); });
     }
+    connectomes.enforcePressure().catch(() => {});
     language?.tick().catch(() => {});
     if (++sampleTick % 10 !== 0 || !recordings) return;
     // One bounded capture batch at a time; serialize writes fairly without awaiting the neural timer.
@@ -389,6 +408,7 @@ export function createServer({ runtime = createRuntime(), identities = null, dis
   }, 50); });
   server.on('close', () => { clearInterval(timer); language?.close();
     if (visitors) visitors.disconnectAll().finally(() => identities?.close()); else identities?.close();
+    connectomes.close().catch(() => {});
     Promise.allSettled([...pendingRecordings]).then(() => recordings?.close()); });
   return server;
 }
@@ -405,7 +425,9 @@ if (entryPath && resolve(entryPath) === fileURLToPath(import.meta.url)) {
   const footprint = measureFixtureFootprint(() => createRuntime());
   const admission = capacity.preflight({ residents: [], incrementalMemoryBytes: footprint.incrementalMemoryBytes,
     aggregateMemoryBytes: process.memoryUsage().rss, availableMemoryBytes: freemem() });
-  if (admission.admitted) identities.load(identities.primaryId);
+  const research = await prepareConnectomeCatalog({ stateDirectory: resolve(dataDirectory, 'connectomes') });
+  const researchConfigured = Object.values(research.profiles).some(profile => !!profile.descriptor);
+  if (admission.admitted && !researchConfigured) identities.load(identities.primaryId);
   const recordings = createRecordingStore({ directory: resolve(dataDirectory, 'recordings') });
   const localLanguageProvider = createOllamaLanguageProvider({
     enabled: process.env.FLY_GARDEN_LANGUAGE_OLLAMA_ENABLED === '1',
@@ -417,9 +439,9 @@ if (entryPath && resolve(entryPath) === fileURLToPath(import.meta.url)) {
   const aggregateSpendMicros = Number(process.env.FLY_GARDEN_LANGUAGE_AGGREGATE_SPEND_MICROS ?? '0');
   if (!Number.isSafeInteger(aggregateSpendMicros) || aggregateSpendMicros < 0) throw new Error('Language aggregate spend must be a nonnegative safe integer.');
   const languageService = createLanguageService({ identities, providers: localLanguageProvider ? [localLanguageProvider] : [], aggregateSpendMicros });
-  const server = createServer({ identities, languageService, capacity, incrementalMemoryBytes: footprint.incrementalMemoryBytes, recordings, allowedHosts, allowedOrigins: (process.env.DEV_ORIGINS ?? `http://127.0.0.1:${ecosystem.PORTS.devUi},http://localhost:${ecosystem.PORTS.devUi}`).split(',').filter(Boolean) });
+  const server = createServer({ identities, languageService, connectomeCatalog: research.store, connectomeProfiles: research.profiles, connectomeReason: research.reason, capacity, incrementalMemoryBytes: footprint.incrementalMemoryBytes, recordings, allowedHosts, allowedOrigins: (process.env.DEV_ORIGINS ?? `http://127.0.0.1:${ecosystem.PORTS.devUi},http://localhost:${ecosystem.PORTS.devUi}`).split(',').filter(Boolean) });
   server.listen(port, host, () => {
-    console.log(`Fly Garden: http://${host}:${port} — synthetic fixture paused`);
+    console.log(`Fly Garden: http://${host}:${port} — fixture paused or unloaded; research identities remain unloaded`);
     process.send?.('ready');
   });
   for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => server.close());

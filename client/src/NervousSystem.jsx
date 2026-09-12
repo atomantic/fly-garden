@@ -26,11 +26,12 @@ function validateEdges(result, data, limit) {
 }
 
 
-export default function NervousSystem() {
+export default function NervousSystem({ dataset = "male-cns:v1.0", individualId = null, onDatasetChange = () => {} }) {
   const [connectionsEnabled, setConnectionsEnabled] = useState(false), [edgeLimit, setEdgeLimit] = useState(1000), [edgeOpacity, setEdgeOpacity] = useState(0.15);
   const [connectivity, setConnectivity] = useState(null), [connectivityError, setConnectivityError] = useState('');
   const [adjacency, setAdjacency] = useState(null), [adjacencyError, setAdjacencyError] = useState(''), [edgeOffset, setEdgeOffset] = useState(0);
-  const [profile, setProfile] = useState(PROFILES[0][0]), [data, setData] = useState(null), [error, setError] = useState('');
+  const profile = dataset === 'banc:v888' ? 'banc-v888' : 'male-cns-v1';
+  const [data, setData] = useState(null), [error, setError] = useState('');
   const [visibleGroups, setVisibleGroups] = useState([]), [filter, setFilter] = useState(''), [selectedIndex, setSelectedIndex] = useState(null), [pointSize, setPointSize] = useState(2);
   useEffect(() => {
     const controller = new AbortController(); let current = true;
@@ -123,16 +124,20 @@ export default function NervousSystem() {
   return <section className="card content-panel" aria-label="Full nervous-system atlas">
     <span className="eyebrow">ANATOMY ONLY / PINNED DATASET</span>
     <h2>Brain and nerve cord</h2>
-    <p>Measured anatomical positions, independently browsed from the live fixture. These are cell locations, not complete skeletons, synaptic morphologies or a full peripheral nervous system. No activity or learning is inferred from their appearance.</p>
-    <label>Atlas dataset <select value={profile} onChange={e => { setData(null); setConnectionsEnabled(false); setConnectivity(null); selectCell(null); setProfile(e.target.value); }}>{PROFILES.map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></label>
+    <p>Measured cell locations across the brain and nerve cord. Anatomy only; no activity or learning is inferred from this view.</p>
+    <label>Atlas dataset <select value={profile} onChange={e => { setData(null); setConnectionsEnabled(false); setConnectivity(null); selectCell(null); onDatasetChange(e.target.value === 'banc-v888' ? 'banc:v888' : 'male-cns:v1.0'); }}>{PROFILES.map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></label>
+    {individualId && <p>Selected connectome individual: <code>{individualId}</code>. This anatomy view has no live activity overlay. Viewing does not load or start its simulation.</p>}
+    <p><a href="#Connectome%20lab">Open full-connectome individuals and paused controls →</a></p>
     {error && <p role="alert">{error} Generate the pinned atlas with the documented local importer, then reload this view.</p>}
     {!data && !error && <p role="status">Loading and validating pinned anatomical data…</p>}
     {data && <>
-      <p role="status">{data.manifest.counts.retained.toLocaleString()} retained cells · {data.manifest.counts.positioned.toLocaleString()} positioned · {data.manifest.counts.missing.toLocaleString()} without a valid position · {displayed.toLocaleString()} displayed. Loaded positions cover the retained selection; hidden and missing cells remain searchable.</p>
-      <p>{data.manifest.coordinates.field} · {data.manifest.coordinates.units} · {data.manifest.coordinates.orientation}</p>
+      <p role="status">{data.manifest.counts.retained.toLocaleString()} retained cells · {data.manifest.counts.positioned.toLocaleString()} positioned · {data.manifest.counts.missing.toLocaleString()} without a valid position · {displayed.toLocaleString()} displayed. Hidden and missing cells remain searchable.</p>
       <div role="group" aria-label="Anatomical presets" style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
         <button onClick={() => preset('whole')}>Whole retained nervous system</button><button onClick={() => preset('brain')}>Brain</button><button onClick={() => preset('cord')}>Nerve cord</button>
       </div>
+      <p className="muted">Source X/Y/Z axes · {data.manifest.coordinates.units} · anatomical direction labels not independently established</p>
+      <AtlasCanvas edges={displayEdges} edgeOpacity={edgeOpacity} positions={data.positions} valid={data.valid} groups={data.groups} visibleGroups={visibleGroups} selectedIndex={selectedIndex} pointSize={pointSize} onSelect={selectCell} />
+      <details className="atlas-display-settings"><summary>Display groups, point size and optional connections</summary>
       <fieldset style={{ margin: '12px 0' }}><legend>Display groups (classification from source annotations)</legend>
         {data.manifest.groups.map((name, index) => <label key={name} style={{ display: 'inline-flex', gap: 5, marginRight: 15 }}><input type="checkbox" checked={visibleGroups.includes(index)} onChange={e => setVisibleGroups(current => e.target.checked ? [...current, index] : current.filter(value => value !== index))} />{LABELS[name] || name}</label>)}
       </fieldset>
@@ -145,8 +150,8 @@ export default function NervousSystem() {
           {connectivityError ? <p role="alert">{connectivityError}</p> : !connectivity ? <p role="status">Loading verified connectivity…</p> : <p>{connectivity.retainedEdges.toLocaleString()} retained directed edges · {connectivity.anatomicalContacts.toLocaleString()} anatomical contacts. Evenly spaced CSR sample: {connectivity.sampling.consideredEdges.toLocaleString()} considered, {connectivity.sampling.omittedMissingPositions.toLocaleString()} omitted for missing positions, {displayEdges.length.toLocaleString()} displayed after group filters. Display capping never alters the neural graph.</p>}
         </>}
       </fieldset>
-      <AtlasCanvas edges={displayEdges} edgeOpacity={edgeOpacity} positions={data.positions} valid={data.valid} groups={data.groups} visibleGroups={visibleGroups} selectedIndex={selectedIndex} pointSize={pointSize} onSelect={selectCell} />
-      <p>Connection lines are anatomical illustrations rather than reconstructed morphology. Activity overlay is unavailable: the running 32-neuron fixture does not match either anatomical dataset. Brain/cord presets use annotation groups; unclassified and interregional cells remain available in the whole-system view.</p>
+      </details>
+      <p>Cell locations and straight connection lines are not reconstructed neurites or full peripheral anatomy. No activity overlay is attached. Brain/cord presets use source annotation groups.</p>
       <label>Search cells by exact ID, type or region <input value={filter} onChange={e => setFilter(e.target.value)} placeholder="Exact ID, type or annotation" /></label>
       <p>{matches.count.toLocaleString()} matches; showing the first {matches.rows.length}. Search includes cells without coordinates.</p>
       <div style={{ overflowX: 'auto' }}><table><thead><tr><th>Cell</th><th>Type</th><th>Region</th><th>Position</th></tr></thead><tbody>
@@ -167,7 +172,7 @@ export default function NervousSystem() {
           </>}
         </>}
       </section>
-      <details><summary>Dataset provenance and display limitations</summary><p>{data.manifest.source.attribution} · {data.manifest.source.license}</p>
+      <details><summary>Dataset provenance and display limitations</summary><p>{data.manifest.coordinates.field} · {data.manifest.coordinates.units} · {data.manifest.coordinates.orientation}</p><p>{data.manifest.source.attribution} · {data.manifest.source.license}</p>
         <p>Source SHA-256: <code style={{overflowWrap: "anywhere"}}>{data.manifest.source.sha256}</code></p><p>Atlas manifest SHA-256: <code style={{overflowWrap: "anywhere"}}>{data.manifestSha256}</code></p>
         <p>{data.manifest.coordinates.frame}. This view preserves the declared source axes and conversion; camera orientation does not establish anatomical direction. Separate profiles never reuse neuron IDs or coordinate transforms.</p>
       </details>
