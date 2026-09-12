@@ -3,6 +3,8 @@ import { createRoot } from "react-dom/client";
 import Scene from "./Scene.jsx";
 import Population from "./Population.jsx";
 import Recordings from "./Recordings.jsx";
+import EnvironmentControls from "./EnvironmentControls.jsx";
+import CreativeControls from "./CreativeControls.jsx";
 import "./style.css";
 
 const sections = [
@@ -24,6 +26,7 @@ function App() {
   const requestEpoch = useRef(0);
   const historySession = useRef(null);
   const selectedIndividualRef = useRef("");
+  const [visualLease, setVisualLease] = useState(null);
   const [individualId, setIndividualId] = useState("");
   const [individuals, setIndividuals] = useState([]);
   const [tab, setTab] = useState(readTab),
@@ -58,7 +61,8 @@ function App() {
         }
         if (!stopped && epoch === requestEpoch.current) {
           selectedIndividualRef.current = next.individualId;
-          setState(next);
+          setState(previous => previous?.individualId === next.individualId && previous.sessionId === next.sessionId
+            && previous.tick > next.tick ? previous : next);
           setConnectionError("");
           const sameSession = historySession.current === next.sessionId;
           historySession.current = next.sessionId;
@@ -203,7 +207,7 @@ function App() {
             )}
           </div>
         )}
-        {state?.persistence && tab === "Observatory" && <>
+        {state?.persistence && tab === "Observatory" && <details className="card operations-panel"><summary>Population, recording and replay</summary>
           <Population />
           <Recordings state={state} disabled={!available} onMutation={async () => {
             if (selectedIndividualRef.current !== state.individualId) return;
@@ -214,10 +218,11 @@ function App() {
             const next = await response.json();
             if (next.individualId === selectedIndividualRef.current && epoch === requestEpoch.current) setState(next);
           }} />
-        </>}
+        </details>}
         {individuals.length > 0 && <section className="card" aria-label="Individual selection">
           <label>Individual <select disabled={busy} value={individualId || state?.individualId || ""} onChange={event => {
             requestEpoch.current++;
+            setVisualLease(null);
             selectedIndividualRef.current = event.target.value;
             setIndividualId(event.target.value); setState(null); setSelected(""); setHistory([]); setConnectionError("");
           }}>{individuals.map(individual => <option key={individual.individualId} value={individual.individualId}>
@@ -285,12 +290,28 @@ function App() {
                 <span className="eyebrow">01 / HOME GARDEN</span>
                 <span className="muted">ILLUSTRATED HABITAT</span>
               </div>
-              <Scene />
+              <EnvironmentControls key={state?.individualId} state={state} disabled={!available} onMutation={next => {
+                if (next.individualId !== selectedIndividualRef.current) return;
+                const { controllerToken, ...safeState } = next;
+                setVisualLease(controllerToken ? { individualId: next.individualId, sessionId: next.sessionId, token: controllerToken } : null);
+                requestEpoch.current++; setState(safeState);
+              }} />
+              <details className="creative-panel"><summary>Music and pollen capture</summary>
+              <CreativeControls key={state?.individualId} state={state} disabled={!available} onMutation={next => {
+                if (next.individualId !== selectedIndividualRef.current) return;
+                requestEpoch.current++; setState(next);
+              }} />
+              </details>
+              <Scene state={state} controllerToken={visualLease && state && visualLease.individualId === state.individualId && visualLease?.sessionId === state?.sessionId ? visualLease.token : null} onEnvironmentFrame={next => {
+                if (next.individualId !== selectedIndividualRef.current || next.sessionId !== state?.sessionId
+                  || next.environmentAdapter?.environmentEpoch !== state?.environmentAdapter?.environmentEpoch) return;
+                setState(previous => previous?.individualId === next.individualId && previous.sessionId === next.sessionId && previous.tick <= next.tick ? next : previous);
+              }} />
               <div className="habitat-label">
                 <span className="label-line" />
                 DROSOPHILA · ORIGINAL PROCEDURAL MODEL
                 <small>
-                  Body illustration · not driven by the fixture circuit
+                  {state?.environmentAdapter?.attached ? "Engineered visual fixture control · no biological claim" : "Body illustration · not driven by the fixture circuit"}
                 </small>
               </div>
               <div className="pod-label">

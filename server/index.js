@@ -7,6 +7,7 @@ import { openIdentityStore } from './identity-store.js';
 import ecosystem from '../ecosystem.config.cjs';
 import { createCapacityPolicy, openCapacityStore, measureFixtureFootprint } from './population-capacity.js';
 import { createRecordingStore } from './recording-store.js';
+import { createCreativeSessions } from './creative-session.js';
 import { freemem } from 'node:os';
 
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon' };
@@ -33,11 +34,12 @@ async function readBody(request) {
 }
 
 /** Polling observers share the selected resident runtimes. Wall-clock gaps never catch up simulation time. */
-export function createServer({ runtime = createRuntime(), identities = null, distDir = fileURLToPath(new URL('../dist/', import.meta.url)), autoTick = true, capacity = createCapacityPolicy(), resourceUsage = () => ({ aggregateMemoryBytes: process.memoryUsage().rss, availableMemoryBytes: freemem() }), incrementalMemoryBytes = null, recordings = null, allowedOrigins = [], allowedHosts = [] } = {}) {
+export function createServer({ runtime = createRuntime(), identities = null, distDir = fileURLToPath(new URL('../dist/', import.meta.url)), autoTick = true, capacity = createCapacityPolicy(), resourceUsage = () => ({ aggregateMemoryBytes: process.memoryUsage().rss, availableMemoryBytes: freemem() }), incrementalMemoryBytes = null, recordings = null, creativeSessions = createCreativeSessions(), onEnvironmentFrame = null, allowedOrigins = [], allowedHosts = [] } = {}) {
   const root = resolve(distDir);
   const pendingRecordings = new Set();
   const activeRecordings = new Map();
   let recordingFailure = null;
+  let environmentCaptureFailure = null;
   const resources = () => {
     const all = identities?.list() ?? [];
     return { ...resourceUsage(), savedCount: all.length,
@@ -58,7 +60,12 @@ export function createServer({ runtime = createRuntime(), identities = null, dis
   const stateFor = id => identities ? identities.snapshot(id) : runtime.snapshot();
   const sequences = new Map();
   const sequenceFor = id => sequences.get(id ?? identities?.primaryId) ?? 0;
-  const snapshot = id => ({ ...stateFor(id), commandSequence: sequenceFor(id) });
+  const snapshot = id => {
+    const state = stateFor(id);
+    creativeSessions.synchronize(state);
+    const creativeCapture = creativeSessions.status(state.individualId);
+    return { ...state, commandSequence: sequenceFor(id), ...(creativeCapture ? { creativeCapture } : {}) };
+  };
   function validateCommand(body, fields, id) {
     const expected = ['protocolVersion', 'individualId', 'sessionId', 'sequence', ...fields];
     if (Object.keys(body).length !== expected.length || expected.some(key => !Object.hasOwn(body, key))
@@ -80,6 +87,7 @@ export function createServer({ runtime = createRuntime(), identities = null, dis
             simulation: state.status, persistence: identities ? 'durable-fixture' : 'session-only',
             connectome: state.capabilities.connectome, eidoverse: state.capabilities.eidoverse,
             llm: state.capabilities.llm, population: identities ? population() : null,
+            environmentCaptureFailure,
             recording: recordings ? { ...recordings.status(), failure: recordingFailure } : { available: false } });
         }
         if (identities && request.method === 'GET' && url.pathname === '/api/population') return json(response, 200, population());
@@ -125,6 +133,54 @@ export function createServer({ runtime = createRuntime(), identities = null, dis
             checkpointId: state.persistence.checkpointId, seed: null, participantIds: [state.individualId], sampleIntervalMs: 500 });
           activeRecordings.set(session.id, { individualId: state.individualId, sessionId: state.sessionId });
           return json(response, 200, session);
+        }
+        const artifactRoute = /^\/api\/individuals\/([0-9a-f-]+)\/artifacts(?:\/export\/(json|mid|svg|png))?$/.exec(url.pathname);
+        if (identities && artifactRoute) {
+          const [, id, format] = artifactRoute;
+          creativeSessions.synchronize(stateFor(id));
+          if (request.method === 'GET') {
+            if (!format) return json(response, 200, creativeSessions.status(id));
+            try {
+              const result = creativeSessions.export(id, format);
+              response.writeHead(200, { 'Content-Type': { json: 'application/json', mid: 'audio/midi', svg: 'image/svg+xml', png: 'image/png' }[format],
+                'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'X-Artifact-Partial': String(result.partial),
+                'Content-Disposition': `attachment; filename="fly-garden-${id}${result.partial ? '-partial' : ''}.${format}"` });
+              return response.end(result.bytes);
+            } catch (error) { throw new RuntimeError(error.message, 409); }
+          }
+          if (request.method !== 'POST' || format) throw new RuntimeError('Method not allowed.', 405);
+          checkOrigin(request, base);
+          const body = await readBody(request);
+          validateCommand(body, ['action'], id);
+          try {
+            if (body.action === 'start') creativeSessions.start(stateFor(id));
+            else if (body.action === 'stop') creativeSessions.stop(id);
+            else if (body.action === 'discard') creativeSessions.discard(id);
+            else throw new Error('Unknown movement capture action.');
+          } catch (error) { throw new RuntimeError(error.message, 409); }
+          return json(response, 200, snapshot(id));
+        }
+        const environmentRoute = /^\/api\/individuals\/([0-9a-f-]+)\/environment(?:\/(frames))?$/.exec(url.pathname);
+        if (identities && environmentRoute) {
+          const [, id, operation] = environmentRoute;
+          if (request.method === 'GET' && !operation) return json(response, 200, identities.environmentSnapshot(id));
+          if (request.method !== 'POST') throw new RuntimeError('Use POST for this environment operation.', 405);
+          checkOrigin(request, base);
+          const body = await readBody(request);
+          if (operation === 'frames') {
+            const result = identities.environmentFrame(id, body);
+            try { creativeSessions.capture(result.state); }
+            catch { environmentCaptureFailure = 'Movement capture failed; accepted sensory state was preserved.'; }
+            if (onEnvironmentFrame) {
+              try {
+                Promise.resolve(onEnvironmentFrame(structuredClone({ ...result.state, environmentTrace: result.trace })))
+                  .catch(() => { environmentCaptureFailure = 'Creative capture failed; accepted sensory state was preserved.'; });
+              } catch { environmentCaptureFailure = 'Creative capture failed; accepted sensory state was preserved.'; }
+            }
+            return json(response, 200, { ...result, state: snapshot(id) });
+          }
+          validateCommand(body, ['action'], id);
+          return json(response, 200, { ...identities.environmentControl(id, body.action), commandSequence: sequenceFor(id) });
         }
         const individualRoute = /^\/api\/individuals\/([0-9a-f-]+)(?:\/(checkpoints|restore|replicas|control|encounters|load|unload))?$/.exec(url.pathname);
         if (identities && individualRoute && request.method === 'GET') {

@@ -269,3 +269,40 @@ test('timer captures both individuals fairly and reports overlapping batches wit
     assert.equal(recorded.complete, false);
   }
 });
+
+test('movement artifact capture exports accepted actions and source completeness without leaking controller lease', async t => {
+  const { openIdentityStore } = await import('./identity-store.js');
+  const directory = await mkdtemp(join(tmpdir(), 'fly-artifact-http-'));
+  const identities = openIdentityStore(directory);
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const { base, get, post } = await fixture(t, { identities });
+  const id = identities.primaryId;
+  const send = async (operation, action) => {
+    const current = await get();
+    return post(`individuals/${id}/${operation}`, { protocolVersion: 1, individualId: id,
+      sessionId: current.sessionId, sequence: current.commandSequence + 1, action });
+  };
+  const attach = await (await send('environment', 'attach')).json();
+  const token = attach.controllerToken;
+  await send('control', 'start');
+  assert.equal((await send('artifacts', 'start')).status, 200);
+  let current = await get();
+  for (let i = 0; i < 20; i++) {
+    const response = await post(`individuals/${id}/environment/frames`, { version: 1, individualId: id,
+      sessionId: current.sessionId, environmentEpoch: current.environmentAdapter.environmentEpoch, controllerToken: token,
+      frameId: i, simTimeMs: current.simTimeMs, capturedAtMs: Date.now(), camera: 'controller', width: 8, height: 4, rgb: Array(96).fill(255) });
+    assert.equal(response.status, 200);
+    current = (await response.json()).state;
+  }
+  const active = await fetch(`${base}/api/individuals/${id}/artifacts/export/json`);
+  assert.equal(active.headers.get('x-artifact-partial'), 'true');
+  assert.equal((await active.json()).source.capture.complete, false);
+  await send('artifacts', 'stop');
+  const before = await get();
+  const exported = await fetch(`${base}/api/individuals/${id}/artifacts/export/json`).then(r => r.json());
+  assert.equal(exported.source.actions.length, 20);
+  assert.equal(exported.source.capture.complete, true);
+  assert.ok(!JSON.stringify(exported).includes(token));
+  for (const format of ['mid','svg','png']) assert.equal((await fetch(`${base}/api/individuals/${id}/artifacts/export/${format}`)).status, 200);
+  assert.deepEqual(await get(), before);
+});

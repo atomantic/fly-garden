@@ -1,7 +1,7 @@
 /** Original deterministic fixture. This is not a biological connectome or a learning model. */
 const STEP_MS = 5;
 import { randomUUID } from 'node:crypto';
-import { createStimulusPolicy, validateStimulusCheckpoint } from './stimulus-policy.js';
+import { createStimulusPolicy, validateStimulusCheckpoint, validateRetinalCurrents } from './stimulus-policy.js';
 
 export const RUNTIME_PROTOCOL_VERSION = 1;
 export const RUNTIME_DATASET = Object.freeze({ namespace: 'synthetic-fixture', release: '1', modelId: 'synthetic-lif-v1' });
@@ -114,10 +114,10 @@ export function createRuntime({ individualId = 'synthetic-fixture', sessionId = 
       source: 'fixture', status, faultReason, simTimeMs: time, tick, environment: 'home', dataset: RUNTIME_DATASET,
       model: {
         id: RUNTIME_DATASET.modelId, label: 'Synthetic LIF fixture', neuronCount: neurons.length, edgeCount: edges.length,
-        limitations: '32 invented neurons and 64 fixed connections. Engineered inputs and geometry. No biological anatomy, RNG dynamics, plasticity, demonstrated learning, or inferred mental state. No embodied sensory or motor loop. Checkpoints preserve only supported fixture state; restore cancels active optional input.',
+        limitations: '32 invented neurons and 64 fixed connections. Engineered inputs and geometry. No biological anatomy, RNG dynamics, plasticity, demonstrated learning, or inferred mental state. An optional engineered retinal/motor adapter can drive the illustrated body; this is not biological embodiment. Checkpoints preserve only supported neural fixture state; restore cancels active optional input.',
       },
       safeguards: { maxRateHz: MAX_RATE_HZ, maxPotentialBeforeReset: MAX_POTENTIAL_BEFORE_RESET,
-        disclosure: 'Engineered numerical fault limits, not biological activity thresholds or welfare scores. No live sensory adapter exists to validate freshness.' },
+        disclosure: 'Engineered numerical fault limits, not biological activity thresholds or welfare scores. When attached, the engineered controller-camera adapter separately validates observation freshness.' },
       neural: { neurons, edges, spikes: neurons.filter(n => n.firing).length, meanRateHz: neurons.reduce((sum, n) => sum + n.rateHz, 0) / neurons.length },
       stimulusPolicy,
       chemistry: stimulusPolicy.effects.map(({ intensity, durationMs, targets, ...effect }) => effect),
@@ -198,7 +198,12 @@ export function createRuntime({ individualId = 'synthetic-fixture', sessionId = 
     return snapshot();
   }
 
-  function step() {
+  function step(input) {
+    let retinalCurrents = null;
+    if (input !== undefined) {
+      if (!exactKeys(input, ['retinalCurrents'])) throw new RuntimeError('Unsupported fixture sensory input.');
+      retinalCurrents = validateRetinalCurrents(input.retinalCurrents);
+    }
     if (status !== 'running') return;
     const nextTick = tick + 1;
     const nextTime = nextTick * STEP_MS;
@@ -207,6 +212,7 @@ export function createRuntime({ individualId = 'synthetic-fixture', sessionId = 
       return;
     }
     const currents = neurons.map((_, i) => PARAMETERS.baselineCurrent + (i % 5) * PARAMETERS.baselineCurrentStride);
+    if (retinalCurrents) currents.forEach((_, i) => { currents[i] += retinalCurrents[i]; });
     for (const { source, target, weight } of edges) {
       if (neurons[Number(source.slice(8))].firing) currents[Number(target.slice(8))] += weight;
     }
