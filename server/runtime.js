@@ -36,6 +36,7 @@ export function createRuntime({ individualId = 'synthetic-fixture', sessionId = 
 
   function snapshot() {
     const time = tick * STEP_MS;
+    const stimulusPolicy = policy.snapshot();
     return structuredClone({
       schemaVersion: 1, source: 'fixture', status, simTimeMs: time, tick, environment: 'home',
       model: {
@@ -43,8 +44,8 @@ export function createRuntime({ individualId = 'synthetic-fixture', sessionId = 
         limitations: '32 invented neurons and 64 fixed connections. Engineered inputs and geometry. No biological anatomy, plasticity, demonstrated learning, or inferred mental state. Session-only state.',
       },
       neural: { neurons, edges, spikes: neurons.filter(n => n.firing).length, meanRateHz: neurons.reduce((sum, n) => sum + n.rateHz, 0) / neurons.length },
-      stimulusPolicy: policy.snapshot(),
-      chemistry: policy.snapshot().effects.map(({ intensity, durationMs, targets, ...effect }) => effect),
+      stimulusPolicy,
+      chemistry: stimulusPolicy.effects.map(({ intensity, durationMs, targets, ...effect }) => effect),
       events,
       capabilities: {
         connectome: { available: false, reason: 'Real dataset import and neural worker are not implemented. This is an explicit synthetic fixture.' },

@@ -119,7 +119,7 @@ export function createStimulusPolicy({ individualId, sessionId }) {
       effects: STIMULUS_EFFECTS.map(effect => ({ ...effect, targets: [...effect.targets],
         active: entries.some(entry => entry.effect === effect.id && remaining(entry) > 0),
         remainingMs: Math.max(0, ...entries.filter(entry => entry.effect === effect.id).map(remaining)),
-        cooldownRemainingMs: Math.max(0, ...entries.map(entry => entry.simTimeMs
+        cooldownRemainingMs: effect.id === 'quiet' ? 0 : Math.max(0, ...entries.map(entry => entry.simTimeMs
           + (entry.effect === effect.id ? STIMULUS_LIMITS.effectRecoveryMs : STIMULUS_LIMITS.recoveryMs) - timeMs)),
       })),
       disclosure: 'Engineering limits on optional synthetic inputs; not consent or a welfare score. No chemical dynamics or biological reward model.',

@@ -118,3 +118,17 @@ test('deterministic fixture replay has finite bounded state and snapshots cannot
   snapshot.neural.neurons[0].potential = NaN;
   assert.ok(Number.isFinite(a.snapshot().neural.neurons[0].potential));
 });
+
+test('HTTP quiet remains available during recovery and cancels input without a budget refund', async t => {
+  const { post, get } = await fixture(t);
+  await post('control', { action: 'start' });
+  await post('encounters', { compoundId: 'nectar' });
+  const before = await get();
+  assert.equal(before.chemistry.find(effect => effect.id === 'quiet').cooldownRemainingMs, 0);
+  assert.equal((await post('encounters', { compoundId: 'quiet' })).status, 200);
+  const after = await get();
+  assert.equal(after.chemistry.some(effect => effect.active), false);
+  assert.equal(after.stimulusPolicy.reservedDose, before.stimulusPolicy.reservedDose);
+  assert.deepEqual(after.neural, before.neural);
+  assert.equal((await post('encounters', { compoundId: 'nectar' })).status, 409);
+});
