@@ -1,0 +1,103 @@
+{
+  "manifestSha256": "12759115c299175db5afa38b4a94a9a702f19a4e453c2bebb7dfaa85e5a3b915",
+  "manifest": {
+    "annotationStatusCounts": {
+      "Anchor": 611,
+      "Assign": 1832,
+      "Glia": 11864,
+      "Orphan": 15925,
+      "Traced": 165122,
+      "Unimportant": 10751,
+      "null": 5472
+    },
+    "contactCount": 124025046,
+    "dataset": "male-cns:v1.0",
+    "edgeCount": 25563197,
+    "files": {
+      "contacts.u32": {
+        "bytes": 102252788,
+        "sha256": "b69f249c771b068577c33784435a289e258b303e628e62a94ee35f79268f718f"
+      },
+      "ids.json": {
+        "bytes": 1416119,
+        "sha256": "b1b99ddfdf4c9c3d443298dca762ac8d2f9453cf85fe7daaaeb33fc388b8eb5e"
+      },
+      "offsets.u32": {
+        "bytes": 660492,
+        "sha256": "adee4dce64b715ef4eec8f2e3ad9927b34c0e02fa406fa2b8083457125e954ad"
+      },
+      "signs.i8": {
+        "bytes": 165122,
+        "sha256": "1aff963a3b6a681676a7404b01b52d396709c9b86b83d26b22c2013007c386a5"
+      },
+      "targets.u32": {
+        "bytes": 102252788,
+        "sha256": "139e818aad21fee41c69f2d3795fba0c2544b893d3b6361c3249b34565f63ff5"
+      }
+    },
+    "graphCounts": {
+      "bothExcludedContacts": 10649769,
+      "bothExcludedEdgeRows": 8953144,
+      "postExcludedContacts": 170769707,
+      "postExcludedEdgeRows": 112538237,
+      "preExcludedContacts": 6388721,
+      "preExcludedEdgeRows": 4802106,
+      "retainedContacts": 124025046,
+      "retainedEdgeRows": 25563197,
+      "selfContacts": 473,
+      "selfEdgeRows": 101,
+      "silentTransmitterEdgeRows": 1104763,
+      "singleContactEdgeRows": 10292924,
+      "sourceContacts": 311833243,
+      "sourceEdgeRows": 151856684
+    },
+    "neuronCount": 165122,
+    "retainedSuperclassCounts": {
+      "ENS": 47,
+      "ascending_neuron": 1846,
+      "cb_efferent": 4,
+      "cb_endocrine": 72,
+      "cb_intrinsic": 32160,
+      "cb_motor": 107,
+      "cb_sensory": 4868,
+      "cb_sensory_tbc": 5,
+      "descending_neuron": 1314,
+      "efferent_ascending": 8,
+      "efferent_descending": 4,
+      "null": 516,
+      "ol_intrinsic": 89390,
+      "ol_sensory": 4114,
+      "sensory_ascending": 537,
+      "sensory_ascending_tbc": 2,
+      "sensory_descending": 12,
+      "visual_centrifugal": 563,
+      "visual_projection": 9201,
+      "visual_projection_tbc": 2,
+      "vnc_efferent": 94,
+      "vnc_endocrine": 22,
+      "vnc_intrinsic": 13151,
+      "vnc_motor": 708,
+      "vnc_sensory": 6365,
+      "vnc_sensory_tbc": 9,
+      "vnc_tbc": 1
+    },
+    "schemaVersion": 1,
+    "selection": "status-traced-v1",
+    "sourceCounts": {
+      "annotations": 211577,
+      "transmitters": 1835518
+    },
+    "sourceLockSha256": "0ca9098d01b39d8514d1fa1c43af85aa5f41984325f05c3664a34c52f5ccda12",
+    "transmitterCounts": {
+      "acetylcholine": 103718,
+      "dopamine": 392,
+      "gaba": 22055,
+      "glutamate": 29296,
+      "histamine": 5910,
+      "octopamine": 101,
+      "serotonin": 48,
+      "unclear": 3100,
+      "unknown": 502
+    }
+  }
+}

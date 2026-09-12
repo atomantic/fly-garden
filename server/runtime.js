@@ -55,7 +55,7 @@ export function createRuntime() {
       }),
       events,
       capabilities: {
-        connectome: { available: false, reason: 'Real dataset import and neural worker are not implemented. This is an explicit synthetic fixture.' },
+        connectome: { available: false, reason: 'The observatory is using its explicit synthetic fixture. The research connectome backend is not integrated into this habitat.' },
         llm: { available: false, reason: 'Language interpreter is not configured. No provider calls are made.' },
         eidoverse: { available: false, reason: 'Scoped embodied visitor protocol and host support are not implemented. The fly is at home.' },
       },
