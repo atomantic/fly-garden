@@ -62,12 +62,15 @@ export function createSparseLif(graph, { individualId = randomUUID(), dataset = 
   const incoming = new Float64Array(n);
   const decay = Math.exp(-LIF_MODEL.dtMs / LIF_MODEL.tauMs);
   let tick = 0, totalSpikes = 0, traversedEdges = 0;
+  let revision = Symbol();
+  const preparedRestores = new WeakMap();
 
   // A one-time, explicitly requested numerical probe. No tonic/reward drive or RNG.
   function seedProbe(indices) {
     if (tick !== 0 || firing.some(Boolean)) throw new Error('Probe must precede advancement');
     if (!Array.isArray(indices) || indices.length > n || new Set(indices).size !== indices.length ||
         Array.from(indices).some(index => !Number.isInteger(index) || index < 0 || index >= n)) throw new Error('Invalid probe indices');
+    revision = Symbol();
     for (const index of indices) {
       firing[index] = 1;
       refractory[index] = LIF_MODEL.refractorySteps;
@@ -102,6 +105,7 @@ export function createSparseLif(graph, { individualId = randomUUID(), dataset = 
     [potential, nextPotential] = [nextPotential, potential];
     [firing, nextFiring] = [nextFiring, firing];
     [refractory, nextRefractory] = [nextRefractory, refractory];
+    revision = Symbol();
     tick++;
     totalSpikes += spikes;
     traversedEdges += visited;
@@ -121,7 +125,7 @@ export function createSparseLif(graph, { individualId = randomUUID(), dataset = 
       model: { ...model }, tick, totalSpikes, traversedEdges,
       potential: Array.from(potential), firing: Array.from(firing), refractory: Array.from(refractory) };
   }
-  function restore(saved) {
+  function prepareRestore(saved) {
     const expected = ['schemaVersion', 'kind', 'individualId', 'dataset', 'graphSha256', 'model', 'tick', 'totalSpikes', 'traversedEdges', 'potential', 'firing', 'refractory'];
     if (!saved || typeof saved !== 'object' || Object.keys(saved).length !== expected.length || expected.some(k => !Object.hasOwn(saved, k)) ||
       saved.schemaVersion !== 1 || saved.kind !== 'sparse-lif' || saved.individualId !== individualId || saved.dataset !== dataset || saved.graphSha256 !== graphSha256 ||
@@ -145,13 +149,25 @@ export function createSparseLif(graph, { individualId = randomUUID(), dataset = 
       || (saved.tick > 0 && pendingSpikes > saved.totalSpikes)) throw new Error('Inconsistent neural checkpoint history');
     // Allocate and validate everything before replacing any authoritative state.
     const p = Float64Array.from(saved.potential), f = Uint8Array.from(saved.firing), r = Uint8Array.from(saved.refractory);
-    potential = p; firing = f; refractory = r;
-    tick = saved.tick; totalSpikes = saved.totalSpikes; traversedEdges = saved.traversedEdges;
+    const token = Object.freeze(Object.create(null));
+    preparedRestores.set(token, { revision, p, f, r, tick: saved.tick, totalSpikes: saved.totalSpikes, traversedEdges: saved.traversedEdges });
+    return token;
+  }
+  function commitRestore(token) {
+    const candidate = preparedRestores.get(token);
+    if (!candidate || candidate.revision !== revision) throw new Error('Stale or foreign prepared neural restore');
+    preparedRestores.delete(token);
+    potential = candidate.p; firing = candidate.f; refractory = candidate.r;
+    tick = candidate.tick; totalSpikes = candidate.totalSpikes; traversedEdges = candidate.traversedEdges;
+    revision = Symbol();
     return summary();
+  }
+  function restore(saved) {
+    return commitRestore(prepareRestore(saved));
   }
   if (checkpoint !== null) restore(checkpoint);
   // Graph ownership is transferred to the kernel; callers must not mutate CSR arrays.
   // Copies for small numerical diagnostics only; full graph benchmark uses summary().
-  return { step, seedProbe, summary, checkpoint: exportCheckpoint, restore, individualId, graphSha256, model,
+  return { step, seedProbe, summary, checkpoint: exportCheckpoint, restore, prepareRestore, commitRestore, individualId, graphSha256, model,
     inspect: () => ({ potential: potential.slice(), firing: firing.slice(), refractory: refractory.slice() }) };
 }

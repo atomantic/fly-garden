@@ -183,3 +183,11 @@ test('BANC and unknown profiles fail independently without affecting another wor
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+test('real worker opening can be terminated before readiness and confirms exit', async () => {
+  let exits=0;
+  const opening=openConnectomeBackend('/nonexistent/never-loaded',{onExit:()=>{exits++;}});
+  assert.equal(typeof opening.terminate,'function');assert.ok(opening.terminated instanceof Promise);
+  const readiness=assert.rejects(opening,/stopped/);
+  await opening.terminate();await readiness;await opening.terminated;assert.equal(exits,1);
+});
