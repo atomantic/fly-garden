@@ -1,9 +1,9 @@
 import { Worker } from 'node:worker_threads';
 
 /** Explicitly load one local research worker. Importing this module does no work. */
-export async function openConnectomeBackend(directory) {
+export async function openConnectomeBackend(directory, { dataset = 'male-cns:v1.0' } = {}) {
   if (typeof directory !== 'string' || !directory) throw new Error('A dataset directory is required');
-  const worker = new Worker(new URL('./connectome-worker.js', import.meta.url), { workerData: { directory } });
+  const worker = new Worker(new URL('./connectome-worker.js', import.meta.url), { workerData: { directory, dataset } });
   let sequence = 0, closed = false;
   const pending = new Map();
   const fail = () => {

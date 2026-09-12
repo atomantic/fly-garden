@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createSparseLif, validateGraph, LIF_MODEL } from './sparse-lif.js';
 import { openConnectomeBackend } from './connectome.js';
+import { connectomeProfile, neuronIdentity } from './connectome-profiles.js';
 
 function graphFor(n, edges, signs = Array(n).fill(1)) {
   const ordered = edges.toSorted((a, b) => a[0] - b[0] || a[1] - b[1]);
@@ -133,6 +134,52 @@ test('missing/incompatible data stays unavailable and never creates a fixture', 
       await assert.rejects(backend.snapshot(), /closed/);
     }
   } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('profile identity keeps equal numeric IDs isolated and rejects cross-profile graph mappings', () => {
+  const maleId = neuronIdentity('male-cns:v1.0', '9007199254740993');
+  const bancId = neuronIdentity('banc:v888', '9007199254740993');
+  assert.notEqual(maleId, bancId);
+  assert.throws(() => neuronIdentity('banc:v888', 9007199254740993));
+  for (const invalid of ['__proto__', '../graph.lock.json', 'flywire:v783', null]) {
+    assert.throws(() => connectomeProfile(invalid));
+  }
+  const base = graphFor(2, [[0, 1, 250]]);
+  const graph = dataset => ({ ...base, ids: base.ids.map(id => neuronIdentity(dataset, id)) });
+  const male = createSparseLif(graph('male-cns:v1.0'));
+  const banc = createSparseLif(graph('banc:v888'));
+  assert.throws(() => validateGraph({ ...base, ids: [maleId, bancId] }));
+  male.seedProbe([0]);
+  for (let i = 0; i < 100; i++) {
+    male.step();
+    banc.step();
+    assert.ok(Math.abs(male.inspect().potential[1] - 0.25 * Math.exp(-i / 20)) < 1e-12);
+    assert.equal(banc.inspect().potential[1], 0);
+    assert.equal(banc.summary().totalSpikes, 0);
+  }
+});
+
+test('BANC and unknown profiles fail independently without affecting another worker', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'fly-profile-test-'));
+  const male = await openConnectomeBackend(directory);
+  try {
+    for (const dataset of ['banc:v888', '__proto__']) {
+      const banc = await openConnectomeBackend(directory, { dataset });
+      try {
+        assert.equal(banc.ready.status, 'unavailable');
+        assert.equal(banc.ready.dataset, dataset);
+        assert.equal(banc.ready.provenance, null);
+        assert.equal(banc.ready.model, null);
+        await assert.rejects(banc.start());
+      } finally {
+        await banc.close();
+      }
+      assert.equal((await male.snapshot()).dataset, 'male-cns:v1.0');
+    }
+  } finally {
+    await male.close();
     await rm(directory, { recursive: true, force: true });
   }
 });

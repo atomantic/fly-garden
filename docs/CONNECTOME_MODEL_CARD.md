@@ -14,7 +14,7 @@ Original importer, LIF kernel, worker, tests and documentation are project MIT c
 
 ## Exact graph selection
 
-All annotation rows with `status == "Traced"` are retained, across brain and ventral nerve cord, including neurons with no retained incident edges. There is no region, degree, edge-weight or performance filter. Body IDs remain exact decimal **strings** at the public boundary, ordered by integer body ID; zero-based uint32 array indices are internal and are never neuron identities. The source connectivity table already uses the release's confidence-0.5 filter; no additional confidence filter is invented here.
+All annotation rows with `status == "Traced"` are retained, across brain and ventral nerve cord, including neurons with no retained incident edges. There is no region, degree, edge-weight or performance filter. On-disk body IDs remain exact decimal **strings**, ordered by integer body ID. The loader now qualifies public identities as `male-cns:v1.0/<decimal-id>` so they cannot alias with the separate [BANC profile](BANC_MODEL_CARD.md). Zero-based uint32 array indices are internal and are never neuron identities. The source connectivity table already uses the release's confidence-0.5 filter; no additional confidence filter is invented here.
 
 | Annotation status | Count | Treatment |
 |---|---:|---|
@@ -97,3 +97,8 @@ Measured on local macOS arm64, Node.js 26.0.0, without another import running:
 The process OS high-water RSS was 330,992 KiB (323.2 MiB), including parent and sequential workers. The probe worker reported about 200.2 MiB in array buffers. Import wall times were 103.97 s initially and 41.77 s on repetition; these are separate from runtime load measurements. No private machine name or identifier is required to reproduce the reported model/data configuration.
 
 The quiet network produces no spikes. The single perturbation traverses 248,801 anatomical edges, but produces **zero subsequent spikes** and decays to silence. This is a negative result for self-sustaining activity under these parameters, not a failure to be punished or hidden. Most measured steps therefore have no active synaptic work; throughput must not be generalized to sustained spiking, visual control, retained learning, rendered embodiment or Eidoverse real-time admission. Those capabilities remain unvalidated and unavailable in the observatory.
+
+
+## Separate BANC profile and residency measurements
+
+The [BANC v888 model card](BANC_MODEL_CARD.md) documents its own acquisition, selection, artifact terms and numerical assumptions. `openConnectomeBackend(directory)` and acquisition without `--dataset` retain this MaleCNS profile; `{ dataset: "banc:v888" }` selects BANC explicitly with a separate lock. The original MaleCNS source/derived files and model ID are unchanged. New benchmark output uses schema version 2 with per-resident arrays, documented in the BANC card. [Current single/paired measurements](CONNECTOME_RESIDENCY.md) supplement the historical result above; they do not establish sustained-activity or embodied capacity.

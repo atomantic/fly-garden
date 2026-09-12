@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "dataset": "banc:v888",
+  "selection": "proofread-or-roughly-neurons-v3-synapses-v1",
+  "sourcePage": "https://www.nature.com/articles/s41586-026-10735-w",
+  "deposit": "https://doi.org/10.7910/DVN/7WTH1N",
+  "depositVersion": "3.0",
+  "metadataUrl": "https://dataverse.harvard.edu/api/datasets/:persistentId/versions/3.0?persistentId=doi:10.7910/DVN/7WTH1N",
+  "license": "CC-BY-4.0",
+  "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+  "attribution": "Bates, Phelps, Kim, Yang et al. and the BANC collaboration (2026), Distributed control circuits across a brain-and-cord connectome",
+  "files": {
+    "annotations": {
+      "url": "https://dataverse.harvard.edu/api/access/datafile/14033740",
+      "filename": "banc_888_meta.feather",
+      "bytes": 57550610,
+      "sha256": "819bbcff476e52702d6f8d8604ce1f12d1d7b11942281df2f49df2a73a6f15a5",
+      "publisherMd5": "6275eda42f98c49539d1ab513d979d09",
+      "license": "CC-BY-4.0",
+      "restricted": false
+    },
+    "weights": {
+      "url": "https://dataverse.harvard.edu/api/access/datafile/13918810",
+      "filename": "banc_888_edgelist_simple_v3.feather",
+      "bytes": 359161658,
+      "sha256": "8c296e946f3c69a8c7222f30ad75fa8a98eeb189124fec6df829c9125f4be64b",
+      "publisherMd5": "08542b0771db7418ed474be60dc9886c",
+      "license": "CC-BY-4.0",
+      "restricted": false
+    }
+  }
+}
