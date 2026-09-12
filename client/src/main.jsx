@@ -1,6 +1,8 @@
 import React, { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import Scene from "./Scene.jsx";
+import Population from "./Population.jsx";
+import Recordings from "./Recordings.jsx";
 import "./style.css";
 
 const sections = [
@@ -21,6 +23,9 @@ const readTab = () => {
 function App() {
   const requestEpoch = useRef(0);
   const historySession = useRef(null);
+  const selectedIndividualRef = useRef("");
+  const [individualId, setIndividualId] = useState("");
+  const [individuals, setIndividuals] = useState([]);
   const [tab, setTab] = useState(readTab),
     [state, setState] = useState(null),
     [error, setError] = useState(""),
@@ -42,10 +47,17 @@ function App() {
       const epoch = requestEpoch.current;
       controller = new AbortController();
       try {
-        const r = await fetch("/api/state", { signal: controller.signal });
+        const r = await fetch(individualId ? `/api/individuals/${individualId}` : "/api/state", { signal: controller.signal });
         if (!r.ok) throw new Error("Runtime unavailable");
         const next = await r.json();
+        if (next.persistence) {
+          const rosterResponse = await fetch("/api/individuals", { signal: controller.signal });
+          if (!rosterResponse.ok) throw new Error("Population unavailable");
+          const roster = await rosterResponse.json();
+          if (!stopped && epoch === requestEpoch.current) setIndividuals(roster.individuals);
+        }
         if (!stopped && epoch === requestEpoch.current) {
+          selectedIndividualRef.current = next.individualId;
           setState(next);
           setConnectionError("");
           const sameSession = historySession.current === next.sessionId;
@@ -67,12 +79,14 @@ function App() {
       clearTimeout(timer);
       controller?.abort();
     };
-  }, []);
+  }, [individualId]);
   async function command(path, body) {
     requestEpoch.current++;
     setBusy(true);
     try {
-      const r = await fetch(path, {
+      const scopedPath = state?.persistence && ["/api/control", "/api/encounters"].includes(path)
+        ? `/api/individuals/${state.individualId}/${path.slice(5)}` : path;
+      const r = await fetch(scopedPath, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(state?.persistence ? {
@@ -87,6 +101,10 @@ function App() {
             ? next.error
             : next.error?.message || "Request refused",
         );
+      if (next.individualId !== state?.individualId) {
+        selectedIndividualRef.current = next.individualId;
+        setIndividualId(next.individualId); setSelected(""); setHistory([]);
+      }
       setState(next);
       setError("");
     } catch (e) {
@@ -98,7 +116,8 @@ function App() {
   }
   const nodes = state?.neural.neurons || [],
     node = nodes.find((n) => String(n.id) === selected),
-    available = !!state && !busy && !connectionError;
+    available = !!state && !busy && !connectionError,
+    residentAvailable = available && state?.status !== "saved-unloaded";
   const go = (t) => {
     location.hash = encodeURIComponent(t);
     setTab(t);
@@ -184,6 +203,28 @@ function App() {
             )}
           </div>
         )}
+        {state?.persistence && tab === "Observatory" && <>
+          <Population />
+          <Recordings state={state} disabled={!available} onMutation={async () => {
+            if (selectedIndividualRef.current !== state.individualId) return;
+            const epoch = ++requestEpoch.current;
+            const selectedId = state.individualId;
+            const response = await fetch(`/api/individuals/${selectedId}`);
+            if (!response.ok) throw new Error("Refresh individual before another command.");
+            const next = await response.json();
+            if (next.individualId === selectedIndividualRef.current && epoch === requestEpoch.current) setState(next);
+          }} />
+        </>}
+        {individuals.length > 0 && <section className="card" aria-label="Individual selection">
+          <label>Individual <select disabled={busy} value={individualId || state?.individualId || ""} onChange={event => {
+            requestEpoch.current++;
+            selectedIndividualRef.current = event.target.value;
+            setIndividualId(event.target.value); setState(null); setSelected(""); setHistory([]); setConnectionError("");
+          }}>{individuals.map(individual => <option key={individual.individualId} value={individual.individualId}>
+            {individual.individualId} · {individual.resident ? "resident" : "saved unloaded"}
+          </option>)}</select></label>
+          <p>Each synthetic individual has separate state and exposure reservations. Selection does not start a simulation.</p>
+        </section>}
         <div className="toolbar">
           <div className="identity">
             <span className="tiny-fly">✧</span>
@@ -197,7 +238,7 @@ function App() {
           </div>
           <div className="actions">
             <button
-              disabled={!available}
+              disabled={!residentAvailable}
               onClick={() =>
                 command("/api/control", {
                   action: state?.status === "running" ? "pause" : "start",
@@ -210,13 +251,13 @@ function App() {
                 : "▷ Run fixture"}
             </button>
             <button
-              disabled={!available}
+              disabled={!residentAvailable}
               onClick={() => command("/api/control", { action: "rest" })}
             >
               ☾ Rest
             </button>
             <button
-              disabled={!available}
+              disabled={!residentAvailable}
               onClick={() => command("/api/control", { action: "home" })}
             >
               ⌂ Home
@@ -229,8 +270,10 @@ function App() {
             <p>Saved at {(state.persistence.savedSimTimeMs / 1000).toFixed(3)} s · {state.persistence.checkpointCount} checkpoints.
               Optional encounters also save their reservation before delivery. Restart restores the latest saved state paused. Restore cancels optional input and retains spent reservations.</p>
             <div className="actions">
-              <button disabled={!available} onClick={() => command(`/api/individuals/${state.individualId}/checkpoints`, {})}>Save checkpoint</button>
-              <button disabled={!available} onClick={() => command(`/api/individuals/${state.individualId}/restore`, { checkpointId: state.persistence.checkpointId })}>Restore saved state (paused)</button>
+              <button disabled={!available} onClick={() => command(`/api/individuals/${state.individualId}/${state.persistence.resident ? "unload" : "load"}`, {})}>{state.persistence.resident ? "Save and unload" : "Load paused"}</button>
+              <button disabled={!available} onClick={() => command(`/api/individuals/${state.individualId}/replicas`, { checkpointId: state.persistence.checkpointId })}>Create saved research replica</button>
+              <button disabled={!residentAvailable} onClick={() => command(`/api/individuals/${state.individualId}/checkpoints`, {})}>Save checkpoint</button>
+              <button disabled={!residentAvailable} onClick={() => command(`/api/individuals/${state.individualId}/restore`, { checkpointId: state.persistence.checkpointId })}>Restore saved state (paused)</button>
             </div>
             {(state.faultReason || state.persistence.error) && <p role="alert">{state.faultReason || state.persistence.error}</p>}
           </section>
@@ -322,7 +365,7 @@ function App() {
               />
             </div>
             <p className="muted">
-              Select a neuron to inspect its outgoing connections. Geometry and
+              Select a neuron to inspect its incoming and outgoing connections. Geometry and
               cell labels belong to this fixture only.
             </p>
             <div className="neuron-layout">
@@ -370,10 +413,10 @@ function App() {
                 </p>
                 {node &&
                   state.neural.edges
-                    .filter((e) => e.source === node.id)
+                    .filter((e) => e.source === node.id || e.target === node.id)
                     .map((e, i) => (
                       <div className="edge-row" key={i}>
-                        <span>→ {e.target}</span>
+                        <span>{e.source === node.id ? `Outgoing → ${e.target}` : `Incoming ← ${e.source}`}</span>
                         <strong>{e.weight.toFixed(3)}</strong>
                       </div>
                     ))}
@@ -408,7 +451,7 @@ function App() {
                   </small>
                   <button
                     disabled={
-                      !available ||
+                      !residentAvailable ||
                       state?.status !== "running" ||
                       c.active ||
                       c.cooldownRemainingMs > 0
@@ -499,7 +542,7 @@ function App() {
           <section className="card signal">
             <div className="card-heading">
               <span className="eyebrow">SIGNAL / POPULATION MEAN</span>
-              <span>{state?.neural.meanRateHz?.toFixed(1) || "0.0"} Hz</span>
+              <span>{state?.neural.meanRateHz?.toFixed(1) ?? "Unavailable"} {state ? "Hz" : ""}</span>
             </div>
             <svg
               viewBox="0 0 600 90"

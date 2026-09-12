@@ -5,6 +5,9 @@ import { fileURLToPath } from 'node:url';
 import { createRuntime, RuntimeError } from './runtime.js';
 import { openIdentityStore } from './identity-store.js';
 import ecosystem from '../ecosystem.config.cjs';
+import { createCapacityPolicy, openCapacityStore, measureFixtureFootprint } from './population-capacity.js';
+import { createRecordingStore } from './recording-store.js';
+import { freemem } from 'node:os';
 
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon' };
 const isLoopback = hostname => ['localhost', '127.0.0.1', '[::1]'].includes(hostname);
@@ -30,8 +33,28 @@ async function readBody(request) {
 }
 
 /** Polling observers share this one runtime. Wall-clock gaps never catch up simulation time. */
-export function createServer({ runtime = createRuntime(), identities = null, distDir = fileURLToPath(new URL('../dist/', import.meta.url)), autoTick = true, allowedOrigins = [], allowedHosts = [] } = {}) {
+export function createServer({ runtime = createRuntime(), identities = null, distDir = fileURLToPath(new URL('../dist/', import.meta.url)), autoTick = true, capacity = createCapacityPolicy(), resourceUsage = () => ({ aggregateMemoryBytes: process.memoryUsage().rss, availableMemoryBytes: freemem() }), incrementalMemoryBytes = null, recordings = null, allowedOrigins = [], allowedHosts = [] } = {}) {
   const root = resolve(distDir);
+  const pendingRecordings = new Set();
+  const activeRecordings = new Map();
+  let recordingFailure = null;
+  const resources = () => {
+    const all = identities?.list() ?? [];
+    return { ...resourceUsage(), savedCount: all.length,
+      residents: all.filter(value => value.resident).map(value => ({ ...value, status: identities.snapshot(value.individualId).status })) };
+  };
+  const population = () => ({ ...capacity.snapshot(resources()), incrementalMemoryBytes,
+    admission: capacity.preflight({ ...resources(), incrementalMemoryBytes }) });
+  const checkLoad = id => {
+    if (identities.list().find(value => value.individualId === id)?.resident) return;
+    const result = capacity.preflight({ ...resources(), incrementalMemoryBytes });
+    if (!result.admitted) throw new RuntimeError(result.reason, 409);
+  };
+  function checkOrigin(request, base) {
+    const origin = request.headers.origin;
+    if (origin && origin !== base.origin && !allowedOrigins.includes(origin)) throw new RuntimeError('Origin is not allowed.', 403);
+    if (request.headers['sec-fetch-site'] === 'cross-site') throw new RuntimeError('Cross-site mutation refused.', 403);
+  }
   const stateFor = id => identities ? identities.snapshot(id) : runtime.snapshot();
   const sequences = new Map();
   const sequenceFor = id => sequences.get(id ?? identities?.primaryId) ?? 0;
@@ -56,13 +79,54 @@ export function createServer({ runtime = createRuntime(), identities = null, dis
           return json(response, 200, { service: 'online', mode: state.source,
             simulation: state.status, persistence: identities ? 'durable-fixture' : 'session-only',
             connectome: state.capabilities.connectome, eidoverse: state.capabilities.eidoverse,
-            llm: state.capabilities.llm });
+            llm: state.capabilities.llm, population: identities ? population() : null,
+            recording: recordings ? { ...recordings.status(), failure: recordingFailure } : { available: false } });
         }
+        if (identities && request.method === 'GET' && url.pathname === '/api/population') return json(response, 200, population());
         if (request.method === 'GET' && url.pathname === '/api/state') return json(response, 200, snapshot());
         if (identities && request.method === 'GET' && url.pathname === '/api/individuals') {
           return json(response, 200, { protocolVersion: 1, individuals: identities.list() });
         }
-        const individualRoute = /^\/api\/individuals\/([0-9a-f-]+)(?:\/(checkpoints|restore|replicas))?$/.exec(url.pathname);
+        if (identities && url.pathname === '/api/population' && request.method === 'POST') {
+          checkOrigin(request, base);
+          const body = await readBody(request);
+          try { capacity.configure(body); } catch (error) { throw new RuntimeError(error.message, 400); }
+          return json(response, 200, population());
+        }
+        if (recordings && url.pathname === '/api/recordings' && request.method === 'GET') {
+          return json(response, 200, { sessions: recordings.list(), storage: recordings.status(), failure: recordingFailure });
+        }
+        const recordingRoute = /^\/api\/recordings\/([0-9a-f-]+)(?:\/(export|replay|stop|delete))?$/.exec(url.pathname);
+        if (recordings && recordingRoute) {
+          const [, id, operation] = recordingRoute;
+          try {
+            if (request.method === 'GET' && [undefined, 'export', 'replay'].includes(operation)) {
+              return json(response, 200, operation === 'replay' ? recordings.replay(id) : recordings.read(id));
+            }
+            if (request.method !== 'POST' || !['stop', 'delete'].includes(operation)) throw new RuntimeError('Method not allowed.', 405);
+            checkOrigin(request, base);
+            const body = await readBody(request);
+            if (Object.keys(body).length) throw new RuntimeError('Expected an empty object.');
+            await Promise.allSettled([...pendingRecordings]);
+            activeRecordings.delete(id);
+            const result = operation === 'stop' ? recordings.stop(id) : recordings.delete(id);
+            return json(response, 200, result ?? { deleted: true });
+          } catch (error) { throw error.statusCode ? error : new RuntimeError(error.message, 409); }
+        }
+        if (recordings && identities && url.pathname === '/api/recordings' && request.method === 'POST') {
+          checkOrigin(request, base);
+          const body = await readBody(request);
+          validateCommand(body, [], body.individualId);
+          const state = snapshot(body.individualId);
+          if (!state.persistence.resident) throw new RuntimeError('Recording requires a loaded individual.', 409);
+          if ([...activeRecordings.values()].some(value => value.individualId === state.individualId)) throw new RuntimeError('Individual already recording.', 409);
+          const session = recordings.start({ individualId: state.individualId, worldId: 'home', sessionId: state.sessionId,
+            modelVersion: state.model.id, datasetVersion: `${state.dataset.namespace}:${state.dataset.release}`,
+            checkpointId: state.persistence.checkpointId, seed: null, participantIds: [state.individualId], sampleIntervalMs: 500 });
+          activeRecordings.set(session.id, { individualId: state.individualId, sessionId: state.sessionId });
+          return json(response, 200, session);
+        }
+        const individualRoute = /^\/api\/individuals\/([0-9a-f-]+)(?:\/(checkpoints|restore|replicas|control|encounters|load|unload))?$/.exec(url.pathname);
         if (identities && individualRoute && request.method === 'GET') {
           const [, id, operation] = individualRoute;
           if (!operation) return json(response, 200, snapshot(id));
@@ -81,7 +145,7 @@ export function createServer({ runtime = createRuntime(), identities = null, dis
             const operation = individualRoute ? individualRoute[2] : url.pathname.slice(5);
             const field = operation === 'control' ? 'action' : operation === 'encounters' ? 'compoundId'
               : ['restore', 'replicas'].includes(operation) ? 'checkpointId' : null;
-            if (!['control', 'encounters', 'checkpoints', 'restore', 'replicas'].includes(operation)) throw new RuntimeError('API route not found.', 404);
+            if (!['control', 'encounters', 'checkpoints', 'restore', 'replicas', 'load', 'unload'].includes(operation)) throw new RuntimeError('API route not found.', 404);
             if (field && typeof body[field] !== 'string') throw new RuntimeError(`Expected a string ${field}.`);
             validateCommand(body, field ? [field] : [], id);
             let state;
@@ -89,6 +153,8 @@ export function createServer({ runtime = createRuntime(), identities = null, dis
             else if (operation === 'encounters') state = identities.encounter(id, body.compoundId);
             else if (operation === 'checkpoints') state = identities.save(id);
             else if (operation === 'restore') state = identities.restore(id, body.checkpointId);
+            else if (operation === 'load') { checkLoad(id); state = identities.load(id); }
+            else if (operation === 'unload') state = identities.unload(id);
             else state = identities.replica(id, body.checkpointId);
             return json(response, 200, { ...state, commandSequence: sequenceFor(state.individualId) });
           }
@@ -116,8 +182,46 @@ export function createServer({ runtime = createRuntime(), identities = null, dis
     }
   });
   let timer;
-  server.on('listening', () => { if (autoTick) timer = setInterval(() => identities ? identities.step() : runtime.step(), 50); });
-  server.on('close', () => { clearInterval(timer); identities?.close(); });
+  let sampleTick = 0;
+  server.on('listening', () => { if (autoTick) timer = setInterval(() => {
+    if (identities) {
+      const budget = population();
+      if (budget.pressure !== 'within-budget') {
+        for (const resident of identities.list().filter(value => value.resident)) identities.control(resident.individualId, 'pause');
+      } else identities.step();
+    } else runtime.step();
+    if (++sampleTick % 10 !== 0 || !recordings) return;
+    // One bounded capture batch at a time; serialize writes fairly without awaiting the neural timer.
+    if (pendingRecordings.size) {
+      for (const id of activeRecordings.keys()) {
+        try { recordings.dropSample(id); }
+        catch { recordingFailure = 'Recording gap could not be saved.'; activeRecordings.delete(id); }
+      }
+      return;
+    }
+    const captures = [...activeRecordings].slice(0, 64).map(([id, source]) => ({ id, source, state: snapshot(source.individualId), wallTimeMs: Date.now() }));
+    const batch = (async () => {
+      for (const { id, source, state, wallTimeMs } of captures) {
+        if (!activeRecordings.has(id)) continue;
+        try {
+          const result = await recordings.append(id, !state.persistence.resident || state.sessionId !== source.sessionId
+            ? { sessionId: null }
+            : { individualId: state.individualId, worldId: 'home', sessionId: state.sessionId,
+              simulationTimeMs: state.simTimeMs, worldTimeMs: state.simTimeMs, wallTimeMs,
+              sourceStartMs: Math.max(0, state.simTimeMs - 1000), sourceEndMs: state.simTimeMs,
+              ratesHz: state.neural.neurons.map(value => value.rateHz) });
+          if (result.session.status !== 'recording') activeRecordings.delete(id);
+        } catch {
+          recordingFailure = 'Recording failed; simulation state was preserved.';
+          activeRecordings.delete(id);
+        }
+      }
+    })();
+    pendingRecordings.add(batch);
+    batch.finally(() => pendingRecordings.delete(batch));
+  }, 50); });
+  server.on('close', () => { clearInterval(timer); identities?.close();
+    Promise.allSettled([...pendingRecordings]).then(() => recordings?.close()); });
   return server;
 }
 
@@ -127,8 +231,15 @@ if (entryPath && resolve(entryPath) === fileURLToPath(import.meta.url)) {
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('PORT must be an integer from 1 to 65535.');
   const host = process.env.HOST ?? '127.0.0.1';
   const allowedHosts = (process.env.ALLOWED_HOSTS ?? '').split(',').map(value => value.trim().toLowerCase()).filter(Boolean);
-  const identities = openIdentityStore(process.env.FLY_GARDEN_DATA_DIR ?? fileURLToPath(new URL('../data/identities/', import.meta.url)));
-  const server = createServer({ identities, allowedHosts, allowedOrigins: (process.env.DEV_ORIGINS ?? `http://127.0.0.1:${ecosystem.PORTS.devUi},http://localhost:${ecosystem.PORTS.devUi}`).split(',').filter(Boolean) });
+  const dataDirectory = process.env.FLY_GARDEN_DATA_DIR ?? fileURLToPath(new URL('../data/identities/', import.meta.url));
+  const identities = openIdentityStore(dataDirectory, { loadPrimary: false });
+  const capacity = openCapacityStore(dataDirectory);
+  const footprint = measureFixtureFootprint(() => createRuntime());
+  const admission = capacity.preflight({ residents: [], incrementalMemoryBytes: footprint.incrementalMemoryBytes,
+    aggregateMemoryBytes: process.memoryUsage().rss, availableMemoryBytes: freemem() });
+  if (admission.admitted) identities.load(identities.primaryId);
+  const recordings = createRecordingStore({ directory: resolve(dataDirectory, 'recordings') });
+  const server = createServer({ identities, capacity, incrementalMemoryBytes: footprint.incrementalMemoryBytes, recordings, allowedHosts, allowedOrigins: (process.env.DEV_ORIGINS ?? `http://127.0.0.1:${ecosystem.PORTS.devUi},http://localhost:${ecosystem.PORTS.devUi}`).split(',').filter(Boolean) });
   server.listen(port, host, () => {
     console.log(`Fly Garden: http://${host}:${port} — synthetic fixture paused`);
     process.send?.('ready');
