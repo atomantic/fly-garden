@@ -159,3 +159,22 @@ The first worthwhile demo is small: one fly learns a rewarding landmark in a qui
 ## Initial repository milestone
 
 The initial publication contains this research plan, a welfare charter, contribution/agent guidance and an MIT license for original work. Runtime, data acquisition, PortOS registration and simulation validation remain future work. The first visual asset is planned as original procedural Three.js geometry, with optional Blender refinement and glTF/GLB export. Maintain editable sources and a clear distinction between animation and biomechanical simulation.
+
+
+## Foundation delivered September 12, 2026
+
+A runnable synthetic fixture now supplies the original garden/pod interface, live neural inspector, bounded input encounters and event history. The PortOS-managed PM2 process serves the UI and health API and starts paused. The fixture has no retained learning, real connectome, LLM or Eidoverse bridge. See [PRD.md](PRD.md) for acceptance requirements.
+
+## Implementation issues
+
+- [#1 Pin a licensed connectome and benchmark a local sparse neural backend](https://github.com/atomantic/fly-garden/issues/1)
+- [#2 Persist one individual with validated checkpoints and a paused worker lifecycle](https://github.com/atomantic/fly-garden/issues/2)
+- [#3 Extend the fixture observatory into a provenance-aware neural admin panel](https://github.com/atomantic/fly-garden/issues/3)
+- [#4 Connect the existing fly model to a disclosed visual sensory and motor loop](https://github.com/atomantic/fly-garden/issues/4)
+- [#5 Add optional encounter-driven scent and bounded chemical modulation](https://github.com/atomantic/fly-garden/issues/5)
+- [#6 Evaluate retained benign learning with controls and checkpoint provenance](https://github.com/atomantic/fly-garden/issues/6)
+- [#7 Create traceable flower music and pollen-art play](https://github.com/atomantic/fly-garden/issues/7)
+- [#8 Implement opt-in caretaker chat and an auditable neural-triggered language tool](https://github.com/atomantic/fly-garden/issues/8)
+- [#9 Implement scoped local Eidoverse admission and the teleport-pod lifecycle](https://github.com/atomantic/fly-garden/issues/9)
+- [#10 Add a visible fly visitor and gentle Eidoverse play patch](https://github.com/atomantic/fly-garden/issues/10)
+- [#11 Complete managed-app health, resource limits and checkpoint backup](https://github.com/atomantic/fly-garden/issues/11)
