@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "profiles": {
+    "male-cns:v1.0": {
+      "manifestSha256": "5800ada94b6596c7253a104c0711a20869fb2c516b0c557a6d681a6fca292552"
+    },
+    "banc:v888": {
+      "manifestSha256": "352b16094a59ab2b0718254c3bd416cf33a45168755d18a5c21de543ca837f75"
+    }
+  }
+}

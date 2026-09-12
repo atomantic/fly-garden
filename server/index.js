@@ -10,6 +10,7 @@ import { createRecordingStore } from './recording-store.js';
 import { createCreativeSessions } from './creative-session.js';
 import { createLanguageService } from './language-service.js';
 import { createOllamaLanguageProvider } from './ollama-language-provider.js';
+import { createAtlasHttp } from './atlas-http.js';
 import { freemem } from 'node:os';
 
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon' };
@@ -36,8 +37,9 @@ async function readBody(request) {
 }
 
 /** Polling observers share the selected resident runtimes. Wall-clock gaps never catch up simulation time. */
-export function createServer({ runtime = createRuntime(), identities = null, distDir = fileURLToPath(new URL('../dist/', import.meta.url)), autoTick = true, capacity = createCapacityPolicy(), resourceUsage = () => ({ aggregateMemoryBytes: process.memoryUsage().rss, availableMemoryBytes: freemem() }), incrementalMemoryBytes = null, recordings = null, creativeSessions = createCreativeSessions(), onEnvironmentFrame = null, languageProviders = [], languageService = null, allowedOrigins = [], allowedHosts = [] } = {}) {
+export function createServer({ runtime = createRuntime(), identities = null, distDir = fileURLToPath(new URL('../dist/', import.meta.url)), autoTick = true, capacity = createCapacityPolicy(), resourceUsage = () => ({ aggregateMemoryBytes: process.memoryUsage().rss, availableMemoryBytes: freemem() }), incrementalMemoryBytes = null, recordings = null, creativeSessions = createCreativeSessions(), onEnvironmentFrame = null, languageProviders = [], languageService = null, atlasDirectory = fileURLToPath(new URL('../data/atlas/', import.meta.url)), allowedOrigins = [], allowedHosts = [] } = {}) {
   const root = resolve(distDir);
+  const atlasHttp = createAtlasHttp({ directory: atlasDirectory });
   const language = identities ? (languageService ?? createLanguageService({ identities, providers: languageProviders })) : null;
   const pendingRecordings = new Set();
   const activeRecordings = new Map();
@@ -90,6 +92,7 @@ export function createServer({ runtime = createRuntime(), identities = null, dis
       if (!isLoopback(base.hostname) && !allowedHosts.includes(base.hostname)) throw new RuntimeError('Host is not allowed.', 403);
       const url = new URL(request.url, base);
       if (url.pathname === '/api' || url.pathname.startsWith('/api/')) {
+        if (await atlasHttp(request, response, url.pathname)) return;
         if (request.method === 'GET' && url.pathname === '/api/health') {
           const state = snapshot();
           return json(response, 200, { service: 'online', mode: state.source,

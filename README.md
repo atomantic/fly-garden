@@ -33,6 +33,10 @@ The [optional telemetry interpreter](docs/LANGUAGE_SERVICE.md) keeps per-individ
 
 Separate, explicitly invoked [connectome research tools](docs/CONNECTOME_MODEL_CARD.md) acquire a pinned MaleCNS release and benchmark a local sparse LIF model. These tools do not select a backend in the observatory or control the illustrated fly. The app continues to expose its synthetic fixture; sensory/motor integration and biological validation remain future work.
 
+## Anatomical atlas
+
+The **Nervous system** tab independently displays the pinned MaleCNS v1.0 soma positions and BANC v888 root/representative positions, with whole-system, brain and nerve-cord filters and exact-ID search. Missing positions remain in the table. This is anatomical data, separate from the synthetic live circuit; no matching activity overlay or full morphology is claimed. Data is generated locally and remains unavailable in a fresh clone until the [atlas importer](docs/ANATOMICAL_ATLAS.md) is run. No datasets are downloaded on app startup.
+
 ## PortOS and PM2
 
 Register this repository in PortOS with process name `fly-garden`, API/UI port `8790`, build command `npm run build`, and fallback start command `npm start`. The checked-in `ecosystem.config.cjs` is the canonical PM2 configuration. PortOS can start/stop the named process using it.

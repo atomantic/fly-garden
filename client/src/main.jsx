@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import Scene from "./Scene.jsx";
 import Population from "./Population.jsx";
@@ -8,9 +8,11 @@ import CreativeControls from "./CreativeControls.jsx";
 import LanguageControls from "./LanguageControls.jsx";
 import "./style.css";
 
+const NervousSystem = lazy(() => import("./NervousSystem.jsx"));
 const sections = [
   "Observatory",
   "Neural map",
+  "Nervous system",
   "Encounters",
   "Language",
   "Eidoverse",
@@ -145,7 +147,7 @@ function App() {
               aria-current={tab === s ? "page" : undefined}
               className={tab === s ? "active" : ""}
             >
-              <span className="nav-icon">{["◉", "⌘", "❋", "⌁", "◎"][i]}</span>
+              <span className="nav-icon">{["◉", "⌘", "✣", "❋", "⌁", "◎"][i]}</span>
               {s}
               <span className="nav-index">0{i + 1}</span>
             </a>
@@ -178,7 +180,9 @@ function App() {
                 ? "A small world. An open mind."
                 : tab === "Neural map"
                   ? "Follow the signal."
-                  : tab === "Encounters"
+                  : tab === "Nervous system"
+                    ? "Explore the anatomy."
+                    : tab === "Encounters"
                     ? "A garden of possibilities."
                     : tab === "Language"
                       ? "A bridge into language."
@@ -383,6 +387,7 @@ function App() {
             </section>
           </div>
         )}
+        {tab === "Nervous system" && <Suspense fallback={<p role="status">Loading anatomical viewer…</p>}><NervousSystem /></Suspense>}
         {tab === "Neural map" && (
           <section className="card map-panel">
             <div className="card-heading">
