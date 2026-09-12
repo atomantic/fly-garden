@@ -104,8 +104,8 @@ test('HTTP boundary rejects malformed and cross-origin mutations and distinguish
 });
 
 test('deterministic fixture replay has finite bounded state and snapshots cannot mutate the runtime', () => {
-  const a = createRuntime();
-  const b = createRuntime();
+  const a = createRuntime({ sessionId: 'replay' });
+  const b = createRuntime({ sessionId: 'replay' });
   a.control('start'); b.control('start');
   a.encounter('floral'); b.encounter('floral');
   for (let i = 0; i < 10000; i++) { a.step(); b.step(); }
@@ -120,6 +120,19 @@ test('deterministic fixture replay has finite bounded state and snapshots cannot
   assert.ok(Number.isFinite(a.snapshot().neural.neurons[0].potential));
 });
 
+test('HTTP quiet remains available during recovery and cancels input without a budget refund', async t => {
+  const { post, get } = await fixture(t);
+  await post('control', { action: 'start' });
+  await post('encounters', { compoundId: 'nectar' });
+  const before = await get();
+  assert.equal(before.chemistry.find(effect => effect.id === 'quiet').cooldownRemainingMs, 0);
+  assert.equal((await post('encounters', { compoundId: 'quiet' })).status, 200);
+  const after = await get();
+  assert.equal(after.chemistry.some(effect => effect.active), false);
+  assert.equal(after.stimulusPolicy.reservedDose, before.stimulusPolicy.reservedDose);
+  assert.deepEqual(after.neural, before.neural);
+  assert.equal((await post('encounters', { compoundId: 'nectar' })).status, 409);
+});
 
 test('configured tailnet host serves UI and controls while other hosts and origins remain rejected', async t => {
   const { base, get } = await fixture(t, { allowedHosts: ['fly.example.ts.net'] });

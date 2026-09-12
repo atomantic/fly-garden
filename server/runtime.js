@@ -1,10 +1,7 @@
 /** Original deterministic fixture. This is not a biological connectome or a learning model. */
 const STEP_MS = 5;
-const COMPOUNDS = [
-  { id: 'nectar', label: 'Nectar', description: 'Brief synthetic input to four fixture neurons; no biological reward claim.', durationMs: 300, cooldownMs: 3000, drive: 0.045 },
-  { id: 'floral', label: 'Floral scent', description: 'Brief synthetic sensory input; not a receptor or pheromone model.', durationMs: 500, cooldownMs: 3000, drive: 0.025 },
-  { id: 'quiet', label: 'Quiet bloom', description: 'Temporarily reduces the engineered baseline input.', durationMs: 500, cooldownMs: 3000, drive: -0.02 },
-];
+import { randomUUID } from 'node:crypto';
+import { createStimulusPolicy } from './stimulus-policy.js';
 
 export class RuntimeError extends Error {
   constructor(message, statusCode = 400) {
@@ -13,13 +10,12 @@ export class RuntimeError extends Error {
   }
 }
 
-export function createRuntime() {
+export function createRuntime({ individualId = 'synthetic-fixture', sessionId = randomUUID() } = {}) {
+  const policy = createStimulusPolicy({ individualId, sessionId });
   let status = 'paused';
   let tick = 0;
   let eventId = 0;
-  let lastEncounterAt = -Infinity;
   const events = [];
-  const exposures = new Map();
   const neurons = Array.from({ length: 32 }, (_, i) => ({
     id: `fixture-${i}`, region: i < 16 ? 'Synthetic left' : 'Synthetic right',
     x: (i < 16 ? -1 : 1) + Math.cos(i * 2.399) * 0.65,
@@ -32,14 +28,15 @@ export function createRuntime() {
     { source: n.id, target: neurons[(i + 7) % neurons.length].id, weight: -0.035 },
   ]);
   const spikeHistory = neurons.map(() => []);
-  const log = (type, message) => {
-    events.unshift({ id: ++eventId, timeMs: tick * STEP_MS, type, message });
+  const log = (type, message, details) => {
+    events.unshift({ id: ++eventId, timeMs: tick * STEP_MS, type, message, ...(details ? { details } : {}) });
     if (events.length > 80) events.pop();
   };
   log('system', 'Synthetic fixture ready. Paused; no connectome loaded. State is session-only.');
 
   function snapshot() {
     const time = tick * STEP_MS;
+    const stimulusPolicy = policy.snapshot();
     return structuredClone({
       schemaVersion: 1, source: 'fixture', status, simTimeMs: time, tick, environment: 'home',
       model: {
@@ -47,12 +44,8 @@ export function createRuntime() {
         limitations: '32 invented neurons and 64 fixed connections. Engineered inputs and geometry. No biological anatomy, plasticity, demonstrated learning, or inferred mental state. Session-only state.',
       },
       neural: { neurons, edges, spikes: neurons.filter(n => n.firing).length, meanRateHz: neurons.reduce((sum, n) => sum + n.rateHz, 0) / neurons.length },
-      chemistry: COMPOUNDS.map(({ drive, durationMs, cooldownMs, ...compound }) => {
-        const exposure = exposures.get(compound.id);
-        return { ...compound, active: !!exposure && time < exposure.endsAt,
-          remainingMs: Math.max(0, (exposure?.endsAt ?? 0) - time),
-          cooldownRemainingMs: Math.max(0, (exposure?.readyAt ?? 0) - time, lastEncounterAt + 1000 - time) };
-      }),
+      stimulusPolicy,
+      chemistry: stimulusPolicy.effects.map(({ intensity, durationMs, targets, ...effect }) => effect),
       events,
       capabilities: {
         connectome: { available: false, reason: 'Real dataset import and neural worker are not implemented. This is an explicit synthetic fixture.' },
@@ -67,7 +60,7 @@ export function createRuntime() {
     const next = action === 'start' ? 'running' : action === 'rest' ? 'resting' : 'paused';
     if (action === 'rest' || action === 'home') {
       // Stop stimulation without erasing cooldowns or resetting neural state.
-      for (const exposure of exposures.values()) exposure.endsAt = Math.min(exposure.endsAt, tick * STEP_MS);
+      policy.cancelOptional();
     }
     if (status !== next || action === 'home') {
       status = next;
@@ -76,34 +69,48 @@ export function createRuntime() {
     return snapshot();
   }
 
-  function encounter(compoundId) {
-    const compound = COMPOUNDS.find(item => item.id === compoundId);
-    if (!compound) throw new RuntimeError('Unknown virtual compound.');
-    if (status !== 'running') throw new RuntimeError('Start the fixture before offering an encounter.', 409);
-    const time = tick * STEP_MS;
-    if (time < (exposures.get(compoundId)?.readyAt ?? 0) || time < lastEncounterAt + 1000) {
-      throw new RuntimeError('Encounter cooldown is still active in simulation time.', 409);
+  // Source is bound by the server adapter, never taken from a caller's HTTP payload.
+  function stimulate(source, request) {
+    try {
+      if (status !== 'running') throw new RuntimeError('Start the fixture before offering an encounter.', 409);
+      const accepted = policy.admit(source, request);
+      log('policy', 'Optional synthetic stimulus accepted. Engineered mapping; not inferred consent.', {
+        decision: 'accepted', ...accepted,
+      });
+    } catch (error) {
+      log('policy', 'Stimulus rejected before delivery.', { decision: 'rejected', reason: error.message });
+      throw error;
     }
-    lastEncounterAt = time;
-    exposures.set(compoundId, { endsAt: time + compound.durationMs, readyAt: time + compound.cooldownMs });
-    log('encounter', `${compound.label}: bounded synthetic effect for ${compound.durationMs} ms of simulation time. Admin offered; not an autonomous choice.`);
+    return snapshot();
+  }
+
+  function encounter(compoundId) {
+    let request;
+    try { request = policy.envelope('ui', compoundId); }
+    catch (error) {
+      log('policy', 'Stimulus rejected before delivery.', { decision: 'rejected', reason: error.message });
+      throw error;
+    }
+    return stimulate('ui', request);
+  }
+
+  // Internal checkpoint hook only. No HTTP import/export or durable identity is implemented yet.
+  function restoreStimulusPolicy(saved) {
+    policy.restore(saved);
+    status = 'paused';
+    log('policy', 'Policy checkpoint reconciled; paused, optional input canceled and spent reservations retained.');
     return snapshot();
   }
 
   function step() {
     if (status !== 'running') return;
-    const time = tick * STEP_MS;
     const currents = neurons.map((_, i) => 0.055 + (i % 5) * 0.003);
     for (const { source, target, weight } of edges) {
       if (neurons[Number(source.slice(8))].firing) currents[Number(target.slice(8))] += weight;
     }
-    for (const compound of COMPOUNDS) {
-      if (time >= (exposures.get(compound.id)?.endsAt ?? 0)) continue;
-      for (let i = 0; i < neurons.length; i++) {
-        if (compound.id === 'quiet' || (compound.id === 'nectar' ? i < 4 : i >= 16 && i < 20)) currents[i] += compound.drive;
-      }
-    }
+    for (const [target, intensity] of policy.currents()) currents[Number(target.slice(8))] += intensity;
     tick++;
+    policy.advance(tick * STEP_MS);
     for (let i = 0; i < neurons.length; i++) {
       const neuron = neurons[i];
       const potential = neuron.potential * 0.975 + currents[i];
@@ -116,5 +123,6 @@ export function createRuntime() {
     }
   }
 
-  return { snapshot, control, encounter, step };
+  return { snapshot, control, encounter, stimulate, step,
+    checkpointStimulusPolicy: policy.checkpoint, restoreStimulusPolicy };
 }
