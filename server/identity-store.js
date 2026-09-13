@@ -30,7 +30,7 @@ export function acquireIdentityStoreLock(directory) {
 
 export function validateIdentityDocument(saved) {
   if (!(saved?.schemaVersion === 1 && exact(saved, ['schemaVersion', 'primaryId', 'individuals'])
-    || saved?.schemaVersion === 2 && exact(saved, ['schemaVersion', 'primaryId', 'individuals', 'jointCheckpoints']))
+    || [2, 3].includes(saved?.schemaVersion) && exact(saved, ['schemaVersion', 'primaryId', 'individuals', 'jointCheckpoints']))
     || !uuid(saved.primaryId) || !Array.isArray(saved.individuals) || !saved.individuals.length
     || saved.individuals.length > MAX_IDENTITIES) fail();
   const ids = new Set();
@@ -42,10 +42,16 @@ export function validateIdentityDocument(saved) {
     ids.add(record.individualId);
     const seen = new Set();
     for (const checkpoint of record.checkpoints) {
-      if (!exact(checkpoint, ['checkpointId', 'parentId', 'createdAt', 'payload', 'sha256']) || !uuid(checkpoint.checkpointId)
+      const hasPose = Object.hasOwn(checkpoint, 'embodiment');
+      if (!exact(checkpoint, ['checkpointId', 'parentId', 'createdAt', 'payload', 'sha256', ...(hasPose ? ['embodiment'] : [])]) || !uuid(checkpoint.checkpointId)
         || all.has(checkpoint.checkpointId) || (checkpoint.parentId !== null && !seen.has(checkpoint.parentId))
         || typeof checkpoint.createdAt !== 'string' || !Number.isFinite(Date.parse(checkpoint.createdAt))
-        || checkpoint.sha256 !== digest(checkpoint.payload)) fail();
+        || checkpoint.sha256 !== digest(hasPose ? { payload: checkpoint.payload, embodiment: checkpoint.embodiment } : checkpoint.payload)) fail();
+      if (hasPose) {
+        if (saved.schemaVersion !== 3 || !exact(checkpoint.embodiment, ['version', 'kind', 'pose'])
+          || checkpoint.embodiment.version !== 1 || checkpoint.embodiment.kind !== 'engineered-home-pose') fail();
+        validateSharedPose(checkpoint.embodiment.pose);
+      }
       createRuntime({ individualId: record.individualId, checkpoint: checkpoint.payload });
       seen.add(checkpoint.checkpointId);
       all.set(checkpoint.checkpointId, record.individualId);
@@ -60,7 +66,7 @@ export function validateIdentityDocument(saved) {
       || !predecessors.has(record.branchOf.individualId))) fail();
     predecessors.add(record.individualId);
   }
-  if (saved.schemaVersion === 2) {
+  if ([2, 3].includes(saved.schemaVersion)) {
     if (!Array.isArray(saved.jointCheckpoints) || saved.jointCheckpoints.length > MAX_CHECKPOINTS) fail();
     const jointIds = new Set();
     for (const joint of saved.jointCheckpoints) {
@@ -78,7 +84,8 @@ export function validateIdentityDocument(saved) {
         memberIds.add(member.individualId); validateSharedPose(member.pose);
         const record = saved.individuals.find(record => record.individualId === member.individualId);
         const checkpoint = record.checkpoints.find(checkpoint => checkpoint.checkpointId === member.checkpointId);
-        if (member.simTimeMs !== checkpoint.payload.dynamics.tick * 5) fail();
+        if (member.simTimeMs !== checkpoint.payload.dynamics.tick * 5
+          || checkpoint.embodiment && ['x', 'z', 'yaw'].some(axis => checkpoint.embodiment.pose[axis] !== member.pose[axis])) fail();
       }
     }
   }
@@ -100,6 +107,7 @@ export function openIdentityStore(directory, { write = atomicWrite, loadPrimary 
   let saved, runtime, closed = false;
   const runtimes = new Map();
   const environments = new Map();
+  const retainedPoses = new Map();
   const controllerTokens = new Map();
   const encounterAdapters = new Map();
   const persistenceErrors = new Map();
@@ -112,8 +120,13 @@ export function openIdentityStore(directory, { write = atomicWrite, loadPrimary 
     saved = candidate;
 
   };
-  const entry = (payload, parentId = null) => ({ checkpointId: randomUUID(), parentId,
-    createdAt: new Date().toISOString(), payload, sha256: digest(payload) });
+  const entry = (payload, parentId = null, pose = null) => {
+    const embodiment = pose === null ? null : { version: 1, kind: 'engineered-home-pose', pose: structuredClone(validateSharedPose(pose)) };
+    return { checkpointId: randomUUID(), parentId, createdAt: new Date().toISOString(), payload,
+      ...(embodiment ? { embodiment } : {}), sha256: digest(embodiment ? { payload, embodiment } : payload) };
+  };
+  function selectedPose(record) { return structuredClone(checkpointFor(record, record.head).embodiment?.pose ?? null); }
+  function currentPose(id) { return environments.get(id)?.snapshot().pose ?? retainedPoses.get(id) ?? null; }
   try {
     try {
       if (statSync(path).size > MAX_BYTES) fail();
@@ -131,6 +144,7 @@ export function openIdentityStore(directory, { write = atomicWrite, loadPrimary 
     for (const id of new Set([...(loadPrimary ? [saved.primaryId] : []), ...residentIds])) {
       const record = recordFor(id);
       runtimes.set(id, createRuntime({ individualId: id, checkpoint: checkpointFor(record, record.head).payload }));
+      retainedPoses.set(id, selectedPose(record));
     }
   } catch (error) { release(); throw error; }
 
@@ -185,8 +199,9 @@ export function openIdentityStore(directory, { write = atomicWrite, loadPrimary 
   function storeCheckpoint(id, payload) {
     const record = recordFor(id);
     if (record.checkpoints.length >= MAX_CHECKPOINTS) throw new RuntimeError('Checkpoint history limit reached; no history was deleted.', 409);
-    const checkpoint = entry(payload, record.head);
+    const checkpoint = entry(payload, record.head, currentPose(id));
     const next = structuredClone(saved);
+    if (checkpoint.embodiment) { next.schemaVersion = 3; next.jointCheckpoints ??= []; }
     const replacement = next.individuals.find(value => value.individualId === id);
     replacement.checkpoints.push(checkpoint);
     replacement.head = checkpoint.checkpointId;
@@ -213,6 +228,7 @@ export function openIdentityStore(directory, { write = atomicWrite, loadPrimary 
       next.individuals.find(value => value.individualId === id).head = checkpoint.checkpointId;
       persist(next);
       detachEnvironment(id);
+      retainedPoses.set(id, structuredClone(checkpoint.embodiment?.pose ?? null));
       encounterAdapters.delete(id);
       runtimes.set(id, restored);
       return snapshot(id);
@@ -224,7 +240,7 @@ export function openIdentityStore(directory, { write = atomicWrite, loadPrimary 
     const checkpoint = checkpointFor(record, checkpointId);
     if (saved.individuals.length >= MAX_IDENTITIES) throw new RuntimeError('Saved identity storage limit reached.', 409);
     const individualId = randomUUID();
-    const branched = entry(branchRuntimeCheckpoint(checkpoint.payload, individualId));
+    const branched = entry(branchRuntimeCheckpoint(checkpoint.payload, individualId), null, checkpoint.embodiment?.pose ?? null);
     const next = structuredClone(saved);
     next.individuals.push({ individualId, createdAt: branched.createdAt, branchOf: { individualId: id, checkpointId },
       head: branched.checkpointId, checkpoints: [branched] });
@@ -249,6 +265,7 @@ export function openIdentityStore(directory, { write = atomicWrite, loadPrimary 
     if (runtimes.has(id)) return snapshot(id);
     const candidate = createRuntime({ individualId: id, checkpoint: checkpointFor(record, record.head).payload });
     runtimes.set(id, candidate);
+    retainedPoses.set(id, selectedPose(record));
     replicaSessions.delete(id);
     return snapshot(id);
   }
@@ -269,7 +286,9 @@ export function openIdentityStore(directory, { write = atomicWrite, loadPrimary 
     const adapter = environments.get(id);
     if (adapter) return { attached: true, ...adapter.snapshot() };
     return { attached: false, individualId: id, sessionId: (state ?? requireOrSavedState(id)).sessionId,
-      pose: null, disclosure: 'Visual adapter detached. Body illustration is not controlled by the fixture.' };
+      pose: structuredClone(runtimes.has(id) ? currentPose(id) : selectedPose(recordFor(id))),
+      posePersistence: 'Checkpointed engineered pose when available; older checkpoints have no pose. Explicit attach is required and starts paused.',
+      disclosure: 'Visual adapter detached and unarmed. No sensory producer or controller credential is restored.' };
   }
   function requireOrSavedState(id) {
     if (runtimes.has(id)) return runtimes.get(id).snapshot();
@@ -278,6 +297,7 @@ export function openIdentityStore(directory, { write = atomicWrite, loadPrimary 
   }
   function detachEnvironment(id) {
     revokeEncounters(id);
+    if (environments.has(id)) retainedPoses.set(id, environments.get(id).snapshot().pose);
     environments.get(id)?.invalidate('Visual adapter explicitly detached.');
     environments.delete(id);
     controllerTokens.delete(id);
@@ -291,7 +311,7 @@ export function openIdentityStore(directory, { write = atomicWrite, loadPrimary 
       revokeEncounters(id);
       runtime.control('pause');
       if (environments.has(id)) environments.get(id).invalidate('Explicit controller takeover; paused with a new epoch.');
-      else environments.set(id, createEnvironmentAdapter(runtime));
+      else environments.set(id, createEnvironmentAdapter(runtime, { initialPose: currentPose(id) ?? { x: 0, z: 0, yaw: 0 } }));
       const controllerToken = randomBytes(32).toString('hex');
       controllerTokens.set(id, controllerToken);
       // This one response is the only token delivery; no snapshots/checkpoints/telemetry contain it.
@@ -388,7 +408,7 @@ export function openIdentityStore(directory, { write = atomicWrite, loadPrimary 
     const members = ids.map(id => {
       requireIndependent(id); const runtime = requireResident(id);
       if (runtime.snapshot().status === 'fault') throw new RuntimeError('Restore faulted members before joining.', 409);
-      return { runtime, pose: environments.get(id)?.snapshot().pose ?? { x: 0, z: 0, yaw: 0 } };
+      return { runtime, pose: currentPose(id) ?? { x: 0, z: 0, yaw: 0 } };
     });
     const session = createFixtureSharedSession(members);
     session.pause('Explicit shared join; all members paused.');
@@ -397,6 +417,7 @@ export function openIdentityStore(directory, { write = atomicWrite, loadPrimary 
   function sharedLeave(sharedId) {
     const session = sharedFor(sharedId); session.pause('Membership withdrawn at the current world boundary.');
     const result = session.snapshot();
+    for (const member of result.participants) retainedPoses.set(member.individualId, structuredClone(member.pose));
     for (const id of session.memberIds()) sharedOwners.delete(id);
     sharedSessions.delete(sharedId); sharedTokens.delete(sharedId);
     return { ...result, status: 'separated' };
@@ -421,12 +442,12 @@ export function openIdentityStore(directory, { write = atomicWrite, loadPrimary 
     const session = sharedFor(sharedId);
     try {
       const state = session.snapshot();
-      const next = structuredClone(saved); next.schemaVersion = 2; next.jointCheckpoints ??= [];
+      const next = structuredClone(saved); next.schemaVersion = 3; next.jointCheckpoints ??= [];
       if (next.jointCheckpoints.length >= MAX_CHECKPOINTS) throw new RuntimeError('Joint checkpoint history limit reached; no history was deleted.', 409);
       const members = state.participants.map(member => {
         const record = next.individuals.find(record => record.individualId === member.individualId);
         if (record.checkpoints.length >= MAX_CHECKPOINTS) throw new RuntimeError('Checkpoint history limit reached; no history was deleted.', 409);
-        const checkpoint = entry(requireResident(member.individualId).checkpoint(), record.head);
+        const checkpoint = entry(requireResident(member.individualId).checkpoint(), record.head, member.pose);
         record.checkpoints.push(checkpoint); record.head = checkpoint.checkpointId;
         return { individualId: member.individualId, checkpointId: checkpoint.checkpointId, simTimeMs: member.simTimeMs, pose: member.pose };
       });

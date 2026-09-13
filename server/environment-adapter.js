@@ -31,13 +31,15 @@ export function readFixtureMotor(snapshot) {
 /** One accepted frame advances exactly one fixture step. The supervisor must stop its
  * independent timer for an attached recipient, and call checkFreshness while awaiting frames.
  */
-export function createEnvironmentAdapter(runtime, { now = Date.now } = {}) {
+export function createEnvironmentAdapter(runtime, { now = Date.now, initialPose = { x: 0, z: 0, yaw: 0 } } = {}) {
   const initial = runtime.snapshot();
   const individualId = initial.individualId, sessionId = initial.sessionId;
   let environmentEpoch = randomUUID(), lastFrameId = -1, lastReceivedAtMs = null, lastTrace = null, awaitingSinceMs = null;
   let motor = { forward: 0, yaw: 0 };
   let pauseReason = 'Controller attached paused; explicitly run to begin.';
-  let pose = { x: 0, z: 0, yaw: 0 };
+  if (!initialPose || Object.keys(initialPose).length !== 3 || !['x', 'z', 'yaw'].every(k => Number.isFinite(initialPose[k]))
+    || Math.abs(initialPose.x) > 2 || Math.abs(initialPose.z) > 2 || Math.abs(initialPose.yaw) > Math.PI) throw new Error('Invalid initial body pose');
+  let pose = { ...initialPose };
   function invalidate(reason = 'Environment session changed.') {
     pauseReason = reason;
     environmentEpoch = randomUUID(); lastFrameId = -1; lastReceivedAtMs = null; lastTrace = null; awaitingSinceMs = null;
@@ -84,5 +86,5 @@ export function createEnvironmentAdapter(runtime, { now = Date.now } = {}) {
   }
   return { accept, checkFreshness, invalidate,
     snapshot: () => structuredClone({ ...RETINAL_ADAPTER, individualId, sessionId, environmentEpoch,
-      lastFrameId, lastReceivedAtMs, pauseReason, pose, posePersistence: 'Session-only engineered body pose; explicit attach initializes position. Neural checkpoints do not retain body pose.', motor: runtime.snapshot().status === 'running' ? motor : { forward: 0, yaw: 0 }, lastTrace }) };
+      lastFrameId, lastReceivedAtMs, pauseReason, pose, posePersistence: 'Engineered body pose retained by explicit registry checkpoints; controller leases and sensory frames are never restored.', motor: runtime.snapshot().status === 'running' ? motor : { forward: 0, yaw: 0 }, lastTrace }) };
 }

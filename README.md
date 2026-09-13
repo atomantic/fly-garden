@@ -31,7 +31,7 @@ In **Connectome lab**, create a saved, unloaded individual, then choose **Load c
 
 In **Fixture garden**, explicitly load the test fixture and choose **Run fixture**. **Save checkpoint** persists its state; optional encounters also save their exposure reservation before delivery. Restart preserves identity and the latest save with a fresh paused session, discarding unsaved progress. **Restore saved state (paused)** cancels optional input and retains spent exposure reservations. See [fixture checkpoint storage](docs/CHECKPOINTS.md).
 
-The [visual fixture controller](docs/ENVIRONMENT_ADAPTER.md) owns a dedicated camera lease and pauses when frames go stale. [Movement capture](docs/CREATIVE_ARTIFACTS.md) exports attributed JSON/MIDI/SVG/PNG; it is not evidence of learned creativity. Body pose is session-only, and no real connectome controls this view.
+The [visual fixture controller](docs/ENVIRONMENT_ADAPTER.md) owns a dedicated camera lease and pauses when frames go stale. [Movement capture](docs/CREATIVE_ARTIFACTS.md) exports attributed JSON/MIDI/SVG/PNG; it is not evidence of learned creativity. Explicit fixture checkpoints retain the engineered body pose, while restore remains detached and paused; no real connectome controls this view.
 
 Optional [garden encounter controls](docs/ENCOUNTER_DYNAMICS.md) enable declared floral contact proxies and fictional nectar inputs. Entry can offer one bounded pulse; dwelling never redoses, withdrawal stops delivery, and restart stays disabled. These are engineered mappings, not biological chemistry or evidence of learning.
 

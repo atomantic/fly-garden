@@ -85,7 +85,7 @@ test('joint checkpoint transaction retains real per-ID references, poses and pau
   for (const member of checkpoint.payload.members) assert.equal(member.checkpointId, store.snapshot(member.individualId).persistence.checkpointId);
   assert.equal(checkpoint.payload.members[1].pose.z > 0, true);
   const document = JSON.parse(readFileSync(join(path, 'identities.json')));
-  assert.equal(document.schemaVersion, 2); validateIdentityDocument(document);
+  assert.equal(document.schemaVersion, 3); validateIdentityDocument(document);
   assert.equal(JSON.stringify(document).includes(joined.controllerToken), false);
   store.sharedFrame(joined.sharedId, batch(state, joined.controllerToken));
   const restored = store.sharedRestore(checkpoint.jointCheckpointId);
