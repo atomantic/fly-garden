@@ -1,0 +1,107 @@
+{
+  "schemaVersion": 1,
+  "kind": "benign-learning-mapping-manifest",
+  "protocolId": "benign-landmark-association-v1",
+  "scene": {
+    "arenaShape": "circle",
+    "arenaRadius": 12,
+    "wallBehavior": "soft-boundary-no-contact-event",
+    "baselineSupport": "constant, never conditional on performance",
+    "quietArea": {
+      "centre": [
+        0,
+        0
+      ],
+      "radius": 2.5,
+      "role": "always-available rest region, no cue, no gate"
+    },
+    "landmarks": [
+      {
+        "category": "ring",
+        "outerRadius": 1.2,
+        "innerRadius": 0.6,
+        "height": 2,
+        "luminance": 0.82
+      },
+      {
+        "category": "bar",
+        "width": 0.5,
+        "depth": 0.5,
+        "height": 2,
+        "luminance": 0.82
+      }
+    ],
+    "landmarkPlacementRadius": 8,
+    "contactRadius": 1,
+    "contactRule": "first body-centre entry within contactRadius of a landmark centre during a trial",
+    "motionBounds": {
+      "maxForwardSpeed": 2,
+      "maxYawRadiansPerSecond": 0.5,
+      "maxAccelerationPerSecond": 4
+    },
+    "luminanceBounds": {
+      "minimum": 0,
+      "maximum": 1,
+      "backgroundLuminance": 0.12
+    },
+    "layoutChangesOnlyAt": "declared trial boundaries; never resets neural state or teleports the body"
+  },
+  "fixedReadout": {
+    "source": "bilateral DNa02 100-tick binary firing window",
+    "rateWindowTicks": 100,
+    "rateScaleHz": 100,
+    "yawCoefficient": 0.5,
+    "yawConvention": "right minus left, radians per second",
+    "forwardSpeed": 0
+  },
+  "variants": {
+    "training": [
+      "layout-a",
+      "layout-b",
+      "layout-c",
+      "layout-d"
+    ],
+    "heldOut": [
+      "layout-h1",
+      "layout-h2",
+      "layout-h3",
+      "layout-h4"
+    ],
+    "retention": [
+      "layout-r1",
+      "layout-r2"
+    ],
+    "renderVariants": [
+      "plain",
+      "textured"
+    ],
+    "targetCounterbalance": "seed parity: even seed index targets ring, odd targets bar"
+  },
+  "sensoryMapping": [
+    {
+      "dataset": "male-cns:v1.0",
+      "graphManifestSha256": "12759115c299175db5afa38b4a94a9a702f19a4e453c2bebb7dfaa85e5a3b915",
+      "visualMappingSha256": "53b304111f8731c5b1e6d34384cb5b76d7f7b1abfdb955e796cf8cf047232248",
+      "admittedOnsetPortCount": 875
+    },
+    {
+      "dataset": "banc:v888",
+      "graphManifestSha256": "6d24b3d65b879c1d456fc48e2ac84e81ecae61fdf17749de0c58b3b9c1b5ac99",
+      "visualMappingSha256": "5fed4d875861922897750eb1d1e3330e02def08fd10a2ab646f40aa5325b93d4",
+      "admittedOnsetPortCount": 716
+    }
+  ],
+  "causalMotorReadout": null,
+  "compartmentMatchedEdges": null,
+  "unresolvedSections": [
+    "causalMotorReadout",
+    "compartmentMatchedEdges"
+  ],
+  "unresolvedReasons": {
+    "causalMotorReadout": "Recomputed first-hop signed drive for the already-recorded left-half onset volley. A first threshold crossing from rest needs 1000 net positive contacts at the fixed contact gain 0.001. This reproduces the recorded 0/8 negative campaign outcome from the source arrays and is independent of the onset amplitude, which only sets how many input ports fire, not the sign of what they deliver.",
+    "compartmentMatchedEdges": "Male CNS instance strings identify each MBON lobe/compartment label, but Kenyon cells carry only a lobe-level subtype and the pinned weights table has no per-synapse neuropil column, so no individual KC->MBON edge can be assigned to a compartment. BANC annotations carry no mushroom-body compartment field at all. Lobe consistency is the strongest relation derivable here and is coarser than the compartment specificity the protocol requires."
+  },
+  "complete": false,
+  "disclosure": "Preregistered engineering configuration over measured anatomy. Not a biological calibration, a learning claim or a validated body loop.",
+  "manifestSha256": "2b21bfb9253f6c8839238c3c2c43f23846076bf7c8438561205a3c44d1082154"
+}

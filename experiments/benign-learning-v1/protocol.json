@@ -1,14 +1,28 @@
 {
   "schemaVersion": 1,
   "protocolId": "benign-landmark-association-v1",
-  "status": "design-frozen-execution-gated",
+  "status": "gate-closed-evaluation-completed",
   "executionAllowed": false,
   "executionPerformed": false,
+  "executionOutcome": "completed-gate-closed-evaluation",
+  "executedRuns": 0,
+  "executedNeuralSteps": 0,
+  "closedGates": [
+    "fixed-causal-motor-readout",
+    "compartment-specific-plasticity-validation",
+    "reviewed-bound-manifest-and-explicit-start"
+  ],
+  "gateEvidenceArtifact": "gate-evidence.json",
+  "mappingManifestArtifact": "mapping-manifest.json",
+  "resultArtifact": "result.json",
+  "resultDocument": "docs/BENIGN_LEARNING_RESULT.md",
   "datasets": [
     "male-cns:v1.0",
     "banc:v888"
   ],
   "mappingManifestSha256": null,
+  "mappingManifestComplete": false,
+  "incompleteMappingManifestSha256": "2b21bfb9253f6c8839238c3c2c43f23846076bf7c8438561205a3c44d1082154",
   "requiredGates": [
     "exact-per-neuron-sensory-mapping",
     "fixed-causal-motor-readout",
