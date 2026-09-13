@@ -11,7 +11,7 @@ const common = ['version', 'sessionId', ...scopeKeys];
 const poseValid = pose => exact(pose, ['x', 'z', 'yaw']) && Object.values(pose).every(Number.isFinite)
   && Math.abs(pose.x) <= 2 && Math.abs(pose.z) <= 2 && Math.abs(pose.yaw) <= Math.PI;
 const failure = () => visitorFailure('invalid-response', 'Managed visitor response failed scope or protocol validation.');
-const CONTRACT_ACTIONS = ['start', 'pause', 'rest', 'move', 'leave', 'interact'];
+const CONTRACT_ACTIONS = ['start', 'pause', 'rest', 'move', 'leave'];
 /** Derived settling gate: the fixture's own bounded forward readout, not a caretaker target. */
 const SETTLE_FORWARD = 0.012;
 const patchObjectValid = value => exact(value, ['objectId', 'x', 'z', 'radius']) && validId(value.objectId)
@@ -54,6 +54,7 @@ export function createManagedVisitorBridge({ authority, transport = createManage
       worldId: r?.worldId ?? null, visitEpoch: r?.lease?.epoch ?? null, expiresAt: r?.lease?.expiresAt ?? r?.cleanupBound ?? null,
       individualSessionId: r?.runtimeSession ?? null, lastTrace: r?.lastTrace ?? null,
       interactArmed: r?.interactArmed ?? false, lastInteraction: r?.lastInteraction ?? null,
+      interactionAvailable: negotiated === null ? null : negotiated.interactionAvailable,
       patchObjects: (r?.patchObjects ?? negotiated?.patchObjects ?? []).map(object => object.objectId),
       hostCapacity: negotiated === null ? null : negotiated.maxConcurrentVisitors,
       hostVisitors: ownedCount(), disclosure: DISCLOSURE });
@@ -112,14 +113,20 @@ export function createManagedVisitorBridge({ authority, transport = createManage
       || !CONTRACT_ACTIONS.every(action => contract.actions.includes(action))
       // An absent capacity field is a single-visitor host, never an unbounded one.
       || capacity !== undefined && !(Number.isSafeInteger(capacity) && capacity >= 1 && capacity <= 64)
+      || contract.controllerRaster?.width !== 8 || contract.controllerRaster?.height !== 4 || contract.controllerRaster?.channels !== 3) throw failure();
+    // Patch interaction is an OPTIONAL negotiated capability. A host that offers none of its three
+    // fields negotiates normally and keeps the existing move-only behaviour. A host that offers any
+    // of them must offer all three, completely and validly; a half-published capability is refused.
+    const interaction = contract.actions.includes('interact') || objects !== undefined || effects !== undefined;
+    if (interaction && (!contract.actions.includes('interact')
       || !Array.isArray(objects) || !objects.length || objects.length > 16 || !objects.every(patchObjectValid)
       || new Set(objects.map(object => object.objectId)).size !== objects.length
-      || !Array.isArray(effects) || !effects.every(effect => typeof effect === 'string') || !effects.includes('settle')
-      || contract.controllerRaster?.width !== 8 || contract.controllerRaster?.height !== 4 || contract.controllerRaster?.channels !== 3) throw failure();
-    negotiated = { maxConcurrentVisitors: capacity ?? 1, patchObjects: structuredClone(objects), interactionEffects: [...effects] };
+      || !Array.isArray(effects) || !effects.every(effect => typeof effect === 'string') || !effects.includes('settle'))) throw failure();
+    negotiated = { maxConcurrentVisitors: capacity ?? 1, interactionAvailable: interaction,
+      patchObjects: interaction ? structuredClone(objects) : [], interactionEffects: interaction ? [...effects] : [] };
     return { available: true, worldIds: result.worldIds.filter(validId), maxConcurrentVisitors: negotiated.maxConcurrentVisitors,
-      patchObjects: negotiated.patchObjects.map(object => object.objectId), interactionEffects: [...negotiated.interactionEffects],
-      disclosure: DISCLOSURE };
+      interactionAvailable: interaction, patchObjects: negotiated.patchObjects.map(object => object.objectId),
+      interactionEffects: [...negotiated.interactionEffects], disclosure: DISCLOSURE };
   }
   function reconcile(r) {
     if (r.cleanupPromise) return r.cleanupPromise;
@@ -199,7 +206,8 @@ export function createManagedVisitorBridge({ authority, transport = createManage
     if (action === 'interact') {
       // Arming is a local permission only. It never names an object, an effect or a moment:
       // contact is derived later from the fixture's own pose and bounded motor readout.
-      if (!r.patchObjects.length) throw visitorFailure('unsupported', 'Host negotiated no patch-object interaction allowlist.');
+      if (!r.patchObjects.length) throw visitorFailure('unsupported',
+        'This host did not negotiate the optional patch-object interaction capability; only bounded movement is available.');
       if (r.pending || r.cancelRequested || !r.lease || !current(r) || r.lease.expiresAt <= now())
         throw visitorFailure('unavailable', 'Visitor is not ready for patch interaction.');
       r.interactArmed = !r.interactArmed;
@@ -247,7 +255,7 @@ export function createManagedVisitorBridge({ authority, transport = createManage
       const motor = readFixtureMotor(preview), sequence = r.sequence + 1;
       // Derived, never puppeted: the fixture must have slowed below its own bounded forward readout
       // and already be standing inside a negotiated patch object. No host or resident supplies a target.
-      const contact = r.interactArmed && motor.forward <= SETTLE_FORWARD
+      const contact = r.interactArmed && r.patchObjects.length && motor.forward <= SETTLE_FORWARD
         ? r.patchObjects.find(object => withinReach(observation.pose, object)) ?? null : null;
       const outward = contact ? { type: 'interact', objectId: contact.objectId, effect: 'settle', intervalMs: 5 }
         : { type: 'move', ...motor, intervalMs: 5 };

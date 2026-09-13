@@ -16,17 +16,30 @@ The PortOS owner explicitly provisions individual/world allowlists. PortOS separ
 
 ### Negotiated contract fields
 
-`capabilities()` now also requires, and caches, three contract fields:
+`capabilities()` still requires the original contract, and now also reads and caches two
+**optional** negotiated capabilities. Both degrade gracefully: a host that publishes neither
+negotiates exactly as before.
 
-- `actions` must include `interact` in addition to `start`, `pause`, `rest`, `move` and `leave`.
-- `patchObjects` must be a 1–16 entry allowlist of `{objectId, x, z, radius}`, each inside the negotiated patch (`|x| ≤ 2`, `|z| ≤ 2`, `0 < radius ≤ 0.5`) with unique IDs.
+- `maxConcurrentVisitors` is optional. **An absent field means exactly one concurrent visitor**,
+  never an unbounded host. When present it must be an integer from 1 to 64.
+- Patch interaction is optional and is negotiated as a group of three fields: `interact` in
+  `actions`, `patchObjects`, and `interactionEffects`. **A host that publishes none of the three
+  negotiates successfully and keeps the existing move-only behaviour**, with interaction reported
+  as unavailable rather than pending or failed.
+
+When interaction *is* offered, every field is validated strictly and a half-published capability
+is refused with `invalid-response`:
+
+- `actions` must include `interact`.
+- `patchObjects` must be a 1–16 entry allowlist of `{objectId, x, z, radius}`, each inside the
+  negotiated patch (`|x| ≤ 2`, `|z| ≤ 2`, `0 < radius ≤ 0.5`) with unique IDs.
 - `interactionEffects` must be a string array containing `settle`. Only `settle` is ever sent.
-- `maxConcurrentVisitors` is optional. **An absent field means exactly one concurrent visitor**, never an unbounded host. When present it must be an integer from 1 to 64.
 
-A host that does not publish these fields is refused with `invalid-response`. This is a
-deliberate compatibility break: an older managed host that negotiates only the five original
-actions will no longer be admitted until it publishes a patch-object allowlist. That linked
-change belongs in the PortOS and Eidoverse repositories, not here.
+So `patchObjects` without `interact` in `actions`, `interact` with an empty allowlist, or an
+allowlist with no usable effect are all refusals. There is **no compatibility break**: the existing
+five-action managed host, including the one that produced the recorded live paired run, admits,
+visits, moves and returns unchanged. Publishing the interaction fields is a separate, optional
+change for the PortOS and Eidoverse repositories.
 
 ### Visitor capacity and second-admission refusal
 
@@ -54,7 +67,7 @@ The bridge does not perform checkpoint restore for temporary steps. It prepares 
 
 ## Service API
 
-- `snapshot(id)` returns per-ID phase, ownership, running/pending state, world, runtime session, visit epoch, expiry, reason, the last bounded input/motor trace, the interaction arming flag, the last confirmed interaction, the allowlisted patch-object IDs and the negotiated/current host visitor counts. No credential or neuron history is included.
+- `snapshot(id)` returns per-ID phase, ownership, running/pending state, world, runtime session, visit epoch, expiry, reason, the last bounded input/motor trace, whether interaction was negotiated at all, the interaction arming flag, the last confirmed interaction, the allowlisted patch-object IDs and the negotiated/current host visitor counts. No credential or neuron history is included.
 
 ### Phases and the teleport pod
 
@@ -84,7 +97,12 @@ individual, so both flies' pod states are readable without changing the browser 
 
 Every host result must match the original individual, runtime session, app, world and visit epoch. Observation IDs strictly advance, captures must be no more than 250 ms old, RGB is exactly 96 bounded bytes, and poses remain inside the negotiated patch. Only two engineered actions leave the process: `{type:'move', forward, yaw, intervalMs:5}` and `{type:'interact', objectId, effect:'settle', intervalMs:5}`. No membrane values, weights, histories, checkpoint or caretaker messages leave.
 
-### Patch-object interaction
+### Patch-object interaction (optional capability)
+
+Interaction exists only when the host negotiated it. When it did not, `snapshot(id).interactionAvailable`
+is `false`, `patchObjects` is empty, `control(id, 'interact')` is refused with `unsupported`, the UI
+states that interaction is unavailable on this host, and the bridge never emits an `interact` action.
+Everything below applies only to a host that published the capability.
 
 Interaction is derived, never puppeted. In a tick the bridge substitutes `interact` for `move` only when
 all of the following hold: the local permission is armed, the fixture's own bounded forward readout has
@@ -107,7 +125,7 @@ A missing admission response may still correspond to a live body. The bridge can
 
 ## Validation and limits
 
-`node --test server/managed-visitor-bridge.test.js` uses real fixture runtimes with fake transports. It covers paired identity isolation, explicit paused admission/start, scope/replay/invalid input, pending movement revocation, uncertain admission, late cleanup, expiry, backwards time, runtime replacement and transport bounds/privacy. It additionally covers the negative admission paths (`available:false` → `unsupported`; individual or world outside the allowlist → `unauthorized`; nine separate contract mismatches → refusal without a remote body), mid-visit 401/403 revocation from both `action` and `observe`, an explicit stale-epoch replay after re-admission, negotiated capacity including the absent-field default of one, paired faults that leave the other visitor's tick count and lease untouched, `disconnectAll()` with two owned visitors, and the interaction negatives (out-of-patch pose, unallowlisted effect, wrong object, smuggled extra fields, interaction after expiry or revocation, and an inbound-command attempt).
+`node --test server/managed-visitor-bridge.test.js` uses real fixture runtimes with fake transports. It covers paired identity isolation, explicit paused admission/start, scope/replay/invalid input, pending movement revocation, uncertain admission, late cleanup, expiry, backwards time, runtime replacement and transport bounds/privacy. It additionally covers the negative admission paths (`available:false` → `unsupported`; individual or world outside the allowlist → `unauthorized`; nine separate contract mismatches → refusal without a remote body), mid-visit 401/403 revocation from both `action` and `observe`, an explicit stale-epoch replay after re-admission, negotiated capacity including the absent-field default of one, paired faults that leave the other visitor's tick count and lease untouched, `disconnectAll()` with two owned visitors, the interaction negatives (out-of-patch pose, unallowlisted effect, wrong object, smuggled extra fields, interaction after expiry or revocation, and an inbound-command attempt), and an explicit backward-compatibility case: a legacy five-action host with none of the optional interaction fields admits, visits, takes twelve move-only steps and returns cleanly, with interaction reported unavailable and unarmable.
 
 `node --test server/managed-visitor-ui.test.js` checks the pod presentation contract: every bridge phase has a distinct label, the away habitat keeps the pod visible, the pod label reads live visitor state, no motion or arrival wording appears before host acknowledgment, and the roster exposes each fly's pod state. An additional temporary in-process check connected the real Fly Garden bridge, PortOS broker/transport and Eidoverse host factories: negotiated admission, 20 geometric observation/motor steps and confirmed return passed without starting a network server. That check is integration evidence, not a live deployment or browser journey.
 
@@ -121,7 +139,7 @@ A missing admission response may still correspond to a live body. The bridge can
 {"protocolVersion":1,"individualId":"<id>","sessionId":"<current runtime session>","sequence":1,"operation":"admit","payload":{"worldId":"<allowed world>"}}
 ```
 
-The sequence must be one greater than the latest state's `commandSequence`. The other operations are `start`, `pause`, `rest`, `home` and `interact`, each with exactly `payload:{}`. Unknown fields, stale session/sequence, other query parameters and cross-origin requests are refused. Replies contain `{state,visitor}`. Normal full states also include `visitor` and `externalOwner:null` or `{kind:"managed-visitor"}`. Neither contains the registry owner token, app bearer or host session authority.
+The sequence must be one greater than the latest state's `commandSequence`. The other operations are `start`, `pause`, `rest`, `home` and `interact`, each with exactly `payload:{}`. `interact` is refused with `unsupported` unless the host negotiated the optional interaction capability. Unknown fields, stale session/sequence, other query parameters and cross-origin requests are refused. Replies contain `{state,visitor}`. Normal full states also include `visitor` and `externalOwner:null` or `{kind:"managed-visitor"}`. Neither contains the registry owner token, app bearer or host session authority.
 
 The registry rejects shared members until explicit separation. Successful claim pauses the same runtime, revokes the home visual controller and encounters, disarms language, and marks home captures discontinuous. Ordinary persistence, input, frame, timer and control paths refuse external ownership. The server scheduler performs expiry/cleanup maintenance for owned visitors but runs the observation/motor loop only after explicit start. Server shutdown requests cleanup and pauses local execution; crash boot remains paused. Ownership itself is process-local, never a durable checkpoint authority. Host expiry and duplicate-individual admission guards remain required during recovery.
 

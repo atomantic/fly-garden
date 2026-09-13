@@ -185,8 +185,11 @@ test('a mismatched negotiated contract refuses admission without acquiring a rem
     'wrong controller raster': { controllerRaster: { width: 16, height: 8, channels: 3 } },
     'expiry not enforced': { expiryEnforced: false },
     'no admission deadline': { admissionDeadline: false },
-    'missing interact action': { actions: ['start', 'pause', 'rest', 'move', 'leave'] },
-    'missing patch-object allowlist': { patchObjects: [] },
+    // A half-published optional capability is still a mismatch: offering objects without the action,
+    // or the action without objects, is refused. Offering none of the three is legal (see below).
+    'patch objects without the interact action': { actions: ['start', 'pause', 'rest', 'move', 'leave'] },
+    'interact action without a patch-object allowlist': { patchObjects: [] },
+    'interact action with no interaction effects': { interactionEffects: [] },
     'patch object outside the negotiated patch': { patchObjects: [{ objectId: 'far', x: 9, z: 0, radius: 0.3 }] },
     'unsupported interaction effect set': { interactionEffects: ['harvest'] },
     'invalid concurrent visitor capacity': { maxConcurrentVisitors: 0 },
@@ -442,4 +445,45 @@ test('no host or resident payload can reach the local runtime control path', asy
   // And nothing beyond the allowlisted outward payload ever left the process.
   for (const bridge of [s, s2]) assert(bridge.calls.every(call => ['start', 'pause', 'rest', 'move', 'interact'].includes(call.action.type)
     && !('potentials' in call) && !('checkpoint' in call) && !('weights' in call)));
+});
+
+test('a legacy five-action host without the optional interaction fields admits, visits, moves and returns', async () => {
+  const s = setup(), capabilities = s.transport.capabilities;
+  s.transport.capabilities = async () => { const value = await capabilities();
+    // Exactly the contract shape that predates the optional interaction capability.
+    value.contract = { version: 1, expiryEnforced: true, admissionDeadline: true, bodies: ['fly-v1'],
+      actions: ['start', 'pause', 'rest', 'move', 'leave'], maxConcurrentVisitors: 2,
+      controllerRaster: { width: 8, height: 4, channels: 3 } };
+    return value; };
+  const discovered = await s.bridge.capabilities('a', 'world');
+  assert.equal(discovered.available, true);
+  assert.equal(discovered.interactionAvailable, false);
+  assert.deepEqual(discovered.patchObjects, []);
+  assert.deepEqual(discovered.interactionEffects, []);
+  assert.equal(discovered.maxConcurrentVisitors, 2);
+
+  const admitted = await s.bridge.admit('a', { worldId: 'world' });
+  assert.equal(admitted.phase, 'visiting');
+  assert.equal(admitted.interactionAvailable, false);
+  assert.deepEqual(admitted.patchObjects, []);
+  assert.equal(admitted.interactArmed, false);
+  // Interaction is reported unavailable rather than pending or broken, and cannot be armed.
+  await assert.rejects(() => s.bridge.control('a', 'interact'), error => error.code === 'unsupported'
+    && /did not negotiate the optional patch-object interaction/.test(error.message));
+
+  await s.bridge.control('a', 'start');
+  for (let i = 0; i < 12; i++) await s.bridge.tick('a');
+  assert.equal(s.runtimes.get('a').snapshot().tick, 12);
+  // Move-only behaviour is preserved exactly: no interact ever leaves the process.
+  assert(s.calls.every(call => ['start', 'move'].includes(call.action.type)));
+  assert(s.calls.some(call => call.action.type === 'move'));
+  assert.equal(s.bridge.snapshot('a').lastInteraction, null);
+  assert.equal(s.bridge.snapshot('a').lastTrace.action, 'move');
+
+  await s.bridge.control('a', 'home');
+  assert.equal(s.owners.has('a'), false);
+  assert.equal(s.bridge.snapshot('a').phase, 'home');
+  assert.equal(s.runtimes.get('a').snapshot().status, 'paused');
+  assert.equal(s.runtimes.get('a').snapshot().tick, 12);
+  assert.equal(s.leases.size, 0);
 });

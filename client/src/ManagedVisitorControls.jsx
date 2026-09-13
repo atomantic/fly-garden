@@ -55,7 +55,9 @@ export default function ManagedVisitorControls({ state, disabled = false, onMuta
         </select></label>
         <button disabled={unavailable || !capabilities.available || !world} onClick={() => perform('admit')}>Request visit (paused)</button>
         {Number.isInteger(capabilities.maxConcurrentVisitors) && <p>Host negotiated capacity: {capabilities.maxConcurrentVisitors} concurrent managed visitor{capabilities.maxConcurrentVisitors === 1 ? '' : 's'}. A further admission is refused before any local ownership changes, so an existing visit is never disturbed.</p>}
-        {Array.isArray(capabilities.patchObjects) && capabilities.patchObjects.length > 0 && <p>Allowlisted patch objects: {capabilities.patchObjects.join(', ')}.</p>}
+        {capabilities.interactionAvailable
+          ? <p>Optional patch interaction is negotiated. Allowlisted patch objects: {capabilities.patchObjects.join(', ')}.</p>
+          : <p>Optional patch interaction is unavailable on this host; the visit uses bounded movement only.</p>}
         <p>{capabilities.reason}</p>
       </>}
     </>}
@@ -64,10 +66,12 @@ export default function ManagedVisitorControls({ state, disabled = false, onMuta
       <button disabled={!state || !visitor?.running} onClick={() => perform('pause')}>Pause visitor</button>
       <button disabled={!state} onClick={() => perform('rest')}>Rest visitor</button>
       <button disabled={!state} onClick={() => perform('home')}>Return home (paused)</button>
-      <button disabled={unavailable || pod.phase !== 'visiting' || !visitor?.patchObjects?.length} onClick={() => perform('interact')}>
-        {visitor?.interactArmed ? 'Withdraw patch interaction' : 'Allow patch interaction'}</button>
+      {visitor?.patchObjects?.length > 0 && <button disabled={unavailable || pod.phase !== 'visiting'} onClick={() => perform('interact')}>
+        {visitor?.interactArmed ? 'Withdraw patch interaction' : 'Allow patch interaction'}</button>}
     </div>}
-    {owned && <p>Allowing interaction is a permission only. It names no object, effect or moment: contact is derived from the fixture's own pose and bounded motor readout, never from a caretaker or a host resident. Nothing inbound can drive the local fixture.</p>}
+    {owned && (visitor?.patchObjects?.length > 0
+      ? <p>Allowing interaction is a permission only. It names no object, effect or moment: contact is derived from the fixture's own pose and bounded motor readout, never from a caretaker or a host resident. Nothing inbound can drive the local fixture.</p>
+      : <p>Patch interaction is unavailable: this host did not negotiate the optional interaction capability. The visit uses bounded movement only; nothing is pending and nothing failed.</p>)}
     <p>Visits expire without automatic renewal. Returning or disconnected status keeps the home controller unavailable until removal is confirmed or the trusted lease bound expires. Optional language, flower encounters and creative capture stay off during visits.</p>
     {visitor?.lastTrace && <p>Last confirmed engineered {visitor.lastTrace.action === 'interact' ? 'patch interaction' : 'movement'}: frame {visitor.lastTrace.frameId}, {visitor.lastTrace.inputSimTimeMs} → {visitor.lastTrace.outputSimTimeMs} ms. Source: {visitor.lastTrace.sensorySource}.</p>}
     {visitor?.lastInteraction && <p>Last confirmed patch interaction: {visitor.lastInteraction.objectId} · effect {visitor.lastInteraction.effect} · frame {visitor.lastInteraction.frameId} · sequence {visitor.lastInteraction.sequence}. A confirmed contact is an engineered host acknowledgment, not evidence of preference or intent.</p>}
