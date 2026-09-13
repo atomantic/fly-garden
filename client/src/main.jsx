@@ -657,6 +657,7 @@ function App() {
           </section>
         </div>}
         <footer>
+          <a href="/third-party-notices.html">Third-party notices</a>
           Care is a design requirement.{" "}
           <a href="https://github.com/atomantic/fly-garden">
             Follow the open-source project ↗
