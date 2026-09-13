@@ -34,7 +34,7 @@ A separate perspective camera has a 90-degree vertical field of view and 2:1 asp
 
 Only one frame request is in flight. Returned individual/session/environment identity must still match the selected source before updating the body or preview. A changed epoch aborts pending work; errors, stale live snapshots and unmount stop frame delivery. Server freshness checks pause attached simulation when frames cease. The visible preview shows the last accepted raster, its simulation window, mapped currents and bounded motor output. Closing a view does not attempt a hidden detach or resume command.
 
-The row-orientation, response-identity and controller-raster helpers have automated tests, and the production build compiles the renderer. `client/src/controller-retina.js` holds the extracted single-fly derivation: `aimControllerCamera` reads the authoritative pose and nothing else, and `readControllerRaster` receives only that camera, the scene and the offscreen target. These checks do not replace a GPU-rendered scene-change browser capture; that visual acceptance evidence must be reported separately.
+The row-orientation, response-identity and controller-raster helpers have automated tests, and the production build compiles the renderer. `client/src/controller-retina.js` holds the extracted single-fly derivation: `aimControllerCamera` reads the authoritative pose and nothing else, and `readControllerRaster` receives only that camera, the scene and the offscreen target. `client/src/garden-visual-world.js` holds the scene graph those cameras render, extracted out of `Scene.jsx` so the same production geometry can be built outside React; `server/garden-visual-world.test.js` guards its composition and the illustrated body's resting placement. The GPU-rendered scene-change measurement those checks could not supply is recorded below.
 
 Controller ownership is a per-recipient private lease. Every successful explicit attach returns a fresh top-level `controllerToken` only in that command response and pauses with a new environment epoch. Attaching an already attached individual deliberately transfers control while preserving its current pose. The controlling tab keeps the token locally and includes it with every frame; the registry validates and removes it before sensory processing. Ordinary state/environment reads, traces, checkpoints, health, recordings and artifact hooks never include the token. Read-only observers therefore cannot become frame producers simply by opening a tab. Pause/start/rest rotate observation epochs but retain the lease; detach/home/restore/unload revoke it. A closed or reloaded controlling tab requires explicit attachment to regain control.
 
@@ -68,6 +68,52 @@ changed channels under observer motion and 48 under a partner's pose change. The
 engineered-fixture numbers from one scene and pose pair. They do not establish coverage of all
 orientations, occlusion cases or graphics hardware, and they are not biological vision, behaviour
 or learning.
+
+### The same manipulations on a real graphics device
+
+The stand-in above proves the wiring but not the pixels. The single-fly garden scene graph has
+therefore been extracted out of `Scene.jsx` into `client/src/garden-visual-world.js`, exactly as
+`SharedScene.jsx` already delegates to `shared-visual-world.js`, so the production geometry can be
+rastered through the production `WebGLRenderer`. `client/src/controller-retina-evidence.js` runs the
+identical seven manipulations — the same four observer views and field-of-view changes, the same
+three authoritative pose changes — reachable from an explicit button on
+`/research/controller-retina.html`. `node scripts/gpu-retinal-evidence.mjs` drives that button over
+the DevTools Protocol and records the result in
+[the GPU result](../research/results/controller-retina-gpu.json). Nothing is started, created,
+attached or advanced.
+
+**Provenance.** September 12, 2026, Darwin arm64, Three.js revision 186, Chrome 153.0.8010.36
+driven over CDP, renderer `ANGLE (Apple, ANGLE Metal Renderer: Apple M5 Max, Unspecified Version)`,
+`WebGL 2.0 (OpenGL ES 3.0 Chromium)` — a real hardware Metal rasterizer, not a software device and
+not the CPU projection stand-in. Baseline pose `(x=0, z=-1, yaw=0)`.
+
+| Manipulation | GPU changed channels | GPU absolute difference | CPU stand-in changed channels |
+| --- | ---: | ---: | ---: |
+| Observer to `(6.5, 5.4, 8)`, 40° | **0 of 96** | **0** | 0 |
+| Observer to `(-5, 2, -4)`, 40° | **0 of 96** | **0** | 0 |
+| Observer top-down at `(0, 12, 0.01)`, 25° | **0 of 96** | **0** | 0 |
+| Observer close on the pod at `(1.2, 0.8, 1.2)`, 70° | **0 of 96** | **0** | 0 |
+| Re-raster of the unchanged pose | **0 of 96** | **0** | 0 |
+| Authoritative pose translated to `x=1.1` | **12 of 96** | **770** | 27 (3,055) |
+| Authoritative pose yawed by π/2 | **66 of 96** | **1,944** | 18 (2,114) |
+| Authoritative pose yawed by π | **27 of 96** | **449** | 17 (1,687) |
+
+Two independent runs, each in a fresh page load, produced these numbers identically.
+
+**Reading the difference honestly.** The observer column is the claim, and it is the same on both:
+every observer manipulation changes exactly zero controller channels, on a real GPU as on the
+stand-in. The pose column is only the sensitivity control, and its numbers are **not** expected to
+agree, because the two rasterizers draw different things: the stand-in splats fifteen synthetic
+landmark mesh origins with nearest-depth wins, while the GPU shades the real 131-mesh garden with
+its lights, materials, fog and transparency. The GPU finds a yaw of π/2 far more consequential
+(66 channels) and a sideways translation far less (12) than the stand-in did. Neither ordering is a
+property of the interface; both are properties of the scene each rasterizer drew. What both agree on
+is the asymmetry that matters: observer motion changes nothing, authoritative pose changes
+something.
+
+One scene and pose pair on one graphics device. Absolute bytes are hardware and driver specific and
+are recorded as an observation, never as a golden value another machine must reproduce. This is an
+engineered fixture interface, not biological vision, behaviour or learning.
 
 ## Registry frame-cessation coverage
 

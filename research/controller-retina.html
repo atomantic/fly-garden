@@ -1,0 +1,22 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><title>Single-fly controller retina GPU evidence</title>
+<style>body{font:16px system-ui;max-width:70rem;margin:2rem auto;padding:1rem;background:#14221c;color:#eee}button{padding:1rem}canvas{max-width:100%}pre{white-space:pre-wrap;overflow-wrap:anywhere}</style>
+<h1>Single-fly controller retina GPU evidence</h1>
+<p>Explicitly renders the production <code>Scene.jsx</code> garden scene graph through the production 8×4 controller camera on the real graphics device. Four observer-camera manipulations and three authoritative-pose changes, one run, no tuning. No app API call, no neural execution, no simulation start.</p>
+<button id="run">Run controller-retina GPU check once</button>
+<p>This measures whether observer-camera motion changes the controller raster bytes, and whether the authoritative pose does. A zero byte change on the pose changes is a real negative result; record it as one.</p>
+<p id="status" role="status">Not run.</p><p id="device"></p><canvas id="view"></canvas><pre id="result"></pre>
+<script type="module">
+import { measureControllerRetinaGpuEvidence, describeRenderer } from '/client/src/controller-retina-evidence.js';
+document.querySelector('#run').addEventListener('click', event => {
+ event.target.disabled = true;
+ try {
+  const device = describeRenderer(document.createElement('canvas'));
+  document.querySelector('#device').textContent = JSON.stringify(device);
+  const result = measureControllerRetinaGpuEvidence(document.querySelector('#view'));
+  document.querySelector('#result').textContent = JSON.stringify(result, null, 2);
+  document.querySelector('#status').textContent = result.passed
+   ? 'Observer manipulation changed zero channels; the authoritative pose changed channels.'
+   : 'Negative result: one or more fixed comparisons did not hold. Recorded as measured.';
+ } catch(error) { document.querySelector('#status').textContent = `Unavailable: ${error.message}`; }
+});
+</script></html>
