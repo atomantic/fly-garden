@@ -1,8 +1,8 @@
 # MaleCNS sparse research backend
 
-This is an offline feasibility baseline, separate from the observatory's **Synthetic LIF fixture** (32 invented neurons, 64 fixed edges). The app does not load or select this backend. Importing the backend module does nothing; explicitly opening a worker loads data and returns **paused**, and advancing requires a separate `start()` call. Missing, changed or unreadable data returns **unavailable**, with no synthetic substitution. No timer advances neural time, so wall-clock delays and sleep do not cause catch-up simulation.
+The observatory explicitly creates and loads local research individuals for this profile, separately from its synthetic fixture. Loading and checkpoint recovery are paused; start and bounded advance are separate explicit actions. Missing or changed data is unavailable, with no synthetic substitution or automatic catch-up simulation.
 
-This baseline has no sensory adapter, motor readout, body controller, plasticity, persistent individual, checkpoint restore, language, or travel. It does not establish biological fidelity, learning, subjective experience, or real-time embodied performance. Inactivity is an acceptable result.
+Durable individual catalogs, exact checkpoint lineage and bounded sampled telemetry are implemented. Engineered visual mapping and onset/readout foundations have a [completed negative causal trial](VISUAL_CAUSAL_VALIDATION.md): input spikes were observed, but no DNa02 activity or yaw. A working visual body controller, retained learning, physiological validation, full-connectome language and travel are not established. Inactivity remains acceptable. See the [static propagation diagnosis](VISUAL_PROPAGATION.md).
 
 ## Data and component provenance
 

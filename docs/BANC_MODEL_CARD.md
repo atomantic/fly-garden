@@ -1,8 +1,8 @@
 # BANC v888 sparse research profile
 
-`banc:v888` is an explicitly loaded, local research profile, separate from the observatory's synthetic fixture. It uses a distinct female brain-and-nerve-cord reconstruction with independent state and dataset-qualified neuron identities. The observatory does not select either real-data backend. Loading starts paused; only explicit `start()` and bounded `advance()` calls simulate time. Missing, changed, unsupported or unreadable BANC files report **unavailable** and do not replace or stop a MaleCNS worker.
+The observatory explicitly creates and loads local research individuals for this profile, separately from its synthetic fixture. Loading and checkpoint recovery are paused; start and bounded advance are separate explicit actions. Missing or changed data is unavailable, with no synthetic substitution or automatic catch-up simulation.
 
-No biological validation, retained learning, sensory/motor interface, body controller, persistence, language or Eidoverse participation is provided by this research tool. Differences between these two specimens are not controlled biological sex comparisons. Inactivity remains an acceptable outcome.
+Durable individual catalogs, exact checkpoint lineage and bounded sampled telemetry are implemented. Engineered visual mapping and onset/readout foundations have a [completed negative causal trial](VISUAL_CAUSAL_VALIDATION.md): input spikes were observed, but no DNa02 activity or yaw. A working visual body controller, retained learning, physiological validation, full-connectome language and travel are not established. Inactivity remains acceptable. See the [static propagation diagnosis](VISUAL_PROPAGATION.md).
 
 ## Source, artifact terms and modifications
 
