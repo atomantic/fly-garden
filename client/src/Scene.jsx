@@ -1,12 +1,20 @@
 import { useEffect, useRef, useState } from "react";
 import { environmentKey } from "./retinal-frame.js";
 import { CONTROLLER_RETINA, createControllerCamera, deriveControllerRaster } from "./controller-retina.js";
+import { podPresentation } from "./visitor-phase.js";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 
 // Original procedural art. Coordinates are illustrative, not anatomical data.
-export default function Scene({ neural, brain = false, state = null, controllerToken = null, onEnvironmentFrame = () => {} }) {
+const POD_TONE = { idle: { emissive: 0x1f3c36, intensity: 0.35 }, pending: { emissive: 0x5a5326, intensity: 0.7 },
+  active: { emissive: 0x35665a, intensity: 1 }, fault: { emissive: 0x6a3322, intensity: 0.8 } };
+
+export default function Scene({ neural, brain = false, state = null, visitor = null, controllerToken = null, onEnvironmentFrame = () => {} }) {
   const host = useRef(null);
+  const pod = podPresentation(visitor);
+  // The render loop reads the latest phase without rebuilding the scene graph.
+  const podState = useRef(pod);
+  useEffect(() => { podState.current = podPresentation(visitor); }, [visitor?.phase, visitor?.worldId, visitor?.running]);
   const live = useRef(neural);
   const source = useRef({ state, controllerToken, onEnvironmentFrame, observedAt: performance.now() });
   const [retinal, setRetinal] = useState(null);
@@ -45,6 +53,7 @@ export default function Scene({ neural, brain = false, state = null, controllerT
     const light = new THREE.DirectionalLight(0xffe7af, 4);
     light.position.set(3, 8, 5);
     scene.add(light);
+    const podRings = [];
     const material = (color, extra = {}) =>
       new THREE.MeshStandardMaterial({ color, roughness: 0.65, ...extra });
     const mesh = (
@@ -187,7 +196,8 @@ export default function Scene({ neural, brain = false, state = null, controllerT
       const grid = new THREE.GridHelper(18, 36, 0x36534a, 0x1e3832);
       grid.position.y = -0.42;
       scene.add(grid);
-      // Raised sanctuary ring and a visible, inactive arrival pod.
+      // Raised sanctuary ring and a visible arrival pod. Ring tone and the only pod motion
+      // are driven from the bridge phase below; motion is withheld until host acknowledgment.
       mesh(
         new THREE.CylinderGeometry(1.05, 1.15, 0.16, 48),
         material(0x213e38),
@@ -197,11 +207,12 @@ export default function Scene({ neural, brain = false, state = null, controllerT
       for (const y of [0.15, 2.25]) {
         const ring = mesh(
           new THREE.TorusGeometry(0.9, 0.035, 10, 64),
-          material(0x8fc5ad, { emissive: 0x35665a }),
+          material(0x8fc5ad, { emissive: 0x1f3c36 }),
           scene,
           [2.2, y, -1.7],
         );
         ring.rotation.x = Math.PI / 2;
+        podRings.push({ ring, baseY: y, direction: y > 1 ? -1 : 1 });
       }
       for (const a of [0, Math.PI * 0.66, Math.PI * 1.33])
         line(
@@ -323,6 +334,18 @@ export default function Scene({ neural, brain = false, state = null, controllerT
     const render = () => {
       frame = requestAnimationFrame(render);
       controls.update();
+      if (podRings.length) {
+        const current = podState.current, tone = POD_TONE[current.tone] ?? POD_TONE.idle;
+        // Acceptance criterion: the pod may only move once phase === 'visiting'. Every other
+        // phase, including a requested but unacknowledged admission, holds it exactly still.
+        const moving = current.motion === true && current.phase === "visiting";
+        const offset = moving ? Math.sin(performance.now() / 900) * 0.05 : 0;
+        for (const { ring, baseY, direction } of podRings) {
+          ring.material.emissive.setHex(tone.emissive);
+          ring.material.emissiveIntensity = tone.intensity;
+          ring.position.y = baseY + offset * direction;
+        }
+      }
       if (points) {
         const current = new Map(
           (live.current?.neurons || []).map((n) => [n.id, n]),
@@ -375,7 +398,7 @@ export default function Scene({ neural, brain = false, state = null, controllerT
       aria-label={
         brain
           ? "Interactive synthetic neural graph; values available in the neuron table"
-          : "Original illustrated fly garden with flowers and an inactive Eidoverse teleport pod"
+          : `Original illustrated fly garden with flowers and a decorative Eidoverse teleport pod. Bridge phase: ${pod.detail}.`
       }
     >
       {failed && (

@@ -325,6 +325,16 @@ h3 {
   font-size: 8px;
   margin-top: 6px;
 }
+/* Decorative pod tone only. It reports bridge phase, never a welfare or experience claim. */
+.pod-label.pod-idle { color: #8ea394; }
+.pod-label.pod-pending { color: #d8cf95; }
+.pod-label.pod-active { color: #bddec6; }
+.pod-label.pod-fault { color: #e3a98f; }
+.pod-roster { margin: 12px 0 0; padding: 0; list-style: none; font: 11px monospace; }
+.pod-roster li { margin: 4px 0; overflow-wrap: anywhere; }
+.pod-roster .pod-pending { color: #a79a52; }
+.pod-roster .pod-active { color: #4e7f5f; }
+.pod-roster .pod-fault { color: #a05a3a; }
 .scene-footer {
   position: absolute;
   bottom: 0;
@@ -816,7 +826,7 @@ td button[aria-pressed="true"] {
 .habitat.habitat-away { height: auto; min-height: 250px; }
 .habitat-away .visitor-home-placeholder { padding: 20px; line-height: 1.6; }
 .habitat-away .habitat-label { position: static; margin: 20px; }
-.habitat-away .pod-label { display: none; }
+.habitat-away .pod-label { position: static; margin: 20px 20px 0; }
 .habitat-away .scene-footer { position: static; }
 
 .visitor-controls p { overflow-wrap: anywhere; }

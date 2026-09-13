@@ -14,6 +14,7 @@ import LanguageControls from "./LanguageControls.jsx";
 import ManagedVisitorControls from "./ManagedVisitorControls.jsx";
 import { mergeToolbarVisitorReply } from "./visitor-command-state.js";
 import { postVisitorCommand } from "./visitor-api.js";
+import { podPresentation, podRosterEntry } from "./visitor-phase.js";
 import { readRuntimeSnapshot, mergeRuntimeSnapshot } from "./runtime-state.js";
 import { selectConnectomePair, mergeConnectomeSelection } from "./connectome-lab-state.js";
 import "./style.css";
@@ -46,6 +47,7 @@ function App() {
   const sharedLive = useRef(null), pendingSharedCommand = useRef(null);
   const [individualId, setIndividualId] = useState("");
   const [individuals, setIndividuals] = useState([]);
+  const [visitorRoster, setVisitorRoster] = useState([]);
   const [connectomeSelection, setConnectomeSelection] = useState({individualId:"",dataset:"male-cns:v1.0"});
   const {individualId:connectomeId,dataset:connectomeDataset} = connectomeSelection;
   const [tab, setTab] = useState(readTab),
@@ -84,6 +86,23 @@ function App() {
     const change = () => setTab(readTab());
     addEventListener("hashchange", change);
     return () => removeEventListener("hashchange", change);
+  }, []);
+  // Per-fly pod phase for the whole roster. Read-only; it never admits, starts or retargets a visit.
+  useEffect(() => {
+    let stopped = false, timer, controller;
+    async function readPods() {
+      controller = new AbortController();
+      try {
+        const response = await fetch("/api/health", { signal: controller.signal });
+        if (!response.ok) throw new Error("Health unavailable");
+        const value = await response.json();
+        const list = Array.isArray(value?.eidoverse?.individuals) ? value.eidoverse.individuals : [];
+        if (!stopped) setVisitorRoster(list.map(podRosterEntry));
+      } catch { if (!stopped) setVisitorRoster([]); }
+      finally { if (!stopped) timer = setTimeout(readPods, 2000); }
+    }
+    readPods();
+    return () => { stopped = true; clearTimeout(timer); controller?.abort(); };
   }, []);
   useEffect(() => {
     let stopped = false,
@@ -182,6 +201,8 @@ function App() {
     canQuiet = !!state && !connectionError && state.status !== "saved-unloaded" && (!busy || Boolean(state.externalOwner));
   const visibleHistory = history.filter(row => row.scope === observationScope(state));
   const fixtureView = !["Nervous system", "Connectome lab"].includes(tab);
+  const pod = podPresentation(state?.visitor);
+  const podRoster = visitorRoster.filter(entry => entry.owned || entry.phase !== "home");
   const go = (t) => {
     location.hash = encodeURIComponent(t);
     setTab(t);
@@ -296,6 +317,14 @@ function App() {
             {individual.individualId} · {individual.resident ? "resident" : "saved unloaded"}
           </option>)}</select></label>
           <p>Each synthetic individual has separate state and exposure reservations. Selection does not start a simulation.</p>
+          {podRoster.length > 0 && <>
+            <p>Teleport pod status for every individual. Read-only; selecting a different fly does not move a pod.</p>
+            <ul className="pod-roster" aria-label="Teleport pod status by individual">
+              {podRoster.map(entry => <li key={entry.individualId} className={`pod-${entry.tone}`}>
+                ◎ {entry.individualId} · {entry.label} · {entry.owned ? "owned by the bridge" : "home controller available"} · {entry.running ? "stepping" : "paused"}
+              </li>)}
+            </ul>
+          </>}
         </section>}
         {(fixtureView || state?.externalOwner) && <div className="toolbar">
           <div className="identity">
@@ -394,7 +423,7 @@ function App() {
                 requestEpoch.current++; setState(next);
               }} />
               </details>
-              <Scene state={state} controllerToken={visualLease && state && visualLease.individualId === state.individualId && visualLease?.sessionId === state?.sessionId ? visualLease.token : null} onEnvironmentFrame={next => {
+              <Scene state={state} visitor={state?.visitor} controllerToken={visualLease && state && visualLease.individualId === state.individualId && visualLease?.sessionId === state?.sessionId ? visualLease.token : null} onEnvironmentFrame={next => {
                 if (next.individualId !== selectedIndividualRef.current || next.sessionId !== state?.sessionId
                   || next.environmentAdapter?.environmentEpoch !== state?.environmentAdapter?.environmentEpoch) return;
                 setState(previous => mergeRuntimeSnapshot(previous, next));
@@ -411,8 +440,10 @@ function App() {
                   {state?.externalOwner ? "Host visitor placement · home body withheld" : state?.sharedSession ? "Shared visual fixtures · no biological claim" : state?.environmentAdapter?.attached ? "Engineered visual fixture control · no biological claim" : "Body illustration · not driven by the fixture circuit"}
                 </small>
               </div>
-              <div className="pod-label">
-                ◎ TELEPORT POD <span>HOST BRIDGE NOT CONNECTED</span>
+              <div className={`pod-label pod-${pod.tone}`} role="status" data-phase={pod.phase}>
+                ◎ TELEPORT POD <span>{pod.label}</span>
+                {pod.destination && <span>DESTINATION · {pod.destination}</span>}
+                <span>{pod.motion ? "POD MOTION · DECORATIVE, AFTER HOST ACKNOWLEDGMENT" : "POD STILL · NO ACKNOWLEDGED BODY"}</span>
               </div>
               <div className="scene-footer">
                 <span>Drag to orbit · scroll to explore</span>
