@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { describeRuntime, expect, test } from './cdp-browser.js';
 
 /** Counts every animation-frame callback the page schedules, before any application code runs. */
 const probe = () => {
@@ -51,11 +51,15 @@ test('the habitat and fixture-circuit renderers follow the operating-system moti
   expect(podTone.color).not.toBe('rgba(0, 0, 0, 0)');
   expect(podTone.text, 'the phase is stated in text, never by colour alone').toMatch(/TELEPORT POD/);
 
+  const runtime = await describeRuntime(page);
   const rate = await frameRate(page);
-  info.annotations.push({ type: 'measured', description: `${rate.toFixed(1)} animation-frame callbacks/s on Observatory` });
+  info.annotations.push({ type: 'measured', description: `${rate.toFixed(1)} animation-frame callbacks/s on Observatory · ${runtime.renderer}` });
+  console.log(`[${info.project.name}] runtime: ${JSON.stringify(runtime)}`);
   console.log(`[${info.project.name}] Observatory animation-frame callbacks/s: ${rate.toFixed(1)}`);
-  // The headless shell has no display, so its animation-frame cadence is throttled well below a real
-  // 60 Hz refresh. The separation that matters here is loop versus no loop, not the absolute rate.
+  // On the headless shell there is no display and the animation-frame cadence is throttled well below
+  // a real 60 Hz refresh; on a real browser over FLY_GARDEN_CDP_ENDPOINT it is not. Either way the
+  // separation this assertion makes is loop versus no loop, not an absolute frame rate, so the bound
+  // stays deliberately loose and the printed runtime line says which browser produced the figure.
   if (reduced) expect(rate, 'no continuous repainting under prefers-reduced-motion').toBeLessThan(1);
   else expect(rate, 'the default experience keeps a live animation loop').toBeGreaterThan(5);
 });
@@ -100,6 +104,7 @@ test('the fixture circuit keeps repainting from observed state while reduced mot
   console.log(`[${info.project.name}] animation-frame callbacks during an orbit drag: ${after - before}`);
   // Dragging draws directly from the control-change event; it must not open a persistent loop.
   const idle = await frameRate(page);
+  console.log(`[${info.project.name}] runtime: ${JSON.stringify(await describeRuntime(page))}`);
   console.log(`[${info.project.name}] animation-frame callbacks/s after the drag: ${idle.toFixed(1)}`);
   expect(idle).toBeLessThan(10);
   await expect(page.locator('.scene canvas').first()).toBeVisible();
