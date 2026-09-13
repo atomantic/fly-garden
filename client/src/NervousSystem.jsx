@@ -1,5 +1,6 @@
 import { useDeferredValue, useEffect, useMemo, useState } from 'react';
 import AtlasCanvas from './AtlasCanvas.jsx';
+import ConnectomeNeuronSample from './ConnectomeNeuronSample.jsx';
 
 const PROFILES = [['male-cns-v1', 'MaleCNS v1.0'], ['banc-v888', 'BANC v888']];
 const LABELS = { 'visual-system': 'Visual system', 'central-brain': 'Central brain', 'ventral-nerve-cord': 'Ventral nerve cord', interregional: 'Interregional', unknown: 'Unclassified' };
@@ -159,6 +160,7 @@ export default function NervousSystem({ dataset = "male-cns:v1.0", individualId 
       </tbody></table></div>
       <section aria-label="Anatomical cell inspector" aria-live="polite"><h3 style={{overflowWrap: "anywhere"}}>{selected ? selected[0] : 'Select an anatomical cell'}</h3>
         {selected && <><p>Type: {selected[2] || 'Unclassified'} · class: {selected[3] || 'Unclassified'} · region: {selected[4] || 'Unclassified'}.</p><p>{selected[5]} {data.valid[selectedIndex] ? `Coordinates (${data.manifest.coordinates.units}): ${Array.from(data.positions.subarray(selectedIndex * 3, selectedIndex * 3 + 3)).map(v => v.toFixed(3)).join(', ')}. ${visibleGroups.includes(data.groups[selectedIndex]) ? '' : 'Its display group is currently hidden.'}` : 'No point is drawn; coordinates are never invented.'}</p></>}
+        {selected && <ConnectomeNeuronSample individualId={individualId} dataset={dataset} neuronId={selected[0]} graphManifestSha256={data.manifest.graphManifestSha256} />}
         {selected && connectionsEnabled && <>
           <h4>Incoming and outgoing anatomical connections</h4>
           {adjacencyError ? <p role="alert">{adjacencyError}</p> : !adjacency ? <p role="status">Reading selected-cell adjacency…</p> : <>
