@@ -1,7 +1,7 @@
 /** Original procedural movement-derived artifacts. No learning or stimulation capability. */
 import { deflateSync } from 'node:zlib';
 
-export const CREATIVE_LIMITS = Object.freeze({ actions: 1024, flowers: 32, participants: 16, durationMs: 3600000, outputBytes: 2 * 1024 * 1024, canvas: 256 });
+export const CREATIVE_LIMITS = Object.freeze({ actions: 1024, flowers: 32, participants: 64, durationMs: 3600000, outputBytes: 2 * 1024 * 1024, canvas: 256 });
 const invalid = () => { throw new Error('Invalid or incompatible movement-artifact source'); };
 const keys = (v, names) => v && typeof v === 'object' && !Array.isArray(v) && Object.keys(v).length === names.length && names.every(k => Object.hasOwn(v, k));
 const text = v => typeof v === 'string' && /^[A-Za-z0-9_.:-]{1,128}$/.test(v);

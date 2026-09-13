@@ -1,3 +1,4 @@
+import { validSharedCount } from '../shared/population-limits.js';
 import { randomUUID } from 'node:crypto';
 import { RETINAL_ADAPTER, encodeRetinalRgb, readFixtureMotor } from './environment-adapter.js';
 import { RuntimeError } from './runtime.js';
@@ -16,7 +17,7 @@ export function validateSharedPose(pose) {
 /** Synchronous fixture barrier. Runtimes remain the sole neural authority; tokens stage
  * transient steps without checkpoint restoration, input cancellation or neural exchange. */
 export function createFixtureSharedSession(members, { tick: initialTick = 0, now = Date.now } = {}) {
-  if (!Array.isArray(members) || members.length < 2 || members.length > 64 || !integer(initialTick)
+  if (!Array.isArray(members) || !validSharedCount(members.length) || !integer(initialTick)
     || !Number.isSafeInteger(initialTick * 5)) throw new RuntimeError('Invalid shared fixture membership or clock.');
   const ids = new Set();
   const participants = members.map(({ runtime, pose }) => {

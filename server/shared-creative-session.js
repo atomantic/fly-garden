@@ -1,3 +1,4 @@
+import { validSharedCount } from '../shared/population-limits.js';
 import { randomUUID } from 'node:crypto';
 import { SHARED_ARRANGEMENT } from '../shared/shared-garden-arrangement.js';
 import { deriveCreativeEvents, exportCreativeJSON, exportCreativeMIDI, exportCreativeSVG, exportCreativePNG, CREATIVE_LIMITS } from './creative-artifacts.js';
@@ -33,9 +34,9 @@ export function createSharedCreativeSessions() {
       || body.worldEpoch !== (body.action === 'start' ? shared?.worldEpoch : r?.epoch)) throw failure('Stale or invalid shared capture command.');
     if (body.action === 'start') {
       if (r?.source) throw failure('Export and explicitly discard the previous capture first.');
-      if (!shared || shared.status !== 'running' || shared.participants.length !== 2 || states.length !== 2
+      if (!shared || shared.status !== 'running' || !validSharedCount(shared.participants.length) || states.length !== shared.participants.length
         || states.some(s => s.source !== 'fixture' || !shared.participants.some(p => p.individualId === s.individualId && p.sessionId === s.sessionId))
-        || new Set(states.map(s => s.individualId)).size !== 2) throw failure('Start capture only for an already running shared fixture pair.');
+        || new Set(states.map(s => s.individualId)).size !== shared.participants.length) throw failure('Start capture only for an already running shared fixture population.');
       if (!r && records.size >= 64) throw failure('Session capture identity limit reached. Existing artifacts are preserved.');
       const source = { schemaVersion: 1, kind: 'movement-derived-source', sessionId: randomUUID(), worldId: id,
         modelVersion: 'shared-synthetic-lif-v1', checkpointId: null, participantIds: shared.participants.map(p => p.individualId),

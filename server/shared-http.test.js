@@ -6,9 +6,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openIdentityStore } from './identity-store.js';
 import { createSharedHttp } from './shared-http.js';
-async function setup(t) {
+async function setup(t, count = 2) {
   const directory = mkdtempSync(join(tmpdir(), 'shared-http-')), identities = openIdentityStore(directory);
-  const ids = [identities.primaryId, identities.create().individualId]; identities.load(ids[1]);
+  const ids = [identities.primaryId];
+  for (let i = 1; i < count; i++) { const id = identities.create().individualId; identities.load(id); ids.push(id); }
   const sequences = new Map(), transitions = [], frames = [];
   const snapshot = id => ({ ...identities.snapshot(id), commandSequence: sequences.get(id) ?? 0 });
   const handler = createSharedHttp({ identities, snapshot, sequenceFor: id => sequences.get(id) ?? 0,
@@ -68,7 +69,7 @@ test('joint restore requires exact durable members and rejects oversized, extra 
   assert.equal((await f.request('restore',{protocolVersion:1,jointCheckpointId:saved.checkpoint.jointCheckpointId,members})).status,409);
   assert.deepEqual(f.ids.map(f.snapshot),before);
   assert.equal((await f.request('join',{protocolVersion:1,members:f.members(),extra:true})).status,400);
-  assert.equal((await f.request('join',{padding:'x'.repeat(4096)})).status,413);
+  assert.equal((await f.request('join',{padding:'x'.repeat(65536)})).status,413);
   assert.equal((await f.request('checkpoints?unexpected=true')).status,400);
 });
 test('app integration protects origin, invalidates both language recipients and preserves partial home capture', async t => {
@@ -97,4 +98,24 @@ test('app integration protects origin, invalidates both language recipients and 
   assert.equal((await post(`/api/shared/${shared.sharedId}/control`,{protocolVersion:1,sharedId:shared.sharedId,worldEpoch:shared.worldEpoch,sequence:1,action:'start'})).status,200);
   assert.deepEqual(revoked,[...ids,...ids]);
   for(const id of ids)assert.equal(identities.snapshot(id).tick,0);
+});
+
+test('three admitted fixtures preserve complete atomic membership and all joint references', async t => {
+ const f = await setup(t, 3);
+ const joined = (await f.request('join', { protocolVersion: 1, members: f.members() })).value;
+ let shared = (await f.control(joined.shared, 'start')).value.shared;
+ const frame = { controllerToken: joined.controllerToken, worldEpoch: shared.worldEpoch, worldTick: shared.tick,
+ frames: shared.participants.map((p, i) => ({ version:1,individualId:p.individualId,sessionId:p.sessionId,environmentEpoch:shared.worldEpoch,frameId:shared.tick,simTimeMs:p.simTimeMs,capturedAtMs:Date.now(),camera:'controller',width:8,height:4,rgb:Array(96).fill(i*100) })) };
+ const before = f.ids.map(f.snapshot);
+ assert.equal((await f.request(`${shared.sharedId}/frames`, {...frame,frames:frame.frames.slice(0,2)})).status,409);
+ assert.deepEqual(f.ids.map(f.snapshot),before);
+ const accepted = await f.request(`${shared.sharedId}/frames`, {...frame,frames:frame.frames.toReversed()});
+ assert.equal(accepted.status,200); assert.deepEqual(accepted.value.traces.map(t=>t.individualId),f.ids);
+ shared = accepted.value.shared;
+ const saved = (await f.control(shared,'save')).value;
+ assert.deepEqual(saved.checkpoint.payload.members.map(m=>m.individualId),f.ids);
+ await f.control(saved.shared,'separate');
+ const restored = await f.request('restore',{protocolVersion:1,jointCheckpointId:saved.checkpoint.jointCheckpointId,members:f.members()});
+ assert.equal(restored.status,200); assert.equal(restored.value.shared.status,'paused');
+ assert.deepEqual(restored.value.shared.participants.map(p=>p.simTimeMs),[5,5,5]);
 });

@@ -1,3 +1,4 @@
+import { SHARED_LIMITS, validSharedCount } from '../shared/population-limits.js';
 import { RuntimeError } from './runtime.js';
 
 const exact = (value, keys) => value && typeof value === 'object' && !Array.isArray(value)
@@ -7,18 +8,18 @@ const send = (response, status, value) => { response.writeHead(status, { 'Conten
 async function bodyFor(request) {
   if (request.headers['content-type']?.split(';')[0].trim() !== 'application/json') throw new RuntimeError('Expected application/json.', 415);
   let bytes = 0, text = '';
-  for await (const chunk of request) { bytes += chunk.length; if (bytes > 4096) throw new RuntimeError('Shared request exceeds 4096 bytes.', 413); text += chunk; }
+  for await (const chunk of request) { bytes += chunk.length; if (bytes > SHARED_LIMITS.requestBytes) throw new RuntimeError('Shared request exceeds 65536 bytes.', 413); text += chunk; }
   try { return JSON.parse(text); } catch { throw new RuntimeError('Invalid shared JSON.'); }
 }
 /** Caller owns origin protection, resource admission, public snapshots and individual command counters.
- * No route allocates residents. Only a complete authenticated frame batch advances the existing pair. */
+ * No route allocates residents. Only a complete authenticated frame batch advances the existing population. */
 export function createSharedHttp({ identities, snapshot = id => identities.snapshot(id), sequenceFor = () => 0,
   consumeSequences = () => {}, afterTransition = () => {}, afterFrames = () => {} }) {
   const sequences = new Map();
   const bundle = state => ({ shared: { ...state, commandSequence: sequences.get(state.sharedId) ?? 0 },
     members: state.participants.map(member => snapshot(member.individualId)) });
   function validateMembers(members, expectedIds = null) {
-    if (!Array.isArray(members) || members.length !== 2 || new Set(members.map(item => item?.individualId)).size !== 2) throw new RuntimeError('Select exactly two distinct loaded fixture recipients.');
+    if (!Array.isArray(members) || !validSharedCount(members.length) || new Set(members.map(item => item?.individualId)).size !== members.length) throw new RuntimeError('Select 2–64 distinct loaded fixture recipients.');
     for (const item of members) {
       if (!exact(item, envelopeKeys) || item.protocolVersion !== 1) throw new RuntimeError('Invalid recipient command envelope.', 409);
       const state = snapshot(item.individualId);
@@ -43,7 +44,7 @@ export function createSharedHttp({ identities, snapshot = id => identities.snaps
         let expected = null;
         if (action === 'restore') {
           const checkpoint = identities.sharedCheckpoints().find(item => item.jointCheckpointId === body.jointCheckpointId);
-          if (!checkpoint || checkpoint.payload.members.length !== 2) throw new RuntimeError('Select a saved two-member joint checkpoint.', 409);
+          if (!checkpoint || !validSharedCount(checkpoint.payload.members.length)) throw new RuntimeError('Select a saved population joint checkpoint.', 409);
           expected = checkpoint.payload.members.map(item => item.individualId);
         }
         validateMembers(body.members, expected);

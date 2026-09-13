@@ -1,3 +1,4 @@
+import { validSharedCount } from '../../shared/population-limits.js';
 import { useEffect, useRef, useState } from 'react';
 import SharedCreativeControls from './SharedCreativeControls.jsx';
 
@@ -24,8 +25,8 @@ export default function SharedControls({ individuals = [], shared = null, contro
       let next;
       if (action === 'join' || action === 'restore') {
         const ids = action === 'join' ? chosen : checkpoints.find(item => item.jointCheckpointId === checkpoint)?.payload.members.map(item => item.individualId);
-        if (!ids || ids.length !== 2 || new Set(ids).size !== 2) throw new Error('Select exactly two loaded fixtures or a two-member checkpoint.');
-        // Refresh both command sessions at explicit action time; reading does not load or allocate a resident.
+        if (!ids || !validSharedCount(ids.length) || new Set(ids).size !== ids.length) throw new Error('Select 2–64 loaded fixtures or a population checkpoint.');
+        // Refresh all command sessions at explicit action time; reading does not load or allocate a resident.
         const states = await Promise.all(ids.map(id => request(`/api/individuals/${id}`, undefined, controller.signal)));
         const members = states.map(state => ({ protocolVersion: 1, individualId: state.individualId, sessionId: state.sessionId, sequence: state.commandSequence + 1 }));
         next = await request(`/api/shared/${action}`, { protocolVersion: 1, members, ...(action === 'restore' ? { jointCheckpointId: checkpoint } : {}) }, controller.signal);
@@ -40,25 +41,25 @@ export default function SharedControls({ individuals = [], shared = null, contro
     finally { clearTimeout(timeout); onCommandEnd(context); if (generation === epoch.current) setBusy(false); }
   }
   const resident = individuals.filter(item => item.resident);
-  return <section className="card" aria-label="Shared two-fixture garden">
+  return <section className="card" aria-label="Shared fixture population">
     <h3>Shared fixture garden</h3>
-    <p>Explicit two-resident baseline. Both original bodies share one committed world; each camera supplies only its own 8×4 retinal pixels. This does not run the anatomical connectomes or establish learning, biological sensing or a sex comparison.</p>
+    <p>Explicit admitted population. All original bodies share one committed world; each camera supplies only its own 8×4 retinal pixels. This does not run the anatomical connectomes or establish learning, biological sensing or a sex comparison.</p>
     {!shared || shared.status === 'separated' ? <>
-      <fieldset disabled={busy || disabled}><legend>Select exactly two already loaded individuals</legend>
+      <fieldset disabled={busy || disabled}><legend>Select 2–64 already loaded individuals</legend>
         {resident.map(item => <label key={item.individualId} style={{ display: 'block', overflowWrap: 'anywhere' }}><input type="checkbox" checked={chosen.includes(item.individualId)}
           onChange={e => setChosen(ids => e.target.checked ? [...ids, item.individualId] : ids.filter(id => id !== item.individualId))} />{item.individualId}</label>)}
       </fieldset>
-      <button disabled={busy || disabled || chosen.length !== 2} onClick={() => act('join')}>Join selected pair (paused)</button>
+      <button disabled={busy || disabled || !validSharedCount(chosen.length)} onClick={() => act('join')}>Join selected population (paused)</button>
     </> : <>
       <p role="status">{shared.status} · world tick {shared.tick} · {shared.reason || 'One complete atomic retinal batch per 5 ms step.'}</p>
       <p>{controllerToken ? 'This tab owns the controller cameras.' : 'Observer only; no controller lease. Separate and explicitly rejoin here to acquire cameras.'}</p>
       {['start', 'pause', 'save', 'separate'].map(action => <button key={action} disabled={busy || disabled || (action === 'start' && (!controllerToken || shared.status === 'running'))} onClick={() => act(action)}>
-        {{ start: 'Start shared pair', pause: 'Pause both', save: 'Save joint checkpoint', separate: 'Separate (both paused)' }[action]}</button>)}
+        {{ start: 'Start shared population', pause: 'Pause all', save: 'Save joint checkpoint', separate: 'Separate (all paused)' }[action]}</button>)}
     </>}
     <label>Joint checkpoint <select value={checkpoint} disabled={busy || disabled} onChange={e => setCheckpoint(e.target.value)}><option value="">Select joint save</option>
-      {checkpoints.filter(item => item.payload.members.length === 2).map(item => <option key={item.jointCheckpointId} value={item.jointCheckpointId}>{item.createdAt} · tick {item.payload.tick}</option>)}</select></label>
+      {checkpoints.filter(item => validSharedCount(item.payload.members.length)).map(item => <option key={item.jointCheckpointId} value={item.jointCheckpointId}>{item.createdAt} · tick {item.payload.tick}</option>)}</select></label>
     <button disabled={busy || disabled || !checkpoint} onClick={() => act('restore')}>Restore joint checkpoint (paused)</button>
-    <p>Restore requires both saved members already admitted and loaded. Pause or loss of either camera pauses both; separate to permit independent rest. No proximity objective, automatic encounters, language, or creative capture is enabled by joining.</p>
+    <p>Restore requires all saved members already admitted and loaded. Pause or loss of any camera pauses all; separate to permit independent rest. No proximity objective, automatic encounters, language, or creative capture is enabled by joining. Structural limit 64; rendering performance is not validated at that size. Slow complete batches stop rather than omit members.</p>
     <SharedCreativeControls shared={shared} />
     {error && <p role="alert">{error}</p>}
   </section>;

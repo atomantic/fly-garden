@@ -408,7 +408,7 @@ function App() {
                 <span className="label-line" />
                 DROSOPHILA · ORIGINAL PROCEDURAL MODEL
                 <small>
-                  {state?.externalOwner ? "Host visitor placement · home body withheld" : state?.sharedSession ? "Two shared visual fixtures · no biological claim" : state?.environmentAdapter?.attached ? "Engineered visual fixture control · no biological claim" : "Body illustration · not driven by the fixture circuit"}
+                  {state?.externalOwner ? "Host visitor placement · home body withheld" : state?.sharedSession ? "Shared visual fixtures · no biological claim" : state?.environmentAdapter?.attached ? "Engineered visual fixture control · no biological claim" : "Body illustration · not driven by the fixture circuit"}
                 </small>
               </div>
               <div className="pod-label">
