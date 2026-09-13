@@ -434,6 +434,8 @@ h3 {
 }
 footer {
   display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
   justify-content: space-between;
   margin-top: 22px;
   font-size: 10px;
