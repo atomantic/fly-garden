@@ -5,12 +5,12 @@ import{createConnectomeSession}from'./connectome-worker.js';import{createSparseL
 const datasets=['male-cns:v1.0','banc:v888'];
 const graph=dataset=>({ids:[`${dataset}/1`],offsets:new Uint32Array([0,0]),targets:new Uint32Array(),contacts:new Uint32Array(),signs:new Int8Array([1])});
 const deferred=()=>{let resolve;const promise=new Promise(r=>{resolve=r;});return{promise,resolve};};
-async function setup(t,{measurement=true,maxResidentFlies=3,openGate=null,closeGate=null,sampleGate=null}={}){
+async function setup(t,{measurement=true,maxResidentFlies=3,openGate=null,closeGate=null,sampleGate=null,backendFailure=null}={}){
  const directory=mkdtempSync(join(tmpdir(),'research-http-')),identities=openIdentityStore(join(directory,'fixtures'));
  const descriptors=Object.fromEntries(datasets.map(dataset=>[dataset,{directory:join(directory,dataset),graphSha256:createSparseLif(graph(dataset),{dataset}).graphSha256,manifestSha256:'ab'.repeat(32),neuronCount:1,edgeCount:0}]));
  const catalog=openConnectomeStore(join(directory,'catalog'),{profiles:descriptors}),profiles=Object.fromEntries(datasets.map(dataset=>[dataset,{descriptor:descriptors[dataset],measurement:{available:measurement,backend:'connectome',dataset,includesCheckpointSerialization:true,incrementalMemoryBytes:measurement?1000:null,reason:measurement?null:'Evidence unavailable.'}}]));
  const capacity=createCapacityPolicy({settings:{maxResidentFlies,maxAggregateMemoryBytes:100000,minFreeMemoryBytes:100}});let opened=0,resource={aggregateMemoryBytes:100,availableMemoryBytes:100000};
- const backend=async(_directory,options)=>{opened++;if(openGate){openGate.entered.resolve();await openGate.promise;}
+ const backend=async(_directory,options)=>{opened++;if(backendFailure)throw backendFailure;if(openGate){openGate.entered.resolve();await openGate.promise;}
   const session=createConnectomeSession({...options,graph:graph(options.dataset),provenance:{manifestSha256:'ab'.repeat(32)}});let epoch=session.snapshot().sessionEpoch;
   return{ready:session.snapshot(),close:async()=>{if(closeGate){closeGate.entered.resolve();await closeGate.promise;}},...Object.fromEntries(['snapshot','start','pause','advance','checkpoint','prepareRestore','commitRestore','sample'].map(action=>[action,async value=>{if(action==='sample'&&sampleGate){sampleGate.entered.resolve();await sampleGate.promise;}const result=session.dispatch({action,value,sessionEpoch:epoch});if(result?.sessionEpoch)epoch=result.sessionEpoch;return result;}]))};};
  const server=createServer({identities,autoTick:false,capacity,incrementalMemoryBytes:100,resourceUsage:()=>resource,
@@ -118,4 +118,26 @@ test('HTTP allows only one outstanding sample per individual',async t=>{
  const path=`/api/connectomes/${a.individualId}/samples`,first=s.post(path,body);await sampleGate.entered.promise;
  assert.equal((await s.post(path,body)).status,409);sampleGate.resolve();assert.equal((await first).status,200);
  assert.equal((await s.state(a.individualId)).neural.tick,0);
+});
+
+test('HTTP capacity refusals expose distinct safe reasons without worker or recipient mutation',async t=>{
+ const cases=[
+  {code:'resident-limit',options:{maxResidentFlies:1}},
+  {code:'unknown-footprint',options:{measurement:false}},
+  {code:'unknown-resources',resources:{aggregateMemoryBytes:NaN,availableMemoryBytes:100000}},
+  {code:'aggregate-memory',resources:{aggregateMemoryBytes:99500,availableMemoryBytes:100000}},
+  {code:'memory-headroom',resources:{aggregateMemoryBytes:100,availableMemoryBytes:1050}},
+ ];
+ const messages=new Set();
+ for(const value of cases){
+  const s=await setup(t,value.options),a=await s.create(datasets[0]);if(value.resources)s.setResources(value.resources);
+  const before=await s.state(a.individualId),resident=s.identities.snapshot(),catalogSequence=(await s.list()).commandSequence;
+  const response=await s.command(a.individualId,'load'),body=await response.json();assert.equal(response.status,409);assert.equal(body.code,value.code);assert.equal(typeof body.error,'string');messages.add(body.error);
+  assert.equal(s.opened(),0);assert.deepEqual(await s.state(a.individualId),before);assert.deepEqual(s.identities.snapshot(),resident);assert.equal((await s.list()).commandSequence,catalogSequence);
+ }
+ assert.equal(messages.size,cases.length);
+});
+test('arbitrary worker exception with a spoofed policy code remains private',async t=>{
+ const secret='PRIVATE_PATH_OR_CREDENTIAL';const s=await setup(t,{backendFailure:Object.assign(new Error(secret),{code:'memory-headroom'})}),a=await s.create(datasets[0]),resident=s.identities.snapshot();
+ const response=await s.command(a.individualId,'load'),body=await response.json();assert.equal(response.status,409);assert.equal(body.code,undefined);assert(!JSON.stringify(body).includes(secret));assert.match(body.error,/Research operation failed/);assert.deepEqual(s.identities.snapshot(),resident);
 });

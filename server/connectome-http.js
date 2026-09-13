@@ -1,3 +1,4 @@
+import { CapacityAdmissionError, CAPACITY_REFUSALS } from './population-capacity.js';
 import { RuntimeError } from './runtime.js';
 export function createConnectomeHttp({service,readBody,json,checkOrigin}) {
   return async function handle(request,response,url,base) {
@@ -12,6 +13,12 @@ export function createConnectomeHttp({service,readBody,json,checkOrigin}) {
     }
     if(request.method!=='POST'||id&&!['commands','samples'].includes(operation))throw new RuntimeError('Method not allowed.',405);
     checkOrigin(request,base);const body=await readBody(request,operation==='samples'?36*1024:4096);
-    json(response,200,id?(operation==='samples'?await service.sample(id,body):await service.command(id,body)):await service.create(body));return true;
+    try {
+      json(response,200,id?(operation==='samples'?await service.sample(id,body):await service.command(id,body)):await service.create(body));
+    } catch (error) {
+      if (!(error instanceof CapacityAdmissionError) || typeof error.code !== 'string' || !Object.hasOwn(CAPACITY_REFUSALS,error.code)) throw error;
+      json(response,409,{error:CAPACITY_REFUSALS[error.code],code:error.code});
+    }
+    return true;
   };
 }
