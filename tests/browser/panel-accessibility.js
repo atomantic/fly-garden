@@ -30,8 +30,15 @@ export async function markPanel(page, regionName) {
     const controls = [...panel.querySelectorAll(selector)].filter(element =>
       !element.disabled && !element.closest('fieldset[disabled]') && element.offsetParent !== null);
     controls.forEach((element, index) => { element.dataset.kbdStop = String(index); });
+    // How many focus stops precede this panel, so the walk below presses Tab a
+    // bounded, known number of times instead of guessing a ceiling.
+    const all = [...document.querySelectorAll(selector)].filter(element =>
+      !element.disabled && !element.closest('fieldset[disabled]') && element.offsetParent !== null);
+    const first = controls.length ? all.indexOf(controls[0]) : all.length;
     return {
       controls: controls.map((element, index) => ({ index, tag: element.tagName.toLowerCase(), name: named(element).slice(0, 70) })),
+      precedingFocusable: first < 0 ? all.length : first,
+      documentFocusable: all.length,
       text: panel.innerText.replace(/\s+/g, ' ').trim(),
       statuses: [...panel.querySelectorAll('[role="status"],[role="alert"]')].map(element => element.innerText.replace(/\s+/g, ' ').trim()),
     };
@@ -39,10 +46,34 @@ export async function markPanel(page, regionName) {
 }
 
 /**
+ * Wait for a panel to leave its own loading state before measuring it. These
+ * panels fetch their availability after mount and say so with the application's
+ * "Loading …" / "Reading …" convention; measuring during that window records the
+ * placeholder rather than the panel. Returns the settled text, or the last text
+ * seen if it never settles, so a stuck panel is visible in the failure instead of
+ * being hidden by a retry.
+ */
+export async function settledPanelText(page, regionName, timeout = 30_000) {
+  const deadline = Date.now() + timeout;
+  let text = '';
+  for (;;) {
+    text = await page.evaluate(name => {
+      const panel = [...document.querySelectorAll('[aria-label]')].find(element => element.getAttribute('aria-label') === name);
+      return panel ? panel.innerText.replace(/\s+/g, ' ').trim() : '';
+    }, regionName);
+    if (text && !/(Loading|Reading)[^…]*…/.test(text)) return text;
+    if (Date.now() >= deadline) return text;
+    await page.waitForTimeout(100);
+  }
+}
+
+/**
  * Press Tab from the document start until focus enters the marked panel, record
  * every stop inside it with the focus outline the browser actually computed, and
  * stop at the first stop outside it. Real key presses, so `:focus-visible`
- * applies exactly as it does for a keyboard user.
+ * applies exactly as it does for a keyboard user. `limit` is derived from the
+ * panel's own position in the focus order, so a panel that is never reached fails
+ * on a bounded walk instead of on the clock.
  */
 export async function tabThroughPanel(page, limit = 500) {
   await page.evaluate(() => { document.activeElement?.blur?.(); window.scrollTo(0, 0); });

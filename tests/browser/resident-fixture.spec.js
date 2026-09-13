@@ -1,5 +1,5 @@
 import { describeRuntime, expect, test } from './cdp-browser.js';
-import { PANELS, STATE_WORDS, markPanel, tabThroughPanel } from './panel-accessibility.js';
+import { PANELS, STATE_WORDS, markPanel, settledPanelText, tabThroughPanel } from './panel-accessibility.js';
 
 /**
  * The same NFR-4 panel checks, plus FR-12's small-screen layout, with the
@@ -35,9 +35,12 @@ test.describe('with one explicitly loaded, paused fixture individual', () => {
     await page.goto('/');
     loaded = await lifecycle(page, 'load');
     expect(loaded.persistence.resident).toBeTruthy();
-    // Loading is paused by contract; this asserts it rather than trusting the label.
-    expect(loaded.running ?? false).toBeFalsy();
-    console.log(`[resident-fixture] loaded ${loaded.individualId} · running ${loaded.running} · resident ${loaded.persistence.resident}`);
+    // Loading is paused by contract. Assert the field the runtime actually publishes:
+    // an earlier draft checked `loaded.running`, which this snapshot does not carry, so
+    // it passed on undefined and proved nothing.
+    expect(loaded).toHaveProperty('status');
+    expect(loaded.status, 'load must not leave the individual running').not.toEqual('running');
+    console.log(`[resident-fixture] loaded ${loaded.individualId} · status ${loaded.status} · resident ${loaded.persistence.resident}`);
     await page.close();
   });
 
@@ -45,28 +48,36 @@ test.describe('with one explicitly loaded, paused fixture individual', () => {
     const page = await browser.newPage();
     await page.goto('/');
     const unloaded = await lifecycle(page, 'unload');
-    console.log(`[resident-fixture] unloaded ${unloaded.individualId} · resident ${unloaded.persistence.resident}`);
+    expect(unloaded.persistence.resident, 'the run must leave the store as it found it').toBeFalsy();
+    console.log(`[resident-fixture] unloaded ${unloaded.individualId} · status ${unloaded.status} · resident ${unloaded.persistence.resident}`);
     await page.close();
   });
 
   for (const panel of PANELS) {
     test(`${panel.region} stays keyboard reachable and text-legible with a resident individual`, async ({ page }, info) => {
+      test.setTimeout(120_000);
       await page.goto(`/#${encodeURIComponent(panel.tab)}`);
       const region = page.getByRole('region', { name: panel.region }).or(page.locator(`[aria-label="${panel.region}"]`));
       await expect(region.first()).toBeVisible({ timeout: 60_000 });
+      await settledPanelText(page, panel.region);
       const marked = await markPanel(page, panel.region);
       expect(marked).not.toBeNull();
       console.log(`[${info.project.name}] ${panel.region} resident controls: ${JSON.stringify(marked.controls)}`);
       console.log(`[${info.project.name}] ${panel.region} resident text: ${marked.text.slice(0, 300)}`);
       for (const control of marked.controls) expect(control.name).not.toEqual('');
-      const stops = await tabThroughPanel(page);
+      expect(marked.text).toMatch(STATE_WORDS);
+      if (marked.controls.length === 0) {
+        console.log(`[${info.project.name}] ${panel.region}: no enabled controls even with a resident individual`);
+        return;
+      }
+      const stops = await tabThroughPanel(page, marked.precedingFocusable + marked.controls.length + 25);
       const reached = new Set(stops.map(stop => stop.stop));
+      console.log(`[${info.project.name}] ${panel.region}: reached ${reached.size} of ${marked.controls.length} by Tab after ${marked.precedingFocusable} preceding stops`);
       expect(marked.controls.filter(control => !reached.has(control.index))).toEqual([]);
       for (const stop of stops) {
         expect(stop.outlineStyle).not.toEqual('none');
         expect(stop.outlineWidth).toBeGreaterThan(0);
       }
-      expect(marked.text).toMatch(STATE_WORDS);
     });
   }
 

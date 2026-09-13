@@ -176,12 +176,57 @@ to say which browser produced it.
 
 **WebGL context loss.** Recorded in [atlas display evidence](ATLAS_DISPLAY_EVIDENCE.md).
 
+## Panel keyboard and non-colour evidence
+
+Recorded September 13, 2026 against this branch, in two configurations: the pinned Chrome Headless Shell 153.0.8010.12 (SwiftShader) and a real Chrome over the DevTools Protocol reporting `ANGLE (Apple, ANGLE Metal Renderer: Apple M5 Max, Unspecified Version)`, `WebGL 2.0 (OpenGL ES 3.0 Chromium)`. The CDP suite recorded **19 passed, 6 skipped, 0 failed**; the panel project recorded **8 passed** on the headless shell.
+
+*The real browser's version string cannot be read from these logs.* Playwright's `Desktop Chrome` descriptor overrides the user agent, so both configurations report the same Windows UA and the same `Chrome/153.0.8010.12`. The renderer string is the real device in each case; the version is not, and no version is claimed here.
+
+Each figure below comes from pressing Tab from the document start and reading `document.activeElement` and its computed style at every stop. The walk's ceiling is derived from the panel's own position in the focus order, so a panel that cannot be reached fails with a list of missed controls rather than on a timeout. Both browsers produced identical control sets, reached counts and outlines; the counts below therefore stand for both.
+
+| Panel | Enabled controls | Reached by Tab | Preceding stops | Measured focus outline |
+| --- | --- | --- | --- | --- |
+| Shared fixture population | 3 | 3 of 3 | 22 of 33 in the document | `solid 3px rgb(255, 225, 156)` |
+| Managed Eidoverse visitor | 0 | — | — | — |
+| Optional telemetry interpreter | 1 | 1 of 1 | 12 of 17 | `solid 3px rgb(255, 225, 156)` |
+| Full connectome research lab | 5 | 5 of 5 | 18 of 25 | `solid 3px rgb(255, 225, 156)` |
+
+Every enabled control carried a non-empty accessible name: `Allow per-member rest and partial withdrawal (version 2 barrier)`, `Joint checkpoint`, `Artifact source`, `Evidence window`, `Refresh metadata`, `Exact dataset`, `Create saved, unloaded individual`, `Individual`, `Refresh recording status`.
+
+**State as text, not colour.** Each panel's rendered text was read and asserted. The managed visitor reported `home · HOST BRIDGE NOT CONNECTED · paused` and the language interpreter `No language provider configured; no generated speech available. Provider installation and startup require separate explicit setup.`, both in live regions. The shared population and connectome lab carried no live region in this state; their condition is legible from ordinary panel text.
+
+**A check that asserted nothing, recorded rather than dropped.** The specs also look for controls exposing `aria-pressed`, `aria-current`, `aria-expanded` or `aria-checked` inside each panel. All four panels returned an empty list in every configuration, so that assertion proved nothing here. The shared-population checkbox carries native checked state instead, which is correct, but no claim about non-colour control state follows from this check.
+
+### With one explicitly loaded, paused individual
+
+Per the agent instructions the simulation runs only on an explicit user action, so this run is gated behind `FLY_GARDEN_BROWSER_FIXTURE=1` and skips itself otherwise, CI included. The caretaker authorized this specific run. It issued exactly one `load` and one `unload` against the suite's own identity directory — no start, advance, probe, stimulus, checkpoint or provider call — and the individual was left unloaded afterwards, as the log records.
+
+Individual `bf4ac733-ae7b-48af-a6cc-8d543f73304b` loaded resident and paused, then unloaded. With it resident, on the real-GPU browser:
+
+| Panel | Enabled controls | Reached by Tab | Preceding stops |
+| --- | --- | --- | --- |
+| Shared fixture population | 4 | 4 of 4 | 28 |
+| Managed Eidoverse visitor | 0 | — | — |
+| Optional telemetry interpreter | 1 | 1 of 1 | 17 |
+| Full connectome research lab | 5 | 5 of 5 | 18 |
+
+The shared population gains exactly one control — the individual's own selection checkbox, named by its ID. The language panel's evidence window gains its session and window text (`0–0 ms · session e17e6d69-7acd-…`) but no new control.
+
+**FR-12's small screen beyond the empty state.** At a requested 390×844 viewport with that individual resident, the Observatory reported `scrollWidth` **375 px against a 375 px client width** with `window.innerWidth` 390 — the same 15 px non-overlay scrollbar gap recorded in #77 — so there is no horizontal page scrolling. The navigation strip stayed entirely above `main`, and the lifecycle was readable as text. The previously recorded 390×844 evidence covered only the paused, no-individual state; this extends it to a resident one.
+
 ## What was not verified
 
-- No fixture individual existed during the run, so the Observatory was exercised in its paused,
-  no-individual state. The reduced-motion cadence of an actual engineered controller-camera session, and the
-  shared-population and managed-visitor panels, were **not** measured in a browser.
-- The Connectome lab tab was not exercised in a browser in this pass.
+- The reduced-motion cadence of an actual engineered controller-camera session is still **not** measured in a
+  browser. The individual in the gated run was loaded paused and never advanced, so no controller-camera
+  session existed to measure.
+- **The managed-visitor panel's keyboard operability is unmeasured, not verified.** Without a configured host
+  bridge every control in it is correctly disabled and therefore correctly unfocusable, with an empty
+  resident state as well as an empty one. Only its text legibility was established.
+- **NFR-4's "chat can be used without a pointer" clause is unmeasured.** With no language provider configured,
+  the only enabled control in the language panel is its evidence-window selector; the request and arming
+  controls were never focusable. Measuring them needs a provider running, which is separate explicit setup.
+- The panel specs run only in the default motion and colour configuration. Keyboard reachability of these four
+  panels under `prefers-reduced-motion: reduce` or `forced-colors: active` was not separately measured.
 - Chromium only, in two configurations: the headless shell and a real Chrome over CDP. No Firefox or WebKit
   run, and no real assistive technology: VoiceOver, NVDA and JAWS were not used, and no automated rule engine
   (axe or equivalent) was run.
