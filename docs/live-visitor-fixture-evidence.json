@@ -1,0 +1,92 @@
+{
+  "schemaVersion": 1,
+  "kind": "isolated-live-sequencer-fixture-evidence",
+  "recordedAt": "2026-09-13",
+  "source": {
+    "flyGarden": "6a37db24d6de7f8e18784bd98e2d5221f08a62ff",
+    "portos": "098559df03dc12d3f324eaa1a973d1dcb290126b",
+    "eidoverse": "c0c62cfe40c28659c35b192eea57c3bb7bda39be"
+  },
+  "rawReceiptSha256": "5288ac8c305e926c957210396bcfe76978d3816d83401b9910095965e372570b",
+  "harnessSha256": "f546138ecda31f39e63266e49b23a5d012319d9e6ed0fc7ad22d8447c113fe89",
+  "actualFixtureSteps": 45,
+  "fullConnectomeSteps": 0,
+  "stages": [
+    {
+      "name": "both-visiting",
+      "individuals": [
+        {
+          "individualId": "test-fly-a",
+          "sessionId": "runtime-test-fly-a",
+          "tick": 20,
+          "status": "running",
+          "visitorPhase": "visiting",
+          "owned": true
+        },
+        {
+          "individualId": "test-fly-b",
+          "sessionId": "runtime-test-fly-b",
+          "tick": 20,
+          "status": "running",
+          "visitorPhase": "visiting",
+          "owned": true
+        }
+      ]
+    },
+    {
+      "name": "split-independent-return",
+      "individuals": [
+        {
+          "individualId": "test-fly-a",
+          "sessionId": "runtime-test-fly-a",
+          "tick": 20,
+          "status": "paused",
+          "visitorPhase": "home",
+          "owned": false
+        },
+        {
+          "individualId": "test-fly-b",
+          "sessionId": "runtime-test-fly-b",
+          "tick": 25,
+          "status": "running",
+          "visitorPhase": "visiting",
+          "owned": true
+        }
+      ]
+    },
+    {
+      "name": "both-home",
+      "individuals": [
+        {
+          "individualId": "test-fly-a",
+          "sessionId": "runtime-test-fly-a",
+          "tick": 20,
+          "status": "paused",
+          "visitorPhase": "home",
+          "owned": false
+        },
+        {
+          "individualId": "test-fly-b",
+          "sessionId": "runtime-test-fly-b",
+          "tick": 25,
+          "status": "paused",
+          "visitorPhase": "home",
+          "owned": false
+        }
+      ]
+    }
+  ],
+  "observerPresenceCounts": [
+    0,
+    2,
+    2,
+    2,
+    1,
+    0
+  ],
+  "priorRun": {
+    "actualFixtureSteps": 45,
+    "limitation": "Terminal observer empty-state assertion matched initial empty message; corrected to latest presence for the complete rerun."
+  },
+  "totalFixtureStepsIncludingPriorRun": 90
+}
