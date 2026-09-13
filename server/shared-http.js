@@ -19,7 +19,7 @@ export function createSharedHttp({ identities, snapshot = id => identities.snaps
   const bundle = state => ({ shared: { ...state, commandSequence: sequences.get(state.sharedId) ?? 0 },
     members: state.participants.map(member => snapshot(member.individualId)) });
   function validateMembers(members, expectedIds = null) {
-    if (!Array.isArray(members) || !validSharedCount(members.length) || new Set(members.map(item => item?.individualId)).size !== members.length) throw new RuntimeError('Select 2–64 distinct loaded fixture recipients.');
+    if (!Array.isArray(members) || !validSharedCount(members.length) || (expectedIds && members.length !== expectedIds.length) || new Set(members.map(item => item?.individualId)).size !== members.length) throw new RuntimeError('Select 2–64 distinct loaded fixture recipients.');
     for (const item of members) {
       if (!exact(item, envelopeKeys) || item.protocolVersion !== 1) throw new RuntimeError('Invalid recipient command envelope.', 409);
       const state = snapshot(item.individualId);

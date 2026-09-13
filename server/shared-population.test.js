@@ -62,3 +62,17 @@ test('three procedural bodies retain indexed poses and reject incomplete pose up
   assert.equal(visual.applyPoses(state),false);assert.deepEqual(groups.map(g=>g.position.x),[0,1,2]);
  } finally {visual.dispose();scene.traverse(o=>{o.geometry?.dispose();if(o.material)for(const m of Array.isArray(o.material)?o.material:[o.material])m.dispose();});}
 });
+
+test('joint restore requires the entire exact saved membership before counters or restore mutate', async () => {
+ const ids=Array.from({length:4},()=>randomUUID()), checkpointId=randomUUID();
+ const members=ids.map(individualId=>({protocolVersion:1,individualId,sessionId:randomUUID(),sequence:1}));
+ const states=new Map(members.map(m=>[m.individualId,{...m,source:'fixture',persistence:{resident:true}}]));
+ let consumed=0,restored=0;
+ const handler=createSharedHttp({identities:{sharedCheckpoints:()=>[{jointCheckpointId:checkpointId,payload:{members:ids.slice(0,3).map(individualId=>({individualId}))}}],
+ sharedRestore:()=>{restored++;return{sharedId:randomUUID(),participants:members.slice(0,3)};}},snapshot:id=>states.get(id),consumeSequences:()=>consumed++});
+ const request=async supplied=>{const req=Readable.from([Buffer.from(JSON.stringify({protocolVersion:1,jointCheckpointId:checkpointId,members:supplied}))]);req.method='POST';req.headers={'content-type':'application/json'};let status;await handler(req,{writeHead:s=>status=s,end:()=>{}},new URL('http://localhost/api/shared/restore'));return status;};
+ for(const supplied of [members.slice(0,2),members,[members[0],members[1],members[3]],[members[0],members[1],members[1]]]) {
+  assert.notEqual(await request(supplied),200);assert.equal(consumed,0);assert.equal(restored,0);
+ }
+ assert.equal(await request(members.slice(0,3).toReversed()),200);assert.equal(consumed,1);assert.equal(restored,1);
+});
