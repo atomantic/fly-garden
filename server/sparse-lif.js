@@ -89,7 +89,20 @@ export function createSparseLif(graph, { individualId = randomUUID(), dataset = 
     }
   }
 
-  function step() {
+  function step(inputs = []) {
+    // Explicit one-step engineering input; no retained drive or episode authority.
+    // Validate the complete sparse envelope before touching even scratch arrays.
+    if (!Array.isArray(inputs) || inputs.length > Math.min(n, 4000)) throw new Error('Invalid sparse external input');
+    const external = new Map(); let totalDeltaV = 0;
+    for (const input of inputs) {
+      if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).length !== 2
+        || !Object.hasOwn(input, 'index') || !Object.hasOwn(input, 'deltaV')
+        || !Number.isInteger(input.index) || input.index < 0 || input.index >= n || external.has(input.index)
+        || !Number.isFinite(input.deltaV) || input.deltaV < 0 || input.deltaV > 1.25) throw new Error('Invalid sparse external input');
+      totalDeltaV += input.deltaV; if (totalDeltaV > 5000) throw new Error('External input sum exceeded');
+      external.set(input.index, input.deltaV);
+    }
+    const hasExternal = external.size !== 0;
     incoming.fill(0);
     let visited = 0, spikes = 0;
     for (let source = 0; source < n; source++) {
@@ -102,7 +115,7 @@ export function createSparseLif(graph, { individualId = randomUUID(), dataset = 
     for (let i = 0; i < n; i++) {
       nextFiring[i] = 0;
       nextRefractory[i] = refractory[i] > 0 ? refractory[i] - 1 : 0;
-      const value = refractory[i] > 0 ? LIF_MODEL.reset : potential[i] * decay + incoming[i];
+      const value = refractory[i] > 0 ? LIF_MODEL.reset : potential[i] * decay + incoming[i] + (hasExternal ? external.get(i) ?? 0 : 0);
       if (!Number.isFinite(value)) throw new Error('Non-finite neural state; last valid state retained');
       // Negative voltage is permitted, without interpreting it as punishment/pain.
       nextPotential[i] = value;
