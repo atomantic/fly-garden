@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { DATASETS, currentLabRequest, labCommand, mergeConnectomeState, readConnectomeState, readConnectomeHistory, readLabCommandReply } from './connectome-lab-state.js';
 import './connectome-lab.css';
 import ConnectomeRecordings from './ConnectomeRecordings.jsx';
+import { runtimeAdminValues } from './runtime-admin-values.js';
 import './observatory-accessibility.css';
 
 const LABELS = {'male-cns:v1.0':'MaleCNS v1.0','banc:v888':'BANC v888'};
@@ -153,7 +154,11 @@ export default function ConnectomeLab({ selectedIndividualId, onSelectIndividual
         {state.neural && <dl className="lab-metrics"><div><dt>Simulation time</dt><dd>{number(state.neural.simTimeMs)} ms</dd></div><div><dt>Tick</dt><dd>{number(state.neural.tick)}</dd></div>
           <div><dt>Current / cumulative spikes</dt><dd>{number(state.neural.spikes)} / {number(state.neural.totalSpikes)}</dd></div><div><dt>Traversed edges</dt><dd>{number(state.neural.traversedEdges)}</dd></div>
           <div><dt>Potential range (dimensionless)</dt><dd>{number(state.neural.minimum)} → {number(state.neural.maximum)}</dd></div></dl>}
-        <p>Last accepted browser receipt age: {receivedAt===null || displayNow<receivedAt ? "Unavailable" : `${Math.max(0,displayNow-receivedAt)} ms`}. This is receipt freshness, not the age of underlying neural activity. {readError ? "Disconnected/stale: this snapshot is not current." : "The worker advances only through explicit bounded commands."}</p><p>Simulation speed: unavailable (no timed batch measurement supplied; polling cadence is not simulated throughput). Numerical health: {state.status==='fault' ? 'fault; inspect the reported reason' : state.neural ? 'finite reported potential bounds; no biological welfare inference' : 'unavailable without a resident neural snapshot'}.</p>
+        <section aria-label="Selected runtime identity, health and admission"><h4>Runtime identity, health and admission</h4>
+          <dl className="lab-metrics">{runtimeAdminValues({state,profile,population:catalog.population??null,history,
+            receiptAgeMs:receivedAt===null||displayNow<receivedAt?null:Math.max(0,displayNow-receivedAt),disconnected:Boolean(readError)})
+            .map(item=><div key={item.id}><dt>{item.label}</dt><dd>{item.value}<br/><span className="muted">Source: {item.source}. {item.note}</span></dd></div>)}</dl>
+          <p>Every value above comes from the source named beside it; an unavailable value is never filled in from another source. The worker advances only through explicit bounded commands.</p></section>
         <h4>Checkpoint history</h4><p>Restoring selects the exact saved source under a new worker epoch and stays paused. Load this individual before restoring.</p>
         <label>Saved source<select value={checkpoint} onChange={event=>setCheckpoint(event.target.value)} disabled={busy}><option value="">Select checkpoint</option>
           {history.map(item=><option key={item.checkpointId} value={item.checkpointId}>{new Date(item.createdAt).toISOString()} · tick {item.tick} · {item.operation} · {item.checkpointId}</option>)}</select></label>

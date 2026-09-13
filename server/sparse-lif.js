@@ -274,10 +274,33 @@ export function createSparseLif(graph, { individualId = randomUUID(), dataset = 
   function restore(saved) {
     return commitRestore(prepareRestore(saved));
   }
+
+  /**
+   * What this kernel's effective weights are currently derived from, reported
+   * without copying a gain, trace or neural array. An effective weight is
+   * `contacts * sign * contactGain` unless a retained plasticity block scales
+   * it, so a viewer can name the basis instead of assuming one. `plasticity:
+   * null` states that this kernel holds no retained gain block; it is not a
+   * claim that learning was evaluated, and it is not a welfare or health value.
+   */
+  function retainedWeightState() {
+    const gains = extensions ? extensions.value.plasticityGains ?? null : null;
+    const readable = gains !== null && typeof gains === 'object' && !Array.isArray(gains);
+    return { checkpointSchemaVersion: extensions ? 2 : 1, extensionsSha256: extensions ? extensions.sha256 : null,
+      weightBasis: 'anatomicalContacts * engineeredSign * engineeredContactGain',
+      contactGain: model.contactGain,
+      plasticity: gains === null ? null : {
+        rule: readable && typeof gains.rule === 'string' ? gains.rule : 'unknown',
+        mappingManifestSha256: readable && typeof gains.mappingManifestSha256 === 'string' ? gains.mappingManifestSha256 : null,
+        updates: readable && Number.isSafeInteger(gains.updates) ? gains.updates : null,
+        gatedUpdates: readable && Number.isSafeInteger(gains.gatedUpdates) ? gains.gatedUpdates : null,
+        edgeCount: readable && Array.isArray(gains.gains) ? gains.gains.length : null } };
+  }
   if (checkpoint !== null) restore(checkpoint);
   // Graph ownership is transferred to the kernel; callers must not mutate CSR arrays.
   // Copies for small numerical diagnostics only; full graph benchmark uses summary().
   return { step, seedProbe, summary, sample, checkpoint: exportCheckpoint, restore, prepareRestore, commitRestore, individualId, graphSha256, model,
     setCheckpointExtensions, checkpointExtensions: readCheckpointExtensions, checkpointExtensionsSha256,
+    retainedWeightState,
     inspect: () => ({ potential: potential.slice(), firing: firing.slice(), refractory: refractory.slice() }) };
 }
