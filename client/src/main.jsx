@@ -1,5 +1,7 @@
 import React, { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
+import EventDetails from "./EventDetails.jsx";
+import {appendRateObservation, ratePoints, observationScope} from "./observation-details.js";
 import Scene from "./Scene.jsx";
 import SharedScene from "./SharedScene.jsx";
 import SharedControls from "./SharedControls.jsx";
@@ -114,7 +116,7 @@ function App() {
           setConnectionError("");
           const sameSession = historySession.current === next.sessionId;
           historySession.current = next.sessionId;
-          setHistory((h) => [...(sameSession ? h.slice(-49) : []), next.neural.meanRateHz]);
+          setHistory((h) => appendRateObservation(sameSession ? h : [], next));
         }
       } catch (e) {
         if (!stopped)
@@ -178,6 +180,7 @@ function App() {
     available = !!state && !busy && !connectionError,
     residentAvailable = available && state?.status !== "saved-unloaded" && !state?.externalOwner,
     canQuiet = !!state && !connectionError && state.status !== "saved-unloaded" && (!busy || Boolean(state.externalOwner));
+  const visibleHistory = history.filter(row => row.scope === observationScope(state));
   const fixtureView = !["Nervous system", "Connectome lab"].includes(tab);
   const go = (t) => {
     location.hash = encodeURIComponent(t);
@@ -622,38 +625,20 @@ function App() {
                 fill="none"
               />
               <polyline
-                points={history
-                  .map(
-                    (v, i) =>
-                      `${(i * 600) / 49},${75 - Math.min(100, v) * 0.7}`,
-                  )
-                  .join(" ")}
+                points={ratePoints(visibleHistory)}
                 fill="none"
                 stroke="#d9c48e"
                 strokeWidth="2"
               />
             </svg>
             <div className="chart-scale">
-              <span>RECENT OBSERVATIONS</span>
+              <span>SIMULATION {visibleHistory[0]?.timeMs ?? "Unavailable"}–{visibleHistory.at(-1)?.timeMs ?? "Unavailable"} ms</span>
               <span>FIXED SCALE · 0–100 Hz</span>
             </div>
+            <p>Mean across 32 fixture neurons in Hz; each value uses a trailing 1000 ms simulation window, with the initial partial window zero-padded. At most 50 distinct simulation times are retained. Paused polls add no points; horizontal distance represents simulation time. Missing telemetry is not plotted as zero.</p>
           </section>
           <section className="card event-card">
-            <div className="card-heading">
-              <span className="eyebrow">EVENT JOURNAL</span>
-              <span>SIMULATED TIME</span>
-            </div>
-            <div className="events">
-              {(state?.events || []).slice(0, 4).map((e) => (
-                <div key={e.id}>
-                  <time>{(e.timeMs / 1000).toFixed(1)}s</time>
-                  <span>{e.message}</span>
-                </div>
-              ))}
-              {!state && (
-                <p className="muted">Waiting for the local runtime.</p>
-              )}
-            </div>
+            <EventDetails state={state} />
           </section>
         </div>}
         <footer>

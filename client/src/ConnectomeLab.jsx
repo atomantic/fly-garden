@@ -26,7 +26,8 @@ export default function ConnectomeLab({ selectedIndividualId, onSelectIndividual
   const [catalog, setCatalog] = useState(null), [dataset, setDataset] = useState(DATASETS[0]), [selected, setSelected] = useState(selectedIndividualId ?? '');
   const [state, setState] = useState(null), [history, setHistory] = useState([]), [checkpoint, setCheckpoint] = useState('');
   const [steps, setSteps] = useState('100'), [busy, setBusy] = useState(false), [error, setError] = useState(''), [readError, setReadError] = useState('');
-  const [refresh, setRefresh] = useState(0);
+  const [refresh, setRefresh] = useState(0), [receivedAt, setReceivedAt] = useState(null), [displayNow, setDisplayNow] = useState(Date.now());
+  useEffect(()=>{const timer=setInterval(()=>setDisplayNow(Date.now()),1000);return()=>clearInterval(timer);},[]);
   const live = useRef({generation:0,individualId:selectedIndividualId ?? '',state:null,busy:false,mounted:true});
   const actionRequest = useRef(null), selectionCallback = useRef(onSelection);
   selectionCallback.current = onSelection;
@@ -34,7 +35,7 @@ export default function ConnectomeLab({ selectedIndividualId, onSelectIndividual
   const accepts = request => live.current.mounted && currentLabRequest(request,{...context()});
   function publish(next) {
     next=readConnectomeState(next); const merged=mergeConnectomeState(live.current.state,next);
-    live.current.state=merged; setState(merged);
+    live.current.state=merged; setState(merged); if(merged===next)setReceivedAt(Date.now());
   }
   function select(id, notify = true) {
     id = id ?? '';
@@ -42,7 +43,7 @@ export default function ConnectomeLab({ selectedIndividualId, onSelectIndividual
     if (notify && id && !identity) { setError('Selected identity is absent from the validated catalog. Refresh before selecting.'); return; }
     live.current.generation++;live.current.individualId=id;live.current.state=null;
     actionRequest.current?.abort();live.current.busy=false;setBusy(false);
-    setSelected(id);setState(null);setHistory([]);setCheckpoint('');setError('');setReadError('');
+    setSelected(id);setState(null);setReceivedAt(null);setHistory([]);setCheckpoint('');setError('');setReadError('');
     if (notify) onSelectIndividual(id, identity?.dataset);
   }
   useEffect(()=>{if(selectedIndividualId !== undefined && (selectedIndividualId ?? '') !== live.current.individualId)select(selectedIndividualId,false);},[selectedIndividualId]);
@@ -151,7 +152,8 @@ export default function ConnectomeLab({ selectedIndividualId, onSelectIndividual
         <p>Each click advances at most 1000 ms. There are no probes, repeated runs, skipped steps or background neural execution.</p>
         {state.neural && <dl className="lab-metrics"><div><dt>Simulation time</dt><dd>{number(state.neural.simTimeMs)} ms</dd></div><div><dt>Tick</dt><dd>{number(state.neural.tick)}</dd></div>
           <div><dt>Current / cumulative spikes</dt><dd>{number(state.neural.spikes)} / {number(state.neural.totalSpikes)}</dd></div><div><dt>Traversed edges</dt><dd>{number(state.neural.traversedEdges)}</dd></div>
-          <div><dt>Potential range</dt><dd>{number(state.neural.minimum)} → {number(state.neural.maximum)}</dd></div></dl>}
+          <div><dt>Potential range (dimensionless)</dt><dd>{number(state.neural.minimum)} → {number(state.neural.maximum)}</dd></div></dl>}
+        <p>Last accepted browser receipt age: {receivedAt===null || displayNow<receivedAt ? "Unavailable" : `${Math.max(0,displayNow-receivedAt)} ms`}. This is receipt freshness, not the age of underlying neural activity. {readError ? "Disconnected/stale: this snapshot is not current." : "The worker advances only through explicit bounded commands."}</p><p>Simulation speed: unavailable (no timed batch measurement supplied; polling cadence is not simulated throughput). Numerical health: {state.status==='fault' ? 'fault; inspect the reported reason' : state.neural ? 'finite reported potential bounds; no biological welfare inference' : 'unavailable without a resident neural snapshot'}.</p>
         <h4>Checkpoint history</h4><p>Restoring selects the exact saved source under a new worker epoch and stays paused. Load this individual before restoring.</p>
         <label>Saved source<select value={checkpoint} onChange={event=>setCheckpoint(event.target.value)} disabled={busy}><option value="">Select checkpoint</option>
           {history.map(item=><option key={item.checkpointId} value={item.checkpointId}>{new Date(item.createdAt).toISOString()} · tick {item.tick} · {item.operation} · {item.checkpointId}</option>)}</select></label>
