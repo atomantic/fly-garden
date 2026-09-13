@@ -8,7 +8,11 @@ export const RUNTIME_DATASET = Object.freeze({ namespace: 'synthetic-fixture', r
 const PARAMETERS = Object.freeze({ stepMs: STEP_MS, neuronCount: 32, membraneRetention: 0.975,
   baselineCurrent: 0.055, baselineCurrentStride: 0.003, threshold: 1, resetPotential: 0,
   minimumPotential: 0, excitatoryWeight: 0.11, inhibitoryWeight: -0.035, rateWindowMs: 1000 });
-const UNSUPPORTED = Object.freeze({ rng: null, plasticity: null, refractory: null, delayBuffers: null, embodiment: null });
+// The synthetic fixture still supports none of these. The research sparse-LIF
+// kernel now retains plasticity/world/pose/RNG state; naming those slots here
+// keeps the fixture's silence about them explicit instead of merely absent.
+const UNSUPPORTED_LEGACY = Object.freeze({ rng: null, plasticity: null, refractory: null, delayBuffers: null, embodiment: null });
+const UNSUPPORTED = Object.freeze({ ...UNSUPPORTED_LEGACY, plasticityGains: null, eligibilityTraces: null, worldPhase: null, bodyPose: null });
 // Engineered numerical guards for this fixture, not measures of welfare or biological activity.
 const MAX_RATE_HZ = 100;
 const MAX_POTENTIAL_BEFORE_RESET = 4;
@@ -34,7 +38,7 @@ export function validateRuntimeCheckpoint(saved, { individualId } = {}) {
     || saved.schemaVersion !== 1 || saved.protocolVersion !== RUNTIME_PROTOCOL_VERSION
     || !validIdentity(saved.individualId) || (individualId !== undefined && saved.individualId !== individualId)
     || !sameFields(saved.dataset, RUNTIME_DATASET) || !sameFields(saved.parameters, PARAMETERS)
-    || !sameFields(saved.unsupported, UNSUPPORTED)
+    || !(sameFields(saved.unsupported, UNSUPPORTED) || sameFields(saved.unsupported, UNSUPPORTED_LEGACY))
     || !(saved.faultReason === null || (typeof saved.faultReason === 'string' && saved.faultReason.length > 0 && saved.faultReason.length <= 500))
     || !exactKeys(saved.dynamics, ['tick', 'potentials', 'firing', 'spikeHistory'])) invalid();
   const { tick, potentials, firing, spikeHistory } = saved.dynamics;

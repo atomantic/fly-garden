@@ -19,6 +19,47 @@ export function validateNeuronSampleIds(neuronIds, dataset) {
   if (new Set(neuronIds).size !== neuronIds.length) throw new Error('Duplicate sample neuron ID');
 }
 
+/**
+ * Retained mutable state beyond the LIF arrays. The kernel owns the exactness
+ * contract (key set, canonical JSON, finite numbers, bounded size, digest); the
+ * plasticity and campaign modules own every biological/protocol interpretation.
+ * A checkpoint without this block is a schema-version 1 checkpoint and stays
+ * loadable unchanged.
+ */
+export const CHECKPOINT_EXTENSION_KEYS = Object.freeze(['plasticityGains', 'eligibilityTraces', 'worldPhase', 'bodyPose', 'rngState']);
+const MAX_EXTENSION_BYTES = 64 * 1024 * 1024;
+const MAX_EXTENSION_DEPTH = 8;
+
+function canonicalJson(value, depth = 0) {
+  if (depth > MAX_EXTENSION_DEPTH) throw new Error('Checkpoint extension nesting exceeds the declared depth');
+  if (value === null || typeof value === 'boolean') return value;
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) throw new Error('Checkpoint extension carries a non-finite number');
+    return value;
+  }
+  if (typeof value === 'string') {
+    if (value.length > 4096) throw new Error('Checkpoint extension string exceeds the declared length');
+    return value;
+  }
+  if (Array.isArray(value)) return value.map(item => canonicalJson(item, depth + 1));
+  if (value && typeof value === 'object' && Object.getPrototypeOf(value) === Object.prototype) {
+    return Object.fromEntries(Object.keys(value).sort().map(key => [key, canonicalJson(value[key], depth + 1)]));
+  }
+  throw new Error('Checkpoint extension accepts only plain JSON values');
+}
+
+/** Canonicalize, bound and digest the extension block; never interprets its meaning. */
+export function normalizeCheckpointExtensions(value) {
+  if (value === null || value === undefined) return null;
+  if (!value || typeof value !== 'object' || Array.isArray(value)
+    || Object.keys(value).length !== CHECKPOINT_EXTENSION_KEYS.length
+    || CHECKPOINT_EXTENSION_KEYS.some(key => !Object.hasOwn(value, key))) throw new Error('Checkpoint extensions require exactly the declared keys');
+  const canonical = canonicalJson(value);
+  const serialized = JSON.stringify(canonical);
+  if (serialized.length > MAX_EXTENSION_BYTES) throw new Error('Checkpoint extension exceeds the declared size bound');
+  return { value: canonical, sha256: createHash('sha256').update(serialized).digest('hex') };
+}
+
 export function validateGraph(graph) {
   const { ids, offsets, targets, contacts, signs } = graph;
   if (!Array.isArray(ids) || !(offsets instanceof Uint32Array) || !(targets instanceof Uint32Array) ||
@@ -74,6 +115,7 @@ export function createSparseLif(graph, { individualId = randomUUID(), dataset = 
   const incoming = new Float64Array(n);
   const decay = Math.exp(-LIF_MODEL.dtMs / LIF_MODEL.tauMs);
   let tick = 0, totalSpikes = 0, traversedEdges = 0;
+  let extensions = null;
   let revision = Symbol();
   const preparedRestores = new WeakMap();
 
@@ -166,14 +208,35 @@ export function createSparseLif(graph, { individualId = randomUUID(), dataset = 
       disclosure: 'Instantaneous modeled potential, pending one-step firing flag and refractory steps remaining. Not firing rates, recorded biology, learning, welfare or body-control evidence.' };
   }
   function exportCheckpoint() {
-    return { schemaVersion: 1, kind: 'sparse-lif', individualId, dataset, graphSha256,
+    // Without retained plasticity/world/RNG state the export is byte-identical to
+    // the original schema-version 1 record, so every earlier checkpoint and digest
+    // stays valid.
+    const base = { schemaVersion: extensions ? 2 : 1, kind: 'sparse-lif', individualId, dataset, graphSha256,
       model: { ...model }, tick, totalSpikes, traversedEdges,
       potential: Array.from(potential), firing: Array.from(firing), refractory: Array.from(refractory) };
+    return extensions ? { ...base, extensions: structuredClone(extensions.value) } : base;
   }
+  /** Explicit caller-owned mutable state. Passing null returns the kernel to schema 1. */
+  function setCheckpointExtensions(value) {
+    extensions = normalizeCheckpointExtensions(value);
+    revision = Symbol();
+    return extensions ? extensions.sha256 : null;
+  }
+  const readCheckpointExtensions = () => (extensions ? structuredClone(extensions.value) : null);
+  const checkpointExtensionsSha256 = () => (extensions ? extensions.sha256 : null);
   function prepareRestore(saved) {
     const expected = ['schemaVersion', 'kind', 'individualId', 'dataset', 'graphSha256', 'model', 'tick', 'totalSpikes', 'traversedEdges', 'potential', 'firing', 'refractory'];
-    if (!saved || typeof saved !== 'object' || Object.keys(saved).length !== expected.length || expected.some(k => !Object.hasOwn(saved, k)) ||
-      saved.schemaVersion !== 1 || saved.kind !== 'sparse-lif' || saved.individualId !== individualId || saved.dataset !== dataset || saved.graphSha256 !== graphSha256 ||
+    // Schema 1 carries neural arrays only; schema 2 adds exactly one extension
+    // block. Any other key, or a schema/extension mismatch, is still rejected.
+    const extended = saved && typeof saved === 'object' && saved.schemaVersion === 2;
+    const keys = extended ? [...expected, 'extensions'] : expected;
+    let restoredExtensions = null;
+    if (extended) {
+      try { restoredExtensions = normalizeCheckpointExtensions(saved.extensions); } catch { throw new Error('Invalid neural checkpoint extension block'); }
+      if (restoredExtensions === null) throw new Error('Invalid neural checkpoint extension block');
+    }
+    if (!saved || typeof saved !== 'object' || Object.keys(saved).length !== keys.length || keys.some(k => !Object.hasOwn(saved, k)) ||
+      ![1, 2].includes(saved.schemaVersion) || saved.kind !== 'sparse-lif' || saved.individualId !== individualId || saved.dataset !== dataset || saved.graphSha256 !== graphSha256 ||
       !saved.model || Object.keys(saved.model).length !== Object.keys(model).length || Object.entries(model).some(([k,v]) => saved.model[k] !== v)) throw new Error('Incompatible neural checkpoint identity/model/graph');
     if (![saved.tick, saved.totalSpikes, saved.traversedEdges].every(v => Number.isSafeInteger(v) && v >= 0)) throw new Error('Invalid neural checkpoint clock/counters');
     if (![saved.potential, saved.firing, saved.refractory].every(a => Array.isArray(a) && a.length === n)) throw new Error('Invalid neural checkpoint dimensions');
@@ -195,7 +258,7 @@ export function createSparseLif(graph, { individualId = randomUUID(), dataset = 
     // Allocate and validate everything before replacing any authoritative state.
     const p = Float64Array.from(saved.potential), f = Uint8Array.from(saved.firing), r = Uint8Array.from(saved.refractory);
     const token = Object.freeze(Object.create(null));
-    preparedRestores.set(token, { revision, p, f, r, tick: saved.tick, totalSpikes: saved.totalSpikes, traversedEdges: saved.traversedEdges });
+    preparedRestores.set(token, { revision, p, f, r, tick: saved.tick, totalSpikes: saved.totalSpikes, traversedEdges: saved.traversedEdges, extensions: restoredExtensions });
     return token;
   }
   function commitRestore(token) {
@@ -204,6 +267,7 @@ export function createSparseLif(graph, { individualId = randomUUID(), dataset = 
     preparedRestores.delete(token);
     potential = candidate.p; firing = candidate.f; refractory = candidate.r;
     tick = candidate.tick; totalSpikes = candidate.totalSpikes; traversedEdges = candidate.traversedEdges;
+    extensions = candidate.extensions;
     revision = Symbol();
     return summary();
   }
@@ -214,5 +278,6 @@ export function createSparseLif(graph, { individualId = randomUUID(), dataset = 
   // Graph ownership is transferred to the kernel; callers must not mutate CSR arrays.
   // Copies for small numerical diagnostics only; full graph benchmark uses summary().
   return { step, seedProbe, summary, sample, checkpoint: exportCheckpoint, restore, prepareRestore, commitRestore, individualId, graphSha256, model,
+    setCheckpointExtensions, checkpointExtensions: readCheckpointExtensions, checkpointExtensionsSha256,
     inspect: () => ({ potential: potential.slice(), firing: firing.slice(), refractory: refractory.slice() }) };
 }
