@@ -6,6 +6,9 @@ import { createRuntime, RuntimeError } from './runtime.js';
 import { openIdentityStore } from './identity-store.js';
 import ecosystem from '../ecosystem.config.cjs';
 import { createCapacityPolicy, openCapacityStore, measureFixtureFootprint } from './population-capacity.js';
+import { createConnectomeRecordingStore } from './connectome-recording-store.js';
+import { createConnectomeRecordingService } from './connectome-recording-service.js';
+import { createConnectomeRecordingHttp } from './connectome-recording-http.js';
 import { createRecordingStore } from './recording-store.js';
 import { createCreativeSessions } from './creative-session.js';
 import { createLanguageService } from './language-service.js';
@@ -43,7 +46,7 @@ async function readBody(request, maxBytes = 4096) {
 }
 
 /** Polling observers share the selected resident runtimes. Wall-clock gaps never catch up simulation time. */
-export function createServer({ runtime = createRuntime(), identities = null, distDir = fileURLToPath(new URL('../dist/', import.meta.url)), autoTick = true, capacity = createCapacityPolicy(), resourceUsage = () => ({ aggregateMemoryBytes: process.memoryUsage().rss, availableMemoryBytes: freemem() }), incrementalMemoryBytes = null, recordings = null, creativeSessions = createCreativeSessions(), onEnvironmentFrame = null, languageProviders = [], languageService = null, visitorTransport = undefined, connectomeCatalog = null, connectomeProfiles = {}, connectomeReason = 'No verified local research catalog is configured.', connectomeBackend = undefined, atlasDirectory = fileURLToPath(new URL('../data/atlas/', import.meta.url)), atlasGraphDirectory = fileURLToPath(new URL('../data/', import.meta.url)), allowedOrigins = [], allowedHosts = [] } = {}) {
+export function createServer({ runtime = createRuntime(), identities = null, distDir = fileURLToPath(new URL('../dist/', import.meta.url)), autoTick = true, capacity = createCapacityPolicy(), resourceUsage = () => ({ aggregateMemoryBytes: process.memoryUsage().rss, availableMemoryBytes: freemem() }), incrementalMemoryBytes = null, recordings = null, connectomeRecordings = null, creativeSessions = createCreativeSessions(), onEnvironmentFrame = null, languageProviders = [], languageService = null, visitorTransport = undefined, connectomeCatalog = null, connectomeProfiles = {}, connectomeReason = 'No verified local research catalog is configured.', connectomeBackend = undefined, atlasDirectory = fileURLToPath(new URL('../data/atlas/', import.meta.url)), atlasGraphDirectory = fileURLToPath(new URL('../data/', import.meta.url)), allowedOrigins = [], allowedHosts = [] } = {}) {
   const root = resolve(distDir);
   const atlasHttp = createAtlasHttp({ directory: atlasDirectory });
   const atlasConnectivityHttp = createAtlasConnectivityHttp({ atlasDirectory, graphDirectory: atlasGraphDirectory });
@@ -59,8 +62,10 @@ export function createServer({ runtime = createRuntime(), identities = null, dis
       residents: [...all.filter(value => value.resident).map(value => ({ ...value, status: identities.snapshot(value.individualId).status })),
         ...research.filter(value => value.resident).map(value => ({ individualId: value.individualId, status: value.status }))] };
   };
+  let sampleRecordings;
   const connectomes = createConnectomeService({ store: connectomeCatalog, profiles: connectomeProfiles, reason: connectomeCatalog ? null : connectomeReason,
-    capacity, getResources: resources, openBackend: connectomeBackend });
+    capacity, getResources: resources, openBackend: connectomeBackend, onLifecycle: id => sampleRecordings?.sourceChanged(id) });
+  sampleRecordings = createConnectomeRecordingService({store:connectomeRecordings,connectomes,fixtureStorage:()=>recordings?.status()});
   const population = () => ({ ...capacity.snapshot(resources()), incrementalMemoryBytes,
     admission: capacity.preflight({ ...resources(), incrementalMemoryBytes }) });
   const checkLoad = id => {
@@ -121,6 +126,7 @@ export function createServer({ runtime = createRuntime(), identities = null, dis
       }
     },
   });
+  const sampleRecordingHttp = createConnectomeRecordingHttp({service:sampleRecordings,readBody,json,checkOrigin});
   const connectomeHttp = createConnectomeHttp({ service: connectomes, readBody, json, checkOrigin });
   const server = createHttpServer(async (request, response) => {
     try {
@@ -128,6 +134,7 @@ export function createServer({ runtime = createRuntime(), identities = null, dis
       if (!isLoopback(base.hostname) && !allowedHosts.includes(base.hostname)) throw new RuntimeError('Host is not allowed.', 403);
       const url = new URL(request.url, base);
       if (url.pathname === '/api' || url.pathname.startsWith('/api/')) {
+        if (await sampleRecordingHttp(request, response, url, base)) return;
         if (await connectomeHttp(request, response, url, base)) return;
         if (url.pathname.startsWith('/api/shared/')) {
           if (request.method !== 'GET') checkOrigin(request, base);
@@ -427,7 +434,7 @@ export function createServer({ runtime = createRuntime(), identities = null, dis
   }, 50); });
   server.on('close', () => { clearInterval(timer); language?.close();
     if (visitors) visitors.disconnectAll().finally(() => identities?.close()); else identities?.close();
-    connectomes.close().catch(() => {});
+    sampleRecordings.close().finally(() => connectomes.close()).catch(() => {});
     Promise.allSettled([...pendingRecordings]).then(() => recordings?.close()); });
   return server;
 }
@@ -448,6 +455,7 @@ if (entryPath && resolve(entryPath) === fileURLToPath(import.meta.url)) {
   const researchConfigured = Object.values(research.profiles).some(profile => !!profile.descriptor);
   if (admission.admitted && !researchConfigured) identities.load(identities.primaryId);
   const recordings = createRecordingStore({ directory: resolve(dataDirectory, 'recordings') });
+  const connectomeRecordings = createConnectomeRecordingStore({directory:resolve(dataDirectory,'connectome-recordings')});
   const localLanguageProvider = createOllamaLanguageProvider({
     enabled: process.env.FLY_GARDEN_LANGUAGE_OLLAMA_ENABLED === '1',
     model: process.env.FLY_GARDEN_LANGUAGE_OLLAMA_MODEL,
@@ -458,7 +466,7 @@ if (entryPath && resolve(entryPath) === fileURLToPath(import.meta.url)) {
   const aggregateSpendMicros = Number(process.env.FLY_GARDEN_LANGUAGE_AGGREGATE_SPEND_MICROS ?? '0');
   if (!Number.isSafeInteger(aggregateSpendMicros) || aggregateSpendMicros < 0) throw new Error('Language aggregate spend must be a nonnegative safe integer.');
   const languageService = createLanguageService({ identities, providers: localLanguageProvider ? [localLanguageProvider] : [], aggregateSpendMicros });
-  const server = createServer({ identities, languageService, connectomeCatalog: research.store, connectomeProfiles: research.profiles, connectomeReason: research.reason, capacity, incrementalMemoryBytes: footprint.incrementalMemoryBytes, recordings, allowedHosts, allowedOrigins: (process.env.DEV_ORIGINS ?? `http://127.0.0.1:${ecosystem.PORTS.devUi},http://localhost:${ecosystem.PORTS.devUi}`).split(',').filter(Boolean) });
+  const server = createServer({ identities, languageService, connectomeCatalog: research.store, connectomeProfiles: research.profiles, connectomeReason: research.reason, capacity, incrementalMemoryBytes: footprint.incrementalMemoryBytes, recordings, connectomeRecordings, allowedHosts, allowedOrigins: (process.env.DEV_ORIGINS ?? `http://127.0.0.1:${ecosystem.PORTS.devUi},http://localhost:${ecosystem.PORTS.devUi}`).split(',').filter(Boolean) });
   server.listen(port, host, () => {
     console.log(`Fly Garden: http://${host}:${port} — fixture paused or unloaded; research identities remain unloaded`);
     process.send?.('ready');

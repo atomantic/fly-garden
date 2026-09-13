@@ -44,3 +44,5 @@ The inspector validates all returned values and the exact neuron, graph, dataset
 Displayed values are a captured instantaneous snapshot, labeled with tick, simulation time and source epoch. Subsequent commands can make it out of date; request another sample to refresh it. A later same-session advance does not turn the older capture into a current rate or live overlay. No JavaScript neuron-number conversion, full-state array transfer, provider calls or fixture substitution is involved.
 
 `server/connectome-http.test.js` covers read-only clocks/sequences, unloaded rejection, origin and size limits, unknown/duplicate/foreign/stale selections, restore invalidation and one outstanding read. `server/connectome-sample-ui.test.js` verifies exact graph-manifest matching, numerical validation and delayed-selection/session guards. These are small fixtures and pure UI-boundary tests, not a claim of full-dataset browser validation.
+
+Explicit persistent observations use the separate [manual connectome recording](CONNECTOME_RECORDINGS.md) workflow. The read-only sample endpoint remains free of recording writes.

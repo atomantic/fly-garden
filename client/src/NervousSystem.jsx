@@ -1,5 +1,6 @@
 import { useDeferredValue, useEffect, useMemo, useState } from 'react';
 import AtlasCanvas from './AtlasCanvas.jsx';
+import ConnectomeRecordings from './ConnectomeRecordings.jsx';
 import ConnectomeNeuronSample from './ConnectomeNeuronSample.jsx';
 
 const PROFILES = [['male-cns-v1', 'MaleCNS v1.0'], ['banc-v888', 'BANC v888']];
@@ -174,6 +175,7 @@ export default function NervousSystem({ dataset = "male-cns:v1.0", individualId 
           </>}
         </>}
       </section>
+      <ConnectomeRecordings individualId={individualId} dataset={dataset} neuronId={selected?.[0]??null} graphManifestSha256={data.manifest.graphManifestSha256}/>
       <details><summary>Dataset provenance and display limitations</summary><p>{data.manifest.coordinates.field} · {data.manifest.coordinates.units} · {data.manifest.coordinates.orientation}</p><p>{data.manifest.source.attribution} · {data.manifest.source.license}</p>
         <p>Source SHA-256: <code style={{overflowWrap: "anywhere"}}>{data.manifest.source.sha256}</code></p><p>Atlas manifest SHA-256: <code style={{overflowWrap: "anywhere"}}>{data.manifestSha256}</code></p>
         <p>{data.manifest.coordinates.frame}. This view preserves the declared source axes and conversion; camera orientation does not establish anatomical direction. Separate profiles never reuse neuron IDs or coordinate transforms.</p>

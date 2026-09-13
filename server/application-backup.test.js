@@ -86,3 +86,36 @@ test('dangling optional-store symlinks are errors, never silently archived as ab
  const{source,archive,root}=setup(t);openIdentityStore(source).close();
  for(const name of ['capacity.json','recordings','connectomes']){symlinkSync(join(root,'missing'),join(source,name));assert.throws(()=>backupApplication(source,archive,{profiles}));assert.equal(existsSync(archive),false);rmSync(join(source,name));}
 });
+
+test('v2 optional typed recording component round-trips while v1 archives remain accepted',async t=>{
+ const {createConnectomeRecordingStore}=await import('./connectome-recording-store.js');
+ const {source,archive,destination}=setup(t),ids=await populate(source),dataset='male-cns:v1.0';
+ const kernel=createSparseLif(graph(dataset),{dataset,individualId:ids.saved[0]}),sample=kernel.sample(graph(dataset).ids);
+ const store=createConnectomeRecordingStore({directory:join(source,'connectome-recordings')});
+ const session=store.start({individualId:ids.saved[0],dataset,graphSha256:kernel.graphSha256,graphManifestSha256:profiles[dataset].manifestSha256,sessionEpoch:'old-worker-epoch',model:kernel.model,checkpointId:null},
+  {mode:'explicit-ids',neuronIds:graph(dataset).ids,selectedCount:2,retainedNeuronCount:2});
+ await store.append(session.id,{wallTimeMs:1,tick:sample.tick,simTimeMs:sample.simTimeMs,commandSequence:0,status:'paused',checkpointId:null,timeWindow:sample.timeWindow,samples:sample.samples});store.stop(session.id);const expected=store.export(session.id);store.close();
+ backupApplication(source,archive,{profiles});const manifest=validateApplicationBackup(archive,{profiles});assert.equal(manifest.manifest.schemaVersion,2);assert.equal(manifest.connectomeRecordings.length,1);assert.equal(manifest.recordings.length,1);
+ restoreApplicationBackup(archive,destination,{profiles});const restored=createConnectomeRecordingStore({directory:join(destination,'connectome-recordings')});assert.deepEqual(restored.export(session.id),expected);assert.equal(restored.replay(session.id).canResume,false);restored.close();
+ const legacy=setup(t);await populate(legacy.source);backupApplication(legacy.source,legacy.archive,{profiles});assert.equal(validateApplicationBackup(legacy.archive,{profiles}).manifest.schemaVersion,1);restoreApplicationBackup(legacy.archive,legacy.destination,{profiles});assert(!existsSync(join(legacy.destination,'connectome-recordings')));
+});
+
+test('corrupt typed recording archives reject before any restored state is created',async t=>{
+ const {createConnectomeRecordingStore}=await import('./connectome-recording-store.js');const {source,archive,destination}=setup(t),ids=await populate(source),dataset='male-cns:v1.0',kernel=createSparseLif(graph(dataset),{dataset,individualId:ids.saved[0]});
+ const store=createConnectomeRecordingStore({directory:join(source,'connectome-recordings')}),session=store.start({individualId:ids.saved[0],dataset,graphSha256:kernel.graphSha256,graphManifestSha256:profiles[dataset].manifestSha256,sessionEpoch:'epoch',model:kernel.model,checkpointId:null},{mode:'explicit-ids',neuronIds:graph(dataset).ids,selectedCount:2,retainedNeuronCount:2});store.close();
+ backupApplication(source,archive,{profiles});const path=join(archive,'connectome-recordings',`${session.id}.json`),value=JSON.parse(readFileSync(path));value.session.source.credential='secret';writeFileSync(path,JSON.stringify(value));rehashArchive(archive);
+ assert.throws(()=>restoreApplicationBackup(archive,destination,{profiles}));assert(!existsSync(destination));
+});
+
+test('rehashed typed archives reject impossible fixed-epoch chronology before restore',async t=>{
+ const {createConnectomeRecordingStore}=await import('./connectome-recording-store.js');
+ const {source,archive,destination}=setup(t),ids=await populate(source),dataset='male-cns:v1.0',kernel=createSparseLif(graph(dataset),{dataset,individualId:ids.saved[0]}),sample=kernel.sample(graph(dataset).ids);
+ const store=createConnectomeRecordingStore({directory:join(source,'connectome-recordings')}),session=store.start({individualId:ids.saved[0],dataset,graphSha256:kernel.graphSha256,graphManifestSha256:profiles[dataset].manifestSha256,sessionEpoch:'epoch',model:kernel.model,checkpointId:null},{mode:'explicit-ids',neuronIds:graph(dataset).ids,selectedCount:2,retainedNeuronCount:2});
+ for(const commandSequence of [5,6])await store.append(session.id,{wallTimeMs:1,tick:sample.tick,simTimeMs:sample.simTimeMs,commandSequence,status:'paused',checkpointId:null,timeWindow:sample.timeWindow,samples:sample.samples});
+ store.stop(session.id);store.close();backupApplication(source,archive,{profiles});
+ const path=join(archive,'connectome-recordings',`${session.id}.json`),original=JSON.parse(readFileSync(path));
+ for(const mutate of [v=>v.records[1].commandSequence=4,v=>v.records[1].samples[0].potential=-0.5]){
+  const value=structuredClone(original);mutate(value);writeFileSync(path,JSON.stringify(value));rehashArchive(archive);
+  assert.throws(()=>restoreApplicationBackup(archive,destination,{profiles}));assert.equal(existsSync(destination),false);
+ }
+});
