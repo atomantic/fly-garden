@@ -13,7 +13,9 @@ function transport() {
   return { enabled: true, appId: 'garden', counts: () => ({ discoveries, observations }),
     capabilities: async () => { discoveries++; return { version: 1, appId: 'garden', available: true,
       individualIds: [...ids], worldIds: ['garden-world'], contract: { version: 1, expiryEnforced: true, admissionDeadline: true,
-        bodies: ['fly-v1'], actions: ['start', 'pause', 'rest', 'move', 'leave'], controllerRaster: { width: 8, height: 4, channels: 3 } } }; },
+        bodies: ['fly-v1'], actions: ['start', 'pause', 'rest', 'move', 'leave', 'interact'], maxConcurrentVisitors: 2,
+        patchObjects: [{ objectId: 'gentle-patch-a', x: 0, z: 0, radius: 0.3 }], interactionEffects: ['settle'],
+        controllerRaster: { width: 8, height: 4, channels: 3 } } }; },
     admit: async input => { const lease = { version: 1, sessionId: `visit-${input.individualId}`, appId: 'garden',
       individualId: input.individualId, individualSessionId: input.individualSessionId, worldId: input.worldId, epoch: 'epoch',
       expiresAt: Date.now() + input.ttlMs, status: 'paused', pose: { x: 0, z: 0, yaw: 0 } };
@@ -56,7 +58,8 @@ test('visitor HTTP is local-only by default, requires exact same-origin envelope
   const admitted = await (await s.command('admit', { worldId: 'garden-world' })).json();
   assert.equal(admitted.state.status, 'paused'); assert.equal(admitted.visitor.phase, 'visiting'); assert.equal(admitted.state.externalOwner.kind, 'managed-visitor');
   assert.equal((await health()).available, true);
-  assert.deepEqual((await health()).individuals, [{ individualId: s.id, phase: 'visiting', owned: true, running: false }]);
+  assert.deepEqual((await health()).individuals, [{ individualId: s.id, phase: 'visiting', owned: true, running: false, worldId: 'garden-world' }]);
+  assert.equal((await health()).capacity, 2);
   assert.equal(admitted.state.environmentAdapter.attached, false); assert.equal(s.wire.counts().observations, 0);
   const current = await s.state(); const forbidden = await fetch(`${s.base}/api/individuals/${s.id}/control`, { method: 'POST', headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ protocolVersion: 1, individualId: s.id, sessionId: current.sessionId, sequence: current.commandSequence + 1, action: 'start' }) });
@@ -97,4 +100,81 @@ test('admission disarms language and ends home neural and movement captures at t
   while (!appended.length && Date.now() < end) await new Promise(resolve => setTimeout(resolve, 20));
   assert.deepEqual(appended, [{ sessionId: null }]);
   await s.command('home');
+});
+
+test('a paired two-fly visit preserves chemical and stimulus-policy state and checkpoint lineage', async t => {
+  const s = await setup(t, { autoTick: true });
+  const second = s.store.create().individualId; s.wire.allow(second); s.store.load(second);
+  const ids = [s.id, second];
+  const read = async id => (await fetch(`${s.base}/api/individuals/${id}`)).json();
+  const envelope = async (id, path, body) => { const current = await read(id);
+    return fetch(`${s.base}/api/individuals/${id}/${path}`, { method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ protocolVersion: 1, individualId: id, sessionId: current.sessionId, sequence: current.commandSequence + 1, ...body }) }); };
+  const post = (id, path, body) => envelope(id, path, body);
+  const visitor = (id, operation, payload = {}) => envelope(id, 'visitor', { operation, payload });
+  // Spend a real bounded stimulus reservation on each fly so the comparison is not vacuous.
+  for (const id of ids) {
+    const started = await post(id, 'control', { action: 'start' });
+    assert.equal(started.status, 200, JSON.stringify(await started.json()));
+    const encounter = await post(id, 'encounters', { compoundId: 'nectar' });
+    assert.equal(encounter.status, 200, JSON.stringify(await encounter.json()));
+    assert.equal((await post(id, 'control', { action: 'pause' })).status, 200);
+    assert.equal((await post(id, 'checkpoints', {})).status, 200);
+  }
+  const before = Object.fromEntries(ids.map(id => { const state = s.store.snapshot(id);
+    return [id, { stimulusPolicy: state.stimulusPolicy, chemistry: state.chemistry, sessionId: state.sessionId,
+      persistence: state.persistence, tick: state.tick }]; }));
+  for (const id of ids) assert(before[id].stimulusPolicy.entries.some(entry => entry.effect === 'nectar'), id);
+
+  for (const id of ids) assert.equal((await visitor(id, 'admit', { worldId: 'garden-world' })).status, 200);
+  assert.deepEqual((await (await fetch(`${s.base}/api/health`)).json()).eidoverse.individuals.map(entry => entry.phase), ['visiting', 'visiting']);
+  for (const id of ids) assert.equal((await visitor(id, 'start')).status, 200);
+  const end = Date.now() + 3000;
+  while (s.wire.counts().observations < 6 && Date.now() < end) await new Promise(resolve => setTimeout(resolve, 20));
+  for (const id of ids) assert.equal((await visitor(id, 'home')).status, 200);
+
+  for (const id of ids) {
+    const after = s.store.snapshot(id), expected = before[id];
+    // Identity and runtime session are the same individual, not a restored or replaced one.
+    assert.equal(after.sessionId, expected.sessionId, id);
+    assert.equal(after.externalOwner, null, id);
+    assert.equal(after.status, 'paused', id);
+    assert(after.tick > expected.tick, `${id} advanced no fixture steps during its visit`);
+    // The spent stimulus reservation ledger survives the visit: nothing was cleared, refunded or re-dosed.
+    // Active delivery is truncated at the ownership boundary by design, so activeUntilMs may only shrink.
+    const ledger = entries => entries.map(({ activeUntilMs, ...rest }) => rest);
+    assert.deepEqual(ledger(after.stimulusPolicy.entries), ledger(expected.stimulusPolicy.entries), id);
+    for (const entry of after.stimulusPolicy.entries) {
+      const previous = expected.stimulusPolicy.entries.find(value => value.id === entry.id);
+      assert(entry.activeUntilMs <= previous.activeUntilMs, `${id} optional input was extended across the visit`);
+    }
+    assert.equal(after.stimulusPolicy.individualId, expected.stimulusPolicy.individualId, id);
+    assert.equal(after.stimulusPolicy.reservedDose, expected.stimulusPolicy.reservedDose, id);
+    assert.equal(after.stimulusPolicy.reservedDurationMs, expected.stimulusPolicy.reservedDurationMs, id);
+    assert.deepEqual(after.stimulusPolicy.limits, expected.stimulusPolicy.limits, id);
+    // Chemical recovery keeps counting down across the visit rather than resetting to a fresh window.
+    assert.deepEqual(after.chemistry.map(entry => entry.id), expected.chemistry.map(entry => entry.id), id);
+    for (const entry of after.chemistry) {
+      const previous = expected.chemistry.find(value => value.id === entry.id);
+      assert.deepEqual([entry.label, entry.description], [previous.label, previous.description], id);
+      assert(entry.cooldownRemainingMs <= previous.cooldownRemainingMs, `${id} ${entry.id} cooldown reset`);
+      assert(entry.remainingMs <= previous.remainingMs, `${id} ${entry.id} effect re-armed`);
+    }
+    assert(after.stimulusPolicy.simTimeMs > expected.stimulusPolicy.simTimeMs, id);
+    // Checkpoint lineage is intact and no restore happened during the visit.
+    assert.equal(after.persistence.checkpointId, expected.persistence.checkpointId, id);
+    assert.equal(after.persistence.checkpointCount, expected.persistence.checkpointCount, id);
+    assert.deepEqual(after.persistence.branchOf, expected.persistence.branchOf, id);
+  }
+  // Honest scope. RNG state, plasticity, refractory state, delay buffers and embodiment are
+  // UNSUPPORTED in server/runtime.js. This round trip does not preserve them, because they do not
+  // exist: the checkpoint records them as null rather than as carried-over state. Do not read the
+  // continuity assertions above as evidence of retained learning or reproducible stochastic dynamics.
+  const checkpoints = await (await fetch(`${s.base}/api/individuals/${s.id}/checkpoints`)).json();
+  for (const checkpoint of checkpoints.checkpoints) {
+    if (!checkpoint.payload) continue;
+    assert.deepEqual(checkpoint.payload.unsupported,
+      { rng: null, plasticity: null, refractory: null, delayBuffers: null, embodiment: null });
+  }
+  assert.match(s.store.snapshot(s.id).model.limitations, /No biological anatomy, RNG dynamics, plasticity/);
 });

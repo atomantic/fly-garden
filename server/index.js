@@ -177,7 +177,8 @@ export function createServer({ runtime = createRuntime(), identities = null, dis
                   : visitorConfigured
                     ? 'Local bridge configured; explicit admission is required. Host readiness is not probed by health.'
                     : 'Local managed visitor bridge is disabled; no host connection is claimed.',
-                individuals: visitorStates.map(({ individualId, phase, owned, running }) => ({ individualId, phase, owned, running })),
+                capacity: visitorStates[0]?.hostCapacity ?? null,
+                individuals: visitorStates.map(({ individualId, phase, owned, running, worldId }) => ({ individualId, phase, owned, running, worldId })),
               },
             llm: state.capabilities.llm, population: identities ? population() : null,
             environmentCaptureFailure,
@@ -256,7 +257,7 @@ export function createServer({ runtime = createRuntime(), identities = null, dis
           if (url.search) throw new RuntimeError('Visitor commands do not accept query parameters.');
           const body = await readBody(request);
           validateCommand(body, ['operation', 'payload'], id);
-          if (!['admit', 'start', 'pause', 'rest', 'home'].includes(body.operation)) throw new RuntimeError('Unknown visitor operation.');
+          if (!['admit', 'start', 'pause', 'rest', 'home', 'interact'].includes(body.operation)) throw new RuntimeError('Unknown visitor operation.');
           if (!body.payload || typeof body.payload !== 'object' || Array.isArray(body.payload)
             || (body.operation === 'admit' ? Object.keys(body.payload).length !== 1 || typeof body.payload.worldId !== 'string'
               : Object.keys(body.payload).length !== 0)) throw new RuntimeError('Invalid visitor payload.');
