@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { describeRuntime, expect, test } from './cdp-browser.js';
 
 /** Windows high-contrast / forced-colors emulation. Colour is replaced by the operating system,
  * so every state that the palette alone would carry must still be reachable by name and by focus. */
@@ -25,6 +25,7 @@ test('the observatory stays operable and keeps a visible focus indicator under f
     });
   }
   expect(focused, 'keyboard focus must reach a control from the document start').not.toBeNull();
+  console.log(`[${info.project.name}] runtime: ${JSON.stringify(await describeRuntime(page))}`);
   console.log(`[${info.project.name}] first focused control: ${JSON.stringify(focused)}`);
   expect(focused.name.length, 'every focusable control needs an accessible name').toBeGreaterThan(0);
   expect(focused.outlineStyle).not.toBe('none');

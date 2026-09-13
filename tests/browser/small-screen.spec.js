@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { describeRuntime, expect, test } from './cdp-browser.js';
 
 const VIEWPORT = { width: 390, height: 844 };
 
@@ -11,6 +11,10 @@ async function horizontalOverflow(page) {
     return {
       scrollWidth: root.scrollWidth,
       clientWidth: root.clientWidth,
+      // A browser with classic (non-overlay) scrollbars takes its width out of clientWidth, so the
+      // two figures differ from the requested viewport by the scrollbar. The check below compares
+      // scrollWidth against clientWidth, which stays correct either way.
+      innerWidth: window.innerWidth,
       widest: widest ? `${widest.element.tagName}.${widest.element.className}`.slice(0, 80) : null,
       widestRight: widest ? Math.round(widest.right) : null,
     };
@@ -23,6 +27,7 @@ test('the Observatory fits a 390 by 844 viewport without horizontal scrolling', 
   await expect(page.getByRole('heading', { name: 'Inside the circuit' })).toBeVisible();
   await expect(page.locator('.scene canvas').first()).toBeVisible();
   const overflow = await horizontalOverflow(page);
+  console.log(`[${info.project.name}] runtime: ${JSON.stringify(await describeRuntime(page))}`);
   console.log(`[${info.project.name}] Observatory layout: ${JSON.stringify(overflow)}`);
   expect(overflow.scrollWidth).toBeLessThanOrEqual(overflow.clientWidth + 1);
   // The sidebar collapses into a horizontal navigation strip rather than overlapping the content.

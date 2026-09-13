@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { describeRuntime, expect, test } from './cdp-browser.js';
 
 /** Forces a real GPU drawing-context loss on the atlas point cloud and checks that anatomy stays
  * reachable. Losing a context is a display failure; it must never look like missing cells. */
@@ -22,6 +22,7 @@ test('a forced WEBGL_lose_context on the atlas keeps every cell in the searchabl
 
   const canvas = page.locator('canvas[aria-label*="anatomical point cloud"]');
   await expect(canvas).toBeVisible();
+  console.log(`[${info.project.name}] runtime: ${JSON.stringify(await describeRuntime(page))}`);
   const countsBefore = (await page.getByRole('status').first().textContent()).trim();
   const rowsBefore = await table.locator('tbody tr').count();
   const fit = page.getByRole('button', { name: 'Fit visible anatomy' });

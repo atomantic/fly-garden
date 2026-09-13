@@ -27,8 +27,22 @@ npm start
 
 `npm test` is the full Node test suite and runs no browser. Optional headless accessibility checks live in
 `tests/browser/` and run separately with `npm run test:browser`; they need `npx playwright install chromium`
-once, serve the production build on loopback port 8792, and are not part of `npm test` or continuous
-integration. Recorded results are in [observatory accessibility](docs/OBSERVATORY_ACCESSIBILITY.md).
+once, serve the production build on loopback port 8792 with their own empty identity directory, and are not
+part of `npm test` or continuous integration. Recorded results are in
+[observatory accessibility](docs/OBSERVATORY_ACCESSIBILITY.md).
+
+The headless shell rasterizes in software and has no display, so its frame cadence and redraw throughput are
+not a real machine's. Setting `FLY_GARDEN_CDP_ENDPOINT` to the DevTools Protocol endpoint of an already
+running browser, for example `FLY_GARDEN_CDP_ENDPOINT=http://127.0.0.1:9222 npm run test:browser`, runs the
+same specs on that browser's real graphics device instead, in an isolated browser context of its own. Unset,
+behaviour is unchanged; CI has no GPU and never sets it. Each spec prints the browser and renderer behind
+every figure it records, and the documented numbers say which produced them. The suite only ever navigates to
+loopback, and it never closes or reads a page it did not open.
+
+`node scripts/gpu-retinal-evidence.mjs` uses the same variable to record the byte-level retinal evidence in
+[shared retinal evidence](docs/SHARED_RETINAL_EVIDENCE.md) and
+[the environment adapter](docs/ENVIRONMENT_ADAPTER.md) on a real graphics device. It starts nothing and
+creates no individual.
 
 Open http://127.0.0.1:8790. The atlas reads locally prepared anatomical files. Use [complete dataset preparation](docs/DATASET_PREPARATION.md) for the pinned sources, graphs and atlas, and the separate [paused memory measurement](docs/CONNECTOME_MEMORY.md) before loading. Nothing is downloaded or simulated on startup.
 

@@ -1,0 +1,232 @@
+{
+ "version": 1,
+ "kind": "controller-retina-gpu-evidence",
+ "threeRevision": "186",
+ "width": 8,
+ "height": 4,
+ "channels": 3,
+ "baselinePose": {
+  "x": 0,
+  "z": -1,
+  "yaw": 0
+ },
+ "baselineRaster": [
+  17,
+  36,
+  35,
+  17,
+  36,
+  35,
+  17,
+  36,
+  35,
+  17,
+  36,
+  35,
+  17,
+  36,
+  35,
+  17,
+  36,
+  35,
+  17,
+  36,
+  35,
+  17,
+  36,
+  35,
+  17,
+  36,
+  35,
+  17,
+  36,
+  35,
+  17,
+  36,
+  35,
+  17,
+  36,
+  35,
+  17,
+  36,
+  35,
+  17,
+  36,
+  35,
+  17,
+  36,
+  35,
+  17,
+  36,
+  35,
+  30,
+  56,
+  50,
+  30,
+  56,
+  50,
+  54,
+  82,
+  39,
+  30,
+  56,
+  50,
+  30,
+  56,
+  50,
+  30,
+  56,
+  50,
+  30,
+  56,
+  50,
+  111,
+  116,
+  65,
+  126,
+  139,
+  88,
+  131,
+  142,
+  92,
+  136,
+  146,
+  95,
+  132,
+  143,
+  93,
+  121,
+  135,
+  85,
+  115,
+  131,
+  81,
+  113,
+  130,
+  80,
+  112,
+  129,
+  79
+ ],
+ "observerChanges": [
+  {
+   "name": "orbit-high",
+   "position": [
+    6.5,
+    5.4,
+    8
+   ],
+   "look": [
+    0,
+    0.6,
+    0
+   ],
+   "fov": 40,
+   "channels": 96,
+   "changedChannels": 0,
+   "absoluteDifference": 0
+  },
+  {
+   "name": "orbit-opposite",
+   "position": [
+    -5,
+    2,
+    -4
+   ],
+   "look": [
+    0,
+    0.6,
+    0
+   ],
+   "fov": 40,
+   "channels": 96,
+   "changedChannels": 0,
+   "absoluteDifference": 0
+  },
+  {
+   "name": "top-down-fov-25",
+   "position": [
+    0,
+    12,
+    0.01
+   ],
+   "look": [
+    0,
+    0,
+    0
+   ],
+   "fov": 25,
+   "channels": 96,
+   "changedChannels": 0,
+   "absoluteDifference": 0
+  },
+  {
+   "name": "close-pod-fov-70",
+   "position": [
+    1.2,
+    0.8,
+    1.2
+   ],
+   "look": [
+    2.2,
+    0.3,
+    -1.7
+   ],
+   "fov": 70,
+   "channels": 96,
+   "changedChannels": 0,
+   "absoluteDifference": 0
+  }
+ ],
+ "poseChanges": [
+  {
+   "name": "translate-x-1.1",
+   "pose": {
+    "x": 1.1,
+    "z": -1,
+    "yaw": 0
+   },
+   "channels": 96,
+   "changedChannels": 12,
+   "absoluteDifference": 770
+  },
+  {
+   "name": "yaw-half-pi",
+   "pose": {
+    "x": 0,
+    "z": -1,
+    "yaw": 1.5707963267948966
+   },
+   "channels": 96,
+   "changedChannels": 66,
+   "absoluteDifference": 1944
+  },
+  {
+   "name": "yaw-pi",
+   "pose": {
+    "x": 0,
+    "z": -1,
+    "yaw": 3.141592653589793
+   },
+   "channels": 96,
+   "changedChannels": 27,
+   "absoluteDifference": 449
+  }
+ ],
+ "repeat": {
+  "channels": 96,
+  "changedChannels": 0,
+  "absoluteDifference": 0
+ },
+ "passed": true,
+ "disclosure": "Production single-fly garden scene graph rastered through the production WebGL controller camera. Engineered fixture optics, one scene and pose pair, no simulation, no biological vision, behaviour or learning established.",
+ "provenance": {
+  "available": true,
+  "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M5 Max, Unspecified Version)",
+  "vendor": "Google Inc. (Apple)",
+  "glVersion": "WebGL 2.0 (OpenGL ES 3.0 Chromium)",
+  "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+  "measuredWith": "real browser over CDP",
+  "date": "2026-09-12"
+ }
+}

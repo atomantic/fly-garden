@@ -43,6 +43,9 @@ sex comparison or full-dataset paired simulation. One scene/pose pair does not
 establish coverage of all orientations, occlusion cases or graphics hardware.
 GPU implementations may produce different absolute bytes; future runs should
 report their own contrasts and controls rather than require this raster golden.
+That run predates the provenance rule below and recorded only "Chrome on Darwin
+arm64": its renderer string was not captured, so it cannot be attributed to a
+specific rasterizer. Every figure recorded after it names its browser and renderer.
 
 ## Neurally generated coupling (headless projection measurement)
 
@@ -78,23 +81,69 @@ and 50 more of its 1,549 vertices came inside the frustum as it receded. Repeati
 the measurement on the unchanged initial poses reproduced the first measurement
 byte for byte, so the change is the movement's consequence and not measurement noise.
 
-**Disclosed limitation, and the negative part of this result.** This is a geometric
-projection through the production camera, **not a GPU raster**. It does not assert
-that any of the 96 rendered bytes changed. That byte-level claim is still
-unmeasured: Three.js `WebGLRenderer` needs WebGL, which is unavailable in this
-headless Node environment, and no browser run was performed here. The harness for
-it now exists — `measureNeuralSharedRetinalEvidence` in
-`client/src/shared-retinal-evidence.js`, reachable from the second button on
-`/research/shared-retinal.html` — and replays exactly these recorded committed
-poses through the real renderer. Until someone runs it and records the numbers
-here, the honest statement is: **neurally generated movement measurably changes the
-partner's footprint in the other member's production retinal camera, and the
-byte-level rendered consequence of that specific trajectory has not been measured.**
-A future run reporting zero changed channels is a real negative result and must be
-recorded as one rather than retuned.
+**Disclosed limitation of this measurement.** The paragraph above is a geometric
+projection through the production camera, **not a GPU raster**. On its own it does not
+assert that any of the 96 rendered bytes changed, because Three.js `WebGLRenderer`
+needs WebGL and `node --test` has none. The byte-level run that closes that gap is
+recorded in the next section; the geometric numbers are kept here because they are
+the WebGL-free control that any machine can recompute.
 
 This is not a dynamic behavioral interaction, biological perception, consent,
 learning, sex comparison or full-dataset paired simulation.
+
+## Neurally generated coupling (real-GPU byte measurement)
+
+The byte-level consequence of that exact recorded trajectory has now been measured.
+`measureNeuralSharedRetinalEvidence` in `client/src/shared-retinal-evidence.js`,
+reachable from the second button on `/research/shared-retinal.html`, replays the
+committed initial and final poses of
+[the coupling run](../research/results/shared-neural-coupling.json) through the
+production `WebGLRenderer`, the production shared scene graph and the production
+controller camera. It renders no other pose, runs no simulation, tunes nothing and
+issues no app API call. `node scripts/gpu-retinal-evidence.mjs` drives that button
+over the DevTools Protocol against an already running browser and records what it
+measured.
+
+**Provenance.** September 12, 2026, Darwin arm64, Three.js revision 186, Chrome
+153.0.8010.36 driven over CDP, renderer
+`ANGLE (Apple, ANGLE Metal Renderer: Apple M5 Max, Unspecified Version)`,
+`WebGL 2.0 (OpenGL ES 3.0 Chromium)`. **This is a real hardware Metal rasterizer, not
+the software SwiftShader device in the headless shell**, and not the CPU projection
+above. The full result, including all three rasters, is in
+[the GPU result](../research/results/shared-neural-retinal-gpu.json).
+
+| Comparison | Changed channels | Absolute byte difference |
+| --- | ---: | ---: |
+| Initial → final committed pose (the neurally generated movement) | **49 of 96** | **1,022** |
+| Initial pose rendered twice (control) | 0 of 96 | 0 |
+
+Two independent runs, each in a fresh page load, produced these numbers identically.
+
+**What this changes.** The honest statement earlier in this document was that the
+byte-level rendered consequence of that specific trajectory had not been measured.
+It has now: the partner's neurally generated movement changes **49 of the 96 bytes**
+the recipient's production retinal encoder actually receives, and re-rendering the
+unchanged initial poses changes none. The result is positive, so no negative result
+had to be recorded here; had it come back zero it would have been recorded as one
+rather than retuned.
+
+**How it compares to the measurements it stands beside.** The static externally
+arranged partner move (A→B, 1.5 garden units sideways) changed 48 of 96 channels
+with 1,414 total absolute difference. The neurally generated move changes a
+comparable count of channels, 49, with a smaller total magnitude, 1,022, which is
+consistent with the partner receding along +z and shrinking rather than translating
+across the field of view. The geometric proxy for the same trajectory reported the
+partner's footprint falling from 20 of 32 cells to 9, changing occupancy in 11 cells.
+Cell occupancy and rendered channels are different quantities and the counts are not
+expected to match; what the GPU run adds is that the rendered bytes move at all,
+which the projection could not assert.
+
+**Still not established.** One scene, one pose pair, one graphics device, one
+renderer revision. Absolute bytes are hardware and driver specific and are recorded
+as an observation, never as a golden value another machine must reproduce. This
+remains an engineered sensory interface on a synthetic 32-neuron fixture: it is not
+a dynamic behavioral interaction, biological perception, consent, learning, sex
+comparison or full-dataset paired simulation.
 
 ## Remaining work
 
