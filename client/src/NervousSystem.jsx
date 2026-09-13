@@ -1,5 +1,6 @@
 import { useDeferredValue, useEffect, useMemo, useState, useRef, useId } from 'react';
 import './observatory-accessibility.css';
+import { atlasLoadMetrics, matchingAtlasLoadMetrics } from './atlas-load-metrics.js';
 import { selectAtlasCell } from './atlas-selection.js';
 import AtlasCanvas from './AtlasCanvas.jsx';
 import ConnectomeRecordings from './ConnectomeRecordings.jsx';
@@ -43,6 +44,7 @@ export default function NervousSystem({ dataset = "male-cns:v1.0", individualId 
     const controller = new AbortController(); let current = true;
     setData(null); setError(''); setConnectionsEnabled(false); setConnectivity(null); setConnectivityError(''); setAdjacency(null); setAdjacencyError(''); setEdgeOffset(0); setFilter(''); setSelectedIndex(null); setVisibleGroups([]);
     async function load() {
+      const startedAt = performance.now();
       const status = await json(`/api/atlas/${profile}`, controller.signal);
       if (!status.available) throw new Error(status.reason || 'Pinned anatomical data is unavailable. No synthetic anatomy is substituted.');
       const manifest = status.manifest;
@@ -57,6 +59,7 @@ export default function NervousSystem({ dataset = "male-cns:v1.0", individualId 
         if (buffer.byteLength !== manifest.files[filename].bytes) throw new Error('Anatomical asset length mismatch.');
         return buffer;
       }));
+      const assetsReadyAt = performance.now();
       if (!Number.isSafeInteger(n) || n < 1 || n > 250000 || files[0].byteLength !== n * 12 || files[1].byteLength !== n || files[2].byteLength !== n) throw new Error('Invalid anatomical dimensions.');
       const positions = new Float32Array(n * 3), raw = new DataView(files[0]);
       for (let i = 0; i < positions.length; i++) positions[i] = raw.getFloat32(i * 4, true);
@@ -66,7 +69,10 @@ export default function NervousSystem({ dataset = "male-cns:v1.0", individualId 
       for (let i = 0; i < n; i++) if (![0, 1].includes(valid[i]) || groups[i] >= manifest.groups.length
         || !Array.isArray(nodes[i]) || nodes[i].length !== 6 || nodes[i].some(value => typeof value !== 'string')
         || !positions.subarray(i * 3, i * 3 + 3).every(Number.isFinite)) throw new Error('Invalid anatomical cell data.');
-      if (current) { setData({ ...status, profile, positions, valid, groups, nodes }); setVisibleGroups(manifest.groups.map((_, i) => i)); }
+      const loadMetrics = atlasLoadMetrics({ profile, startedAt, assetsReadyAt, finishedAt: performance.now(),
+        declaredBytes: ['positions.f32', 'valid.u8', 'groups.u8', 'nodes.json'].reduce((sum, name) => sum + manifest.files[name].bytes, 0),
+        receivedBytes: files.reduce((sum, file) => sum + file.byteLength, 0) });
+      if (current) { setData({ ...status, profile, positions, valid, groups, nodes, loadMetrics }); setVisibleGroups(manifest.groups.map((_, i) => i)); }
     }
     load().catch(e => { if (current) setError(e.message); });
     return () => { current = false; controller.abort(); };
@@ -133,6 +139,7 @@ export default function NervousSystem({ dataset = "male-cns:v1.0", individualId 
   }
   const displayEdges = useMemo(() => connectivity?.edges.filter(edge => data?.valid[edge.sourceIndex] && data.valid[edge.targetIndex]
     && visibleGroups.includes(data.groups[edge.sourceIndex]) && visibleGroups.includes(data.groups[edge.targetIndex])) ?? [], [connectivity, data, visibleGroups]);
+  const loadMetrics = matchingAtlasLoadMetrics(data, profile);
   const selected = data && selectedIndex !== null ? data.nodes[selectedIndex] : null;
   return <section className="card content-panel observatory-accessible" aria-label="Full nervous-system atlas">
     <span className="eyebrow">ANATOMY ONLY / PINNED DATASET</span>
@@ -145,6 +152,11 @@ export default function NervousSystem({ dataset = "male-cns:v1.0", individualId 
     {!data && !error && <p role="status">Loading and validating pinned anatomical data…</p>}
     {data && <>
       <p role="status">{data.manifest.counts.retained.toLocaleString()} retained cells · {data.manifest.counts.positioned.toLocaleString()} positioned · {data.manifest.counts.missing.toLocaleString()} without a valid position · {displayed.toLocaleString()} displayed. Hidden and missing cells remain searchable.</p>
+      {loadMetrics && <details><summary>Measured local atlas load</summary>
+        <p>{loadMetrics.elapsedMs.toFixed(1)} ms total before rendering: {loadMetrics.metadataAndAssetsMs.toFixed(1)} ms for metadata and four asset reads; {loadMetrics.parseAndValidationMs.toFixed(1)} ms for browser parsing and structural validation.</p>
+        <p>{loadMetrics.declaredAssetBytes.toLocaleString()} declared asset bytes; {loadMetrics.receivedAssetBytes.toLocaleString()} decoded bytes received and length-checked. Profile: {loadMetrics.profile}. Metadata response and HTTP overhead are excluded from byte counts; cache and compression mean these are not measured network wire bytes.</p>
+        <p>One successful load in this browser. Elapsed time includes scheduling and local server work; it excludes GPU upload, first paint, connectivity reads, total browser memory and neural throughput. No worker is loaded or advanced.</p>
+      </details>}
       <div role="group" aria-label="Anatomical presets" style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
         <button onClick={() => preset('whole')}>Whole retained nervous system</button><button onClick={() => preset('brain')}>Brain</button><button onClick={() => preset('cord')}>Nerve cord</button>
       </div>
