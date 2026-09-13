@@ -21,7 +21,7 @@ input {
   outline-offset: 5px;
 }
 button {
-  border: 1px solid #3d5044;
+  border: 1px solid #6a786e;
   background: #1b2b24;
   color: #d8e1d2;
   padding: 10px 16px;
@@ -541,7 +541,7 @@ footer {
 input {
   padding: 12px;
   background: #15231d;
-  border: 1px solid #435640;
+  border: 1px solid #6a7a67;
   border-radius: 6px;
   color: #dce8cd;
   max-width: 100%;
@@ -616,7 +616,9 @@ td button {
   padding: 5px 9px;
 }
 td button[aria-pressed="true"] {
-  background: #526a42;
+  background: #86997a;
+  border-color: #86997a;
+  color: #101c0d;
 }
 .inspector {
   padding: 10px 20px;
@@ -807,7 +809,7 @@ td button[aria-pressed="true"] {
 .language fieldset { min-width: 0; border: 1px solid #34453c; border-radius: 8px; padding: 14px; margin: 14px 0; }
 .language legend { padding: 0 6px; }
 .language label { display: block; margin: 10px 0; line-height: 1.5; }
-.language select, .language textarea, .language input[type="number"] { font: inherit; color: inherit; background: #101d18; border: 1px solid #45594c; border-radius: 5px; padding: 8px; max-width: 100%; }
+.language select, .language textarea, .language input[type="number"] { font: inherit; color: inherit; background: #101d18; border: 1px solid #6a7a6f; border-radius: 5px; padding: 8px; max-width: 100%; }
 .language select { width: 100%; }
 .language textarea { resize: vertical; }
 .language input[type="checkbox"] { width: auto; margin-right: 6px; }

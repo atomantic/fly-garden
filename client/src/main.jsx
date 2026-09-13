@@ -18,6 +18,10 @@ import { podPresentation, podRosterEntry } from "./visitor-phase.js";
 import { readRuntimeSnapshot, mergeRuntimeSnapshot } from "./runtime-state.js";
 import { selectConnectomePair, mergeConnectomeSelection } from "./connectome-lab-state.js";
 import "./style.css";
+// Same accessibility scope the atlas and lab already carry: visible keyboard focus, forced-colors
+// focus, and suppression of CSS animation/transition/smooth scrolling under prefers-reduced-motion.
+// Applied at the application root so the Observatory, Neural map and Eidoverse views are covered.
+import "./observatory-accessibility.css";
 
 const NervousSystem = lazy(() => import("./NervousSystem.jsx"));
 const ConnectomeLab = lazy(() => import("./ConnectomeLab.jsx"));
@@ -208,7 +212,7 @@ function App() {
     setTab(t);
   };
   return (
-    <div className="app">
+    <div className="app observatory-accessible">
       <aside className="sidebar">
         <a className="brand" href="#Nervous%20system">
           <span className="brand-icon">✳</span>

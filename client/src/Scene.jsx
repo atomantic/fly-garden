@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { environmentKey } from "./retinal-frame.js";
 import { CONTROLLER_RETINA, createControllerCamera, deriveControllerRaster } from "./controller-retina.js";
 import { podPresentation } from "./visitor-phase.js";
+import { motionRenderPolicy, observeReducedMotion, prefersReducedMotion } from "./reduced-motion.js";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 
@@ -23,6 +24,10 @@ export default function Scene({ neural, brain = false, state = null, visitor = n
   useEffect(() => { source.current.controllerToken = controllerToken; }, [controllerToken]);
   useEffect(() => { source.current.onEnvironmentFrame = onEnvironmentFrame; }, [onEnvironmentFrame]);
   const [failed, setFailed] = useState(false);
+  const [reducedMotion, setReducedMotion] = useState(() => prefersReducedMotion(globalThis));
+  // Redraw callback published by the renderer only while it is not holding an animation-frame loop.
+  const redraw = useRef(null);
+  useEffect(() => observeReducedMotion(globalThis, setReducedMotion), []);
   useEffect(() => {
     live.current = neural;
   }, [neural]);
@@ -45,7 +50,8 @@ export default function Scene({ neural, brain = false, state = null, visitor = n
     camera.position.set(brain ? 0 : 6.5, brain ? 2 : 5.4, brain ? 7 : 8);
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.target.set(0, brain ? 0 : 0.6, 0);
-    controls.enableDamping = true;
+    const motion = motionRenderPolicy(reducedMotion);
+    controls.enableDamping = motion.enableDamping;
     controls.minDistance = 3;
     controls.maxDistance = 15;
     controls.maxPolarAngle = Math.PI / 2.05;
@@ -326,26 +332,30 @@ export default function Scene({ neural, brain = false, state = null, visitor = n
       renderer.setSize(width, height);
       camera.aspect = width / height;
       camera.updateProjectionMatrix();
+      if (!motion.continuous) draw();
     };
-    const observer = new ResizeObserver(resize);
-    observer.observe(container);
-    resize();
     let frame;
-    const render = () => {
-      frame = requestAnimationFrame(render);
-      controls.update();
-      if (podRings.length) {
-        const current = podState.current, tone = POD_TONE[current.tone] ?? POD_TONE.idle;
-        // Acceptance criterion: the pod may only move once phase === 'visiting'. Every other
-        // phase, including a requested but unacknowledged admission, holds it exactly still.
-        const moving = current.motion === true && current.phase === "visiting";
-        const offset = moving ? Math.sin(performance.now() / 900) * 0.05 : 0;
-        for (const { ring, baseY, direction } of podRings) {
-          ring.material.emissive.setHex(tone.emissive);
-          ring.material.emissiveIntensity = tone.intensity;
-          ring.position.y = baseY + offset * direction;
-        }
+    // Pod phase tone is state, not motion: which visit phase the bridge is in must be visible whether
+    // or not an animation-frame loop is running. Only the sinusoidal bob is motion, so `animate` is
+    // false under prefers-reduced-motion and every ring holds its resting height.
+    const applyPod = animate => {
+      if (!podRings.length) return;
+      const current = podState.current, tone = POD_TONE[current.tone] ?? POD_TONE.idle;
+      // Acceptance criterion: the pod may only move once phase === 'visiting'. Every other
+      // phase, including a requested but unacknowledged admission, holds it exactly still.
+      const moving = animate && current.motion === true && current.phase === "visiting";
+      const offset = moving ? Math.sin(performance.now() / 900) * 0.05 : 0;
+      for (const { ring, baseY, direction } of podRings) {
+        ring.material.emissive.setHex(tone.emissive);
+        ring.material.emissiveIntensity = tone.intensity;
+        ring.position.y = baseY + offset * direction;
       }
+    };
+    // No controls.update() here: OrbitControls dispatches its own change event from update(),
+    // and the reduced-motion path draws from that event. Damping is the only reason to poll it,
+    // and damping is off whenever the loop is off.
+    const draw = () => {
+      applyPod(motion.continuous);
       if (points) {
         const current = new Map(
           (live.current?.neurons || []).map((n) => [n.id, n]),
@@ -371,9 +381,24 @@ export default function Scene({ neural, brain = false, state = null, visitor = n
       renderer.render(scene, camera);
       void sendRetina();
     };
-    render();
+    // Continuous repainting is decorative here. Under prefers-reduced-motion the view redraws on an
+    // observed state commit, on viewer camera interaction and on resize instead. The engineered
+    // controller-camera capture still runs from those redraws, paced by state rather than display
+    // refresh; it is never disabled and never outruns the observed state.
+    const observer = new ResizeObserver(resize);
+    observer.observe(container);
+    const loop = () => { frame = requestAnimationFrame(loop); controls.update(); draw(); };
+    if (motion.continuous) { resize(); loop(); }
+    else {
+      controls.update();
+      controls.addEventListener("change", draw);
+      redraw.current = draw;
+      resize();
+    }
     return () => {
       stopped = true; requestController?.abort();
+      redraw.current = null;
+      controls.removeEventListener("change", draw);
       cancelAnimationFrame(frame);
       retinalTarget.dispose();
       observer.disconnect();
@@ -388,12 +413,17 @@ export default function Scene({ neural, brain = false, state = null, visitor = n
       renderer.dispose();
       renderer.domElement.remove();
     };
-  }, [brain, neural?.neurons?.length]);
+  }, [brain, neural?.neurons?.length, reducedMotion]);
+  // One redraw per React commit while no animation-frame loop is running.
+  useEffect(() => { redraw.current?.(); });
   return (
     <>
+    {/* data-motion-* disclose, for accessibility verification, which repaint schedule this renderer uses. */}
     <div
       className="scene"
       ref={host}
+      data-motion-policy={motionRenderPolicy(reducedMotion).redrawOn.join(" ")}
+      data-orbit-damping={String(motionRenderPolicy(reducedMotion).enableDamping)}
       role="img"
       aria-label={
         brain
