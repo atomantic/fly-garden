@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { moveAtlasCamera, shouldFitAtlas } from './atlas-camera.js';
+import { createAtlasContextGuard } from './webgl-context-loss.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
 const COLORS = [0x84d7bd, 0xe8be75, 0x9eacf5, 0xe8a7c8, 0xa8d779, 0x76c8e4, 0xd6cfe7];
@@ -24,6 +25,9 @@ export default function AtlasCanvas({ positions, valid, groups, visibleGroups, s
     renderer.domElement.setAttribute('aria-label', 'Read-only anatomical point cloud. Use the camera buttons or searchable cell table for keyboard access.');
     const scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera(45, 1, 0.01, 1000);
     const controls = new OrbitControls(camera, renderer.domElement);
+    // This view already repaints only on demand and never holds an animation-frame loop open, so it
+    // satisfies motionRenderPolicy in both states. Damping stays off unconditionally: coasting would
+    // require frames after the pointer stops even when the viewer has expressed no motion preference.
     controls.enableDamping = false; controls.minDistance = 0.01; controls.maxDistance = 50;
     const bounds = new THREE.Box3();
     const v = new THREE.Vector3();
@@ -52,8 +56,10 @@ export default function AtlasCanvas({ positions, valid, groups, visibleGroups, s
     selectionGeometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(3), 3));
     const selectionMaterial = new THREE.PointsMaterial({ color: 0xffffff, size: 9, sizeAttenuation: false, depthTest: false });
     const marker = new THREE.Points(selectionGeometry, selectionMaterial); marker.visible = false; marker.frustumCulled = false; marker.renderOrder = 2; scene.add(marker);
-    let lost = false;
-    const render = () => { if (!lost) renderer.render(scene, camera); };
+    const context = createAtlasContextGuard({
+      cancelBenchmark: () => benchmark.current?.(), setMeasuring, setFailure,
+    });
+    const render = () => { if (context.canRender()) renderer.render(scene, camera); };
     const fit = indices => {
       const box = new THREE.Box3();
       for (const i of indices) box.expandByPoint(v.fromArray(normalized, i * 3));
@@ -79,12 +85,12 @@ export default function AtlasCanvas({ positions, valid, groups, visibleGroups, s
       const start = pointerDown; cancel();
       if (!start || start[2] !== e.pointerId || e.button !== 0 || Math.hypot(e.clientX - start[0], e.clientY - start[1]) > 4) return;
       const rect = renderer.domElement.getBoundingClientRect();
-      if (!rect.width || !rect.height || lost) return;
+      if (!context.canPick(rect)) return;
       const ray = new THREE.Raycaster(); ray.params.Points.threshold = camera.position.distanceTo(controls.target) * 0.004;
       ray.setFromCamera(new THREE.Vector2((e.clientX - rect.left) / rect.width * 2 - 1, -(e.clientY - rect.top) / rect.height * 2 + 1), camera);
       const hit = ray.intersectObject(points)[0]; if (hit) select.current?.(hit.index);
     };
-    const contextLost = e => { e.preventDefault(); benchmark.current?.(); setMeasuring(false); lost = true; setFailure('Graphics context lost. Reload the atlas to restore the view; the searchable cell table remains available.'); };
+    const contextLost = event => context.handleContextLost(event);
     renderer.domElement.addEventListener('pointerdown', down);
     renderer.domElement.addEventListener('pointerup', click);
     renderer.domElement.addEventListener('pointercancel', cancel);

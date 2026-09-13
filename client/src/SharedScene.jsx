@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { createSharedVisualWorld } from './shared-visual-world.js';
+import { motionRenderPolicy, observeReducedMotion, prefersReducedMotion } from './reduced-motion.js';
 
 const keyFor = shared => shared && `${shared.sharedId}/${shared.worldEpoch}`;
 /** Original procedural bodies. Only explicit private tab authority may submit pixels.
@@ -9,6 +10,9 @@ const keyFor = shared => shared && `${shared.sharedId}/${shared.worldEpoch}`;
 export default function SharedScene({ shared, controllerToken = null, onFrame = () => {} }) {
   const host = useRef(null), live = useRef({ shared, controllerToken, onFrame, observedAt: performance.now() });
   const [error, setError] = useState(''), [retinas, setRetinas] = useState([]);
+  const [reducedMotion, setReducedMotion] = useState(() => prefersReducedMotion(globalThis));
+  const redraw = useRef(null);
+  useEffect(() => observeReducedMotion(globalThis, setReducedMotion), []);
   useEffect(() => { live.current = { shared, controllerToken, onFrame, observedAt: performance.now() }; }, [shared, controllerToken, onFrame]);
   useEffect(() => {
     let renderer;
@@ -18,7 +22,8 @@ export default function SharedScene({ shared, controllerToken = null, onFrame = 
     renderer.setPixelRatio(Math.min(devicePixelRatio, 2)); renderer.setClearColor(0x112423); renderer.outputColorSpace = THREE.SRGBColorSpace;
     container.appendChild(renderer.domElement);
     const observerCamera = new THREE.PerspectiveCamera(45, 1, 0.05, 40); observerCamera.position.set(6, 5, 7);
-    const controls = new OrbitControls(observerCamera, renderer.domElement); controls.target.set(0, 0.5, 0); controls.update(); controls.enableDamping = false;
+    const controls = new OrbitControls(observerCamera, renderer.domElement); controls.target.set(0, 0.5, 0); controls.update();
+    const motion = motionRenderPolicy(reducedMotion); controls.enableDamping = motion.enableDamping;
     const visual = createSharedVisualWorld(renderer, scene, shared?.participants?.length ?? 2), applyPoses = visual.applyPoses;
     let stopped=false, lost=false, inFlight=false, requestController=null, frameId, boundKey=null, boundToken=null, accepted=null, faulted=false;
     async function capture(state, key, token) {
@@ -50,20 +55,26 @@ export default function SharedScene({ shared, controllerToken = null, onFrame = 
       } catch(e) { if(!stopped && live.current.controllerToken===token && keyFor(live.current.shared)===key) { faulted=true; setError(`Shared cameras stopped: ${e.message}. Explicitly pause and start after recovery.`); } }
       finally {clearTimeout(timeout);inFlight=false;}
     }
-    const resize=()=> {const {width,height}=container.getBoundingClientRect();if(width&&height){renderer.setSize(width,height);observerCamera.aspect=width/height;observerCamera.updateProjectionMatrix();}};
-    const observer=new ResizeObserver(resize);observer.observe(container);resize();
+    const resize=()=> {const {width,height}=container.getBoundingClientRect();if(width&&height){renderer.setSize(width,height);observerCamera.aspect=width/height;observerCamera.updateProjectionMatrix();if(!motion.continuous)draw();}};
     const contextLost=event=>{event.preventDefault();lost=true;requestController?.abort();setError('Graphics context lost. Shared frames stopped; watchdog pauses all members.');};
     renderer.domElement.addEventListener('webglcontextlost',contextLost);
-    const render=()=> {
-      if(stopped)return;frameId=requestAnimationFrame(render);
+    const draw=()=> {
+      if(stopped)return;
       const {shared:current,controllerToken:token}=live.current,key=keyFor(current);
       if(key!==boundKey || token!==boundToken){requestController?.abort();boundKey=key;boundToken=token;accepted=null;faulted=false;setError('');setRetinas([]);}
       const state=accepted && keyFor(accepted)===key && accepted.commandSequence===current?.commandSequence && accepted.tick>current.tick?accepted:current;
       if(!lost && !document.hidden){applyPoses(state);renderer.render(scene,observerCamera);void capture(state,key,token);}
-    };render();
-    return ()=>{stopped=true;requestController?.abort();cancelAnimationFrame(frameId);observer.disconnect();controls.dispose();visual.dispose();
+    };
+    // Under prefers-reduced-motion the observer view repaints on a committed shared-state change and on
+    // camera interaction instead of every display frame. Controller batches continue from those repaints,
+    // paced by the committed world rather than by refresh rate; no member is advanced by drawing.
+    const observer=new ResizeObserver(resize);observer.observe(container);resize();
+    const loop=()=>{if(stopped)return;frameId=requestAnimationFrame(loop);draw();};
+    if(motion.continuous)loop();else{controls.addEventListener('change',draw);redraw.current=draw;draw();}
+    return ()=>{stopped=true;requestController?.abort();redraw.current=null;controls.removeEventListener('change',draw);cancelAnimationFrame(frameId);observer.disconnect();controls.dispose();visual.dispose();
       renderer.domElement.removeEventListener('webglcontextlost',contextLost);scene.traverse(object=>{object.geometry?.dispose();if(object.material)for(const mat of Array.isArray(object.material)?object.material:[object.material])mat.dispose();});renderer.dispose();renderer.domElement.remove();};
-  }, [shared?.sharedId]);
+  }, [shared?.sharedId, reducedMotion]);
+  useEffect(() => { redraw.current?.(); });
   return <section className="shared-renderer" aria-label="Shared original fixture population renderer">
     <div className="scene" ref={host} role="img" aria-label="Original procedural fly bodies at committed shared poses; observer camera does not supply sensory input" />
     <p>Engineered shared visual fixture. Own body hidden only during its own retinal raster; the other body remains visible. No partner neural telemetry, hidden target, automatic contact/scent, or creative capture enters this shared loop. Coincident starting poses are preserved, not forcibly separated.</p>

@@ -25,6 +25,11 @@ npm run build
 npm start
 ```
 
+`npm test` is the full Node test suite and runs no browser. Optional headless accessibility checks live in
+`tests/browser/` and run separately with `npm run test:browser`; they need `npx playwright install chromium`
+once, serve the production build on loopback port 8792, and are not part of `npm test` or continuous
+integration. Recorded results are in [observatory accessibility](docs/OBSERVATORY_ACCESSIBILITY.md).
+
 Open http://127.0.0.1:8790. The atlas reads locally prepared anatomical files. Use [complete dataset preparation](docs/DATASET_PREPARATION.md) for the pinned sources, graphs and atlas, and the separate [paused memory measurement](docs/CONNECTOME_MEMORY.md) before loading. Nothing is downloaded or simulated on startup.
 
 In **Connectome lab**, create a saved, unloaded individual, then choose **Load complete graph (paused)**. Loading requires matching local memory evidence and enough configured capacity. **Start** only permits an explicit bounded **Advance**; it does not begin background execution. Checkpoint history preserves exact source lineage. See [the full-graph service and controls](docs/CONNECTOME_HTTP.md).
