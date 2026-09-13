@@ -33,9 +33,9 @@ Unknown/duplicate fields, stale sessions, partial membership, wrong leases, inva
 
 ## Optional-tool limits and validation
 
-Joining invalidates optional language and stops home-only movement capture with an explicit partial-source reason. Shared creative capture and new home recordings are unavailable; existing home recordings are marked discontinuous before subsequent sampling. No shared movement is relabeled as a home-world action. Optional language arm/chat, contact/scent admission and automatic encounters are unavailable while joined. Saves do not generate notes, marks, messages or stimuli.
+Joining invalidates optional language and stops home-only movement capture with an explicit partial-source reason. Shared creative capture is explicitly available through its separately sequenced controls; new home recordings are unavailable; existing home recordings are marked discontinuous before subsequent sampling. No shared movement is relabeled as a home-world action. Optional language arm/chat, contact/scent admission and automatic encounters are unavailable while joined. Saves do not generate notes, marks, messages or stimuli.
 
-HTTP tests use actual resident fixture runtimes and verify preservation across join, distinct retinal effects through a complete barrier, invalid-batch immutability, joint save/restore, fresh paused sessions, exact restore recipients, replayed command rejection, token-free reads, size/query bounds, origin rejection and per-member language/capture invalidation. Build checks compile the browser components. These are synthetic integration checks; browser-rendered interaction, sustained two-body performance and broader full-dataset acceptance require separately recorded evidence.
+HTTP tests use actual resident fixture runtimes and verify preservation across join, distinct retinal effects through a complete barrier, invalid-batch immutability, joint save/restore, fresh paused sessions, exact restore recipients, replayed command rejection, token-free reads, size/query bounds, origin rejection and per-member language/capture invalidation. Build checks compile the browser components. These are synthetic integration checks; the static renderer contrast below supplies narrow spatial-coupling evidence; sustained two-body performance and broader full-dataset acceptance still require separately recorded evidence.
 
 ## Browser validation, 2026-09-12
 
@@ -44,3 +44,7 @@ An isolated temporary store with an explicit capacity of two started both fixtur
 A second observer tab reported no controller lease and disabled shared start; it sent no retinal batches. Navigating the owner away from the rendered habitat paused both through camera freshness enforcement. These checks used the synthetic circuit and original procedural bodies, without provider calls or optional encounters. They establish basic browser lifecycle behavior, not sustained full-dataset performance or biological partner perception.
 
 Switching selection to the other member preserved the private lease and enabled shared start. Visual inspection also caught the inherited absolute canvas covering shared disclosures and retinal previews; the shared layout now keeps those controls, errors and rasters in normal document flow beneath a bounded canvas.
+
+## Static sensory contrast
+
+See [the reproducible static retinal check](SHARED_RETINAL_EVIDENCE.md). Fixed partner-pose changes alter the recipient raster while repeat, pose-return and observer-camera controls are invariant. This does not establish neurally generated partner movement or biological perception.
