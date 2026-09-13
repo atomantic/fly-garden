@@ -47,7 +47,8 @@ export default function SharedCreativeControls({ shared }) {
   const current = selected && selected === shared?.sharedId;
   return <section aria-label="Joint movement artifacts">
     <h4>Joint music and pollen artwork</h4>
-    <p>Capture accepted actions from both fixtures, including silent rest. Notes and marks have no reward feedback. JSON preserves the replay source; capture remains session-local until exported.</p>
+    <p>Capture accepted actions from all participating fixtures, including silent rest. Notes and marks have no reward feedback. JSON preserves the replay source; capture remains session-local until exported.</p>
+    {shared?.participants?.length > 0 && <p>Capture limit: 1,024 total actions, at most {Math.floor(1024 / shared.participants.length)} complete batches for this population. Reaching the limit preserves the complete captured prefix.</p>}
     <label>Artifact source <select value={selected} disabled={busy} onChange={e => setSelected(e.target.value)}>
       <option value="">Select a shared session</option>{ids.map(id => <option key={id} value={id}>{id}{id === shared?.sharedId ? ' · current world' : ' · retained capture'}</option>)}
     </select></label>

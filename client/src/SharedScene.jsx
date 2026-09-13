@@ -13,24 +13,24 @@ export default function SharedScene({ shared, controllerToken = null, onFrame = 
   useEffect(() => {
     let renderer;
     try { renderer = new THREE.WebGLRenderer({ antialias: true }); }
-    catch { setError('Shared WebGL renderer unavailable. Both members remain paused without controller frames.'); return; }
+    catch { setError('Shared WebGL renderer unavailable. All members remain paused without controller frames.'); return; }
     const container = host.current, scene = new THREE.Scene();
     renderer.setPixelRatio(Math.min(devicePixelRatio, 2)); renderer.setClearColor(0x112423); renderer.outputColorSpace = THREE.SRGBColorSpace;
     container.appendChild(renderer.domElement);
     const observerCamera = new THREE.PerspectiveCamera(45, 1, 0.05, 40); observerCamera.position.set(6, 5, 7);
     const controls = new OrbitControls(observerCamera, renderer.domElement); controls.target.set(0, 0.5, 0); controls.update(); controls.enableDamping = false;
-    const visual = createSharedVisualWorld(renderer, scene), applyPoses = visual.applyPoses;
+    const visual = createSharedVisualWorld(renderer, scene, shared?.participants?.length ?? 2), applyPoses = visual.applyPoses;
     let stopped=false, lost=false, inFlight=false, requestController=null, frameId, boundKey=null, boundToken=null, accepted=null, faulted=false;
     async function capture(state, key, token) {
       if (stopped || lost || inFlight || document.hidden || faulted || !token || state?.status !== 'running') return;
       if (performance.now()-live.current.observedAt>1000) { faulted=true; setError('Shared public state is stale; camera batches stopped. Refresh and explicitly start again.'); return; }
       inFlight=true; const controller=new AbortController(); requestController=controller; const timeout=setTimeout(()=>controller.abort(),1000);
       try {
-        if (!applyPoses(state)) throw new Error('Committed two-body poses unavailable');
-        const capturedAtMs=Date.now();
+        if (!applyPoses(state)) throw new Error('Committed population poses unavailable');
+        const capturedAtMs=Date.now(), rasters=visual.readBatch();
         // No await or pose update within this complete raster barrier. The partner remains visible.
         const frames=state.participants.map((participant,i)=> {
-          const rgb=visual.readRetina(i);
+          const rgb=rasters[i];
           return { version:1, individualId:participant.individualId,sessionId:participant.sessionId,environmentEpoch:state.worldEpoch,
             frameId:state.tick,simTimeMs:participant.simTimeMs,capturedAtMs,camera:'controller',width:8,height:4,rgb };
         });
@@ -40,7 +40,7 @@ export default function SharedScene({ shared, controllerToken = null, onFrame = 
         const current=live.current;
         if(stopped || current.controllerToken!==token || keyFor(current.shared)!==key || keyFor(value.shared)!==key) return;
         if(value.shared.commandSequence<current.shared.commandSequence || value.shared.tick<current.shared.tick) return;
-        if(value.shared.tick!==state.tick+1 || value.shared.participants?.length!==2
+        if(value.shared.tick!==state.tick+1 || value.shared.participants?.length!==state.participants.length
           || value.shared.participants.some((p,i)=>p.individualId!==state.participants[i].individualId || p.sessionId!==state.participants[i].sessionId)) throw new Error('Shared response recipient or clock mismatch');
         accepted=value.shared; setRetinas(frames.map((frame,i)=>({individualId:frame.individualId,rgb:frame.rgb,trace:value.traces?.[i]}))); current.onFrame(value);
       } catch(e) { if(!stopped && live.current.controllerToken===token && keyFor(live.current.shared)===key) { faulted=true; setError(`Shared cameras stopped: ${e.message}. Explicitly pause and start after recovery.`); } }
@@ -48,7 +48,7 @@ export default function SharedScene({ shared, controllerToken = null, onFrame = 
     }
     const resize=()=> {const {width,height}=container.getBoundingClientRect();if(width&&height){renderer.setSize(width,height);observerCamera.aspect=width/height;observerCamera.updateProjectionMatrix();}};
     const observer=new ResizeObserver(resize);observer.observe(container);resize();
-    const contextLost=event=>{event.preventDefault();lost=true;requestController?.abort();setError('Graphics context lost. Shared frames stopped; watchdog pauses both members.');};
+    const contextLost=event=>{event.preventDefault();lost=true;requestController?.abort();setError('Graphics context lost. Shared frames stopped; watchdog pauses all members.');};
     renderer.domElement.addEventListener('webglcontextlost',contextLost);
     const render=()=> {
       if(stopped)return;frameId=requestAnimationFrame(render);
@@ -59,10 +59,10 @@ export default function SharedScene({ shared, controllerToken = null, onFrame = 
     };render();
     return ()=>{stopped=true;requestController?.abort();cancelAnimationFrame(frameId);observer.disconnect();controls.dispose();visual.dispose();
       renderer.domElement.removeEventListener('webglcontextlost',contextLost);scene.traverse(object=>{object.geometry?.dispose();if(object.material)for(const mat of Array.isArray(object.material)?object.material:[object.material])mat.dispose();});renderer.dispose();renderer.domElement.remove();};
-  }, []);
-  return <section className="shared-renderer" aria-label="Shared original two-body fixture renderer">
-    <div className="scene" ref={host} role="img" aria-label="Two original procedural fly bodies at committed shared poses; observer camera does not supply sensory input" />
-    <p>Engineered two-body visual fixture. Own body hidden only during its own retinal raster; the other body remains visible. No partner neural telemetry, hidden target, automatic contact/scent, or creative capture enters this shared loop. Coincident starting poses are preserved, not forcibly separated.</p>
+  }, [shared?.sharedId]);
+  return <section className="shared-renderer" aria-label="Shared original fixture population renderer">
+    <div className="scene" ref={host} role="img" aria-label="Original procedural fly bodies at committed shared poses; observer camera does not supply sensory input" />
+    <p>Engineered shared visual fixture. Own body hidden only during its own retinal raster; the other body remains visible. No partner neural telemetry, hidden target, automatic contact/scent, or creative capture enters this shared loop. Coincident starting poses are preserved, not forcibly separated.</p>
     {!controllerToken && <p>Observer only: this tab sends no shared retinal batches.</p>}
     {error && <p role="alert">{error}</p>}
     {retinas.map(retina=><div key={retina.individualId}><p style={{overflowWrap:'anywhere'}}>Retinal recipient: {retina.individualId} · accepted batch input tick {retina.trace?.frameId}</p>
