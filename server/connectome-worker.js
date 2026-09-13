@@ -11,7 +11,7 @@ export function createConnectomeSession({ graph, dataset, individualId = randomU
   let status = 'paused', reason = null, sessionEpoch = randomUUID(), pendingRestore = null;
   const snapshot = () => ({ protocolVersion: 1, source: 'connectome', status, available: status !== 'fault',
     reason, individualId, sessionEpoch, dataset, model: kernel.model, graphSha256: kernel.graphSha256, provenance, loadWallMs,
-    neural: kernel.summary(), memory: process.memoryUsage(),
+    neural: kernel.summary(), memory: process.memoryUsage(), retainedWeightState: kernel.retainedWeightState(),
     limitations: 'Research LIF backend only. No sensory/motor mapping, plasticity, retained learning, or biological validation. No automatic advancement.' });
   function dispatch({ action, value, sessionEpoch: suppliedEpoch }) {
     if (action === 'snapshot') return snapshot();

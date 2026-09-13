@@ -39,7 +39,7 @@ export function createConnectomeRegistry({ identities = [], capacity = createCap
       resident: !!r.owner, status: r.lifecycle, sessionEpoch: r.state?.sessionEpoch ?? r.epoch, commandSequence: r.sequence,
       checkpointId: r.checkpointId, reason: r.reason, recoveryRequired: r.recoveryRequired, neural: r.state?.neural ?? null,
       graphSha256: r.state?.graphSha256 ?? r.saved?.graphSha256 ?? null, model: r.state?.model ?? null,
-      provenance: r.state?.provenance ?? null, capabilities });
+      provenance: r.state?.provenance ?? null, retainedWeightState: r.state?.retainedWeightState ?? null, capabilities });
   }
   function enqueue(r, fn) {
     const result = r.queue.then(() => { if (closed) throw new Error('Connectome registry closed'); return fn(); });

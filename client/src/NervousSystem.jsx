@@ -5,6 +5,8 @@ import { selectAtlasCell } from './atlas-selection.js';
 import AtlasCanvas from './AtlasCanvas.jsx';
 import ConnectomeRecordings from './ConnectomeRecordings.jsx';
 import ConnectomeNeuronSample from './ConnectomeNeuronSample.jsx';
+import ConnectomeWeightBaseline from './ConnectomeWeightBaseline.jsx';
+import { WEIGHT_LAYERS } from './weight-baseline.js';
 
 const PROFILES = [['male-cns-v1', 'MaleCNS v1.0'], ['banc-v888', 'BANC v888']];
 const LABELS = { 'visual-system': 'Visual system', 'central-brain': 'Central brain', 'ventral-nerve-cord': 'Ventral nerve cord', interregional: 'Interregional', unknown: 'Unclassified' };
@@ -198,6 +200,9 @@ export default function NervousSystem({ dataset = "male-cns:v1.0", individualId 
       </tbody></table></div>
       <section aria-label="Anatomical cell inspector"><h3 ref={inspectorHeading} tabIndex={-1} style={{overflowWrap: "anywhere"}}>{selected ? selected[0] : 'Select an anatomical cell'}</h3>
         {selected && <><p>Type: {selected[2] || 'Unclassified'} · class: {selected[3] || 'Unclassified'} · region: {selected[4] || 'Unclassified'}.</p><p>{selected[5]} {!data.geometryAvailable ? 'Coordinates unavailable; no position is drawn or inferred.' : data.valid[selectedIndex] ? `Coordinates (${data.manifest.coordinates.units}): ${Array.from(data.positions.subarray(selectedIndex * 3, selectedIndex * 3 + 3)).map(v => v.toFixed(3)).join(', ')}. ${visibleGroups.includes(data.groups[selectedIndex]) ? '' : 'Its display group is currently hidden.'}` : 'No point is drawn; coordinates are never invented.'}</p></>}
+        {selected && <details className="weight-layers"><summary>What each inspection layer is, and is not</summary>
+          <dl>{WEIGHT_LAYERS.map(layer => <div key={layer.id}><dt>{layer.label}</dt><dd>{layer.origin}. {layer.claim}</dd></div>)}</dl>
+          <p>These layers are never merged into one number or one colour. A weight difference is reported only in the named-baseline section below.</p></details>}
         {selected && <ConnectomeNeuronSample individualId={individualId} dataset={dataset} neuronId={selected[0]} graphManifestSha256={data.manifest.graphManifestSha256} />}
         {selected && connectionsEnabled && <>
           <h4>Incoming and outgoing anatomical connections</h4>
@@ -211,6 +216,10 @@ export default function NervousSystem({ dataset = "male-cns:v1.0", individualId 
             <button disabled={adjacency.nextOffset === null} onClick={() => { setAdjacency(null); setEdgeOffset(adjacency.nextOffset); }}>Next connections</button>
           </>}
         </>}
+        {selected && <ConnectomeWeightBaseline individualId={individualId} dataset={dataset}
+          selectionKey={`${selected[0]}#${edgeOffset}`}
+          edges={connectionsEnabled && adjacency ? adjacency.edges : null}
+          totalMatching={connectionsEnabled && adjacency ? adjacency.totalMatching : null} />}
       </section>
       <ConnectomeRecordings individualId={individualId} dataset={dataset} neuronId={selected?.[0]??null} graphManifestSha256={data.manifest.graphManifestSha256}/>
       <details><summary>Dataset provenance and display limitations</summary><p>{data.manifest.coordinates.field} · {data.manifest.coordinates.units} · {data.manifest.coordinates.orientation}</p><p>{data.manifest.source.attribution} · {data.manifest.source.license}</p>

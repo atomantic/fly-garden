@@ -35,3 +35,16 @@ An isolated UI test had previously created one complete MaleCNS and one complete
 After both test individuals were saved/unloaded and their isolated server stopped, PR #46's unified CLI archived and restored their complete histories plus the test fixture into fresh directories. Both catalogs and all six referenced checkpoint files were byte-identical. The restored installation was opened with the real graph descriptors under Node 26: two research IDs and their heads matched, both were saved-unloaded, the fixture was also unloaded, and no worker or provider started. Recording round-trip, joint fixture references, corrupt archives, interrupted-restore markers and writer exclusion are covered by the independent 53-test focused suite; this real-data archive contained no recordings, so it does not claim an actual full-neural recording replay.
 
 This evidence establishes the stated local foundation and recovery behavior. It does not establish full-connectome vision/body coupling, retained learning, live Eidoverse deployment, paired interactive throughput, arbitrary-filesystem power-loss durability, or automatic backup scheduling.
+
+## The seven admin values on one surface
+
+FR-16 asks for model identity, actually loaded counts, numerical health, simulation speed, state age, checkpoint lineage and environment admission state, each from the selected runtime. Those seven were previously scattered across the Connectome lab's prose, with nothing asserting that one surface presented them together.
+
+`client/src/runtime-admin-values.js` now returns exactly those seven, in display order, and the lab renders them as one definition list under **Runtime identity, health and admission**. Each value carries the source it came from — selected runtime, pinned local profile, host admission service, or this browser's last accepted receipt — and an unavailable value stays `Unavailable` rather than being filled in from a neighbouring source. The pinned profile may stand in for retained counts only when no worker is resident, and only by saying so in the value's own source line.
+
+Two of the seven are deliberately not a measurement at this revision:
+
+- **Simulation speed** is always unavailable. No timed batch measurement is supplied, and the browser's polling cadence is not simulated throughput. Deriving a displayed speed from actual advancement is FR-10's work, tracked in [#22](https://github.com/atomantic/fly-garden/issues/22).
+- **State age** is receipt freshness — how long ago this browser accepted a snapshot — not the age of neural activity, and it says so. A disconnected read marks itself stale on that value.
+
+**Numerical health is never a welfare score.** It reports a fault, or finite potential bounds, and nothing else. The disclosure — that it is never happiness, consciousness, welfare, wellbeing or a validated health score for an individual — is now attached to the value itself and asserted in `server/runtime-admin-values.test.js`, rather than living only in source prose.

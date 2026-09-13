@@ -33,6 +33,17 @@ export default defineConfig({
     { name: 'motion-reduce', testMatch: 'reduced-motion.spec.js', use: { ...devices['Desktop Chrome'], reducedMotion: 'reduce' } },
     { name: 'forced-colors', testMatch: 'forced-colors.spec.js', use: { ...devices['Desktop Chrome'], forcedColors: 'active' } },
     {
+      name: 'panels',
+      testMatch: 'panel-keyboard.spec.js',
+      use: { ...devices['Desktop Chrome'] },
+    },
+    {
+      // Issues one explicit load/unload pair; skips itself unless FLY_GARDEN_BROWSER_FIXTURE=1.
+      name: 'resident-fixture',
+      testMatch: 'resident-fixture.spec.js',
+      use: { ...devices['Desktop Chrome'] },
+    },
+    {
       name: 'small-screen',
       testMatch: 'small-screen.spec.js',
       use: { ...devices['Desktop Chrome'], viewport: { width: 390, height: 844 } },
