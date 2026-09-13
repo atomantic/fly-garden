@@ -1,0 +1,394 @@
+{
+  "schemaVersion": 1,
+  "measuredDate": "2026-09-12",
+  "purpose": "Fixed-budget zero-drive single and paired operating envelope; temporary identities only",
+  "runs": [
+    {
+      "scenario": "male-single",
+      "schemaVersion": 1,
+      "status": "measured-zero-drive",
+      "residentCount": 1,
+      "config": {
+        "steps": 1000,
+        "batchSteps": 100,
+        "maxMemoryMiB": 2048,
+        "timeoutSeconds": 120
+      },
+      "baselineRssBytes": 52559872,
+      "loadedRssBytes": 360087552,
+      "sampledPeakRssBytes": 386383872,
+      "measuredIncrementBytes": 333824000,
+      "loadWallMs": 467.3585,
+      "steppingWallMs": 639.748875,
+      "restartWallMs": 463.75925000000007,
+      "totalWallMs": 1584.3645,
+      "simulatedMsPerResident": 1000,
+      "simulatedToWallRatioPerResident": 1.5631133388081377,
+      "cpuUserMs": 1573.63,
+      "cpuSystemMs": 81.043,
+      "checkpointJsonBytes": [
+        991278
+      ],
+      "batches": [
+        {
+          "completedStepsPerResident": 100,
+          "wallMs": 73.27787499999994
+        },
+        {
+          "completedStepsPerResident": 200,
+          "wallMs": 62.87633299999993
+        },
+        {
+          "completedStepsPerResident": 300,
+          "wallMs": 62.96295799999996
+        },
+        {
+          "completedStepsPerResident": 400,
+          "wallMs": 62.38587499999994
+        },
+        {
+          "completedStepsPerResident": 500,
+          "wallMs": 62.84058300000004
+        },
+        {
+          "completedStepsPerResident": 600,
+          "wallMs": 64.15058399999998
+        },
+        {
+          "completedStepsPerResident": 700,
+          "wallMs": 62.25095800000008
+        },
+        {
+          "completedStepsPerResident": 800,
+          "wallMs": 62.52841699999999
+        },
+        {
+          "completedStepsPerResident": 900,
+          "wallMs": 62.7555000000001
+        },
+        {
+          "completedStepsPerResident": 1000,
+          "wallMs": 63.67949999999996
+        }
+      ],
+      "residents": [
+        {
+          "individualId": "63cc1ebb-3a9d-486d-b949-3dec868a6eb8",
+          "graphSha256": "fa50e6e9add2a426f950cddc02b29b1c3dc267b98e1da33bf79cc1e5e1b3ce6a",
+          "provenance": {
+            "dataset": "male-cns:v1.0",
+            "selection": "status-traced-v1",
+            "manifestSha256": "12759115c299175db5afa38b4a94a9a702f19a4e453c2bebb7dfaa85e5a3b915",
+            "neuronCount": 165122,
+            "edgeCount": 25563197,
+            "contactCount": 124025046
+          },
+          "model": {
+            "id": "malecns-traced-lif-v1",
+            "dtMs": 1,
+            "tauMs": 20,
+            "threshold": 1,
+            "reset": 0,
+            "refractorySteps": 2,
+            "delaySteps": 1,
+            "contactGain": 0.001,
+            "restingDrive": 0,
+            "precision": "float64",
+            "integration": "exact exponential leak, then delayed instantaneous synaptic jumps"
+          },
+          "statusAfterRestart": "paused",
+          "neuralAfterRestart": {
+            "tick": 1000,
+            "simTimeMs": 1000,
+            "spikes": 0,
+            "totalSpikes": 0,
+            "traversedEdges": 0,
+            "minimum": 0,
+            "maximum": 0
+          }
+        }
+      ],
+      "probesApplied": 0,
+      "drive": "zero",
+      "configuredCapacityChanged": false,
+      "limitations": "Zero-drive isolated research workers only: no sensory inputs, probes, rewards, renderer, active-edge stress, behavior or learning. Pair batches wait for both workers; ratio uses time per individual, not summed clocks. Sampled process-wide RSS is not summed across threads and can miss transient peaks. These measurements do not grant capacity or establish real-time interactive performance.",
+      "runtime": "v26.0.0",
+      "platform": "darwin",
+      "architecture": "arm64",
+      "osRelease": "25.6.0",
+      "cpuModel": "Apple M5 Max",
+      "logicalCpuCount": 18,
+      "physicalMemoryBytes": 137438953472
+    },
+    {
+      "scenario": "banc-single",
+      "schemaVersion": 1,
+      "status": "measured-zero-drive",
+      "residentCount": 1,
+      "config": {
+        "steps": 1000,
+        "batchSteps": 100,
+        "maxMemoryMiB": 2048,
+        "timeoutSeconds": 120
+      },
+      "baselineRssBytes": 52461568,
+      "loadedRssBytes": 276873216,
+      "sampledPeakRssBytes": 294404096,
+      "measuredIncrementBytes": 241942528,
+      "loadWallMs": 301.92866599999996,
+      "steppingWallMs": 605.175209,
+      "restartWallMs": 313.168417,
+      "totalWallMs": 1234.030291,
+      "simulatedMsPerResident": 1000,
+      "simulatedToWallRatioPerResident": 1.6524140201519721,
+      "cpuUserMs": 1250.713,
+      "cpuSystemMs": 61.983,
+      "checkpointJsonBytes": [
+        935690
+      ],
+      "batches": [
+        {
+          "completedStepsPerResident": 100,
+          "wallMs": 71.97674999999998
+        },
+        {
+          "completedStepsPerResident": 200,
+          "wallMs": 59.477791000000025
+        },
+        {
+          "completedStepsPerResident": 300,
+          "wallMs": 59.06087500000007
+        },
+        {
+          "completedStepsPerResident": 400,
+          "wallMs": 59.52866700000004
+        },
+        {
+          "completedStepsPerResident": 500,
+          "wallMs": 58.8968339999999
+        },
+        {
+          "completedStepsPerResident": 600,
+          "wallMs": 59.262208999999984
+        },
+        {
+          "completedStepsPerResident": 700,
+          "wallMs": 59.36725000000001
+        },
+        {
+          "completedStepsPerResident": 800,
+          "wallMs": 59.34929199999999
+        },
+        {
+          "completedStepsPerResident": 900,
+          "wallMs": 59.40362499999992
+        },
+        {
+          "completedStepsPerResident": 1000,
+          "wallMs": 58.81170800000007
+        }
+      ],
+      "residents": [
+        {
+          "individualId": "c7369a95-fb3c-4763-9041-332e9e657c1a",
+          "graphSha256": "b8e648ec2585061b91fb07ad22b33d41939e0b2c8b56e7f7dbf7d6f172025e99",
+          "provenance": {
+            "dataset": "banc:v888",
+            "selection": "proofread-or-roughly-neurons-v3-synapses-v1",
+            "manifestSha256": "6d24b3d65b879c1d456fc48e2ac84e81ecae61fdf17749de0c58b3b9c1b5ac99",
+            "neuronCount": 155858,
+            "edgeCount": 13366670,
+            "contactCount": 41845636
+          },
+          "model": {
+            "id": "banc-proofread-lif-v1",
+            "dtMs": 1,
+            "tauMs": 20,
+            "threshold": 1,
+            "reset": 0,
+            "refractorySteps": 2,
+            "delaySteps": 1,
+            "contactGain": 0.001,
+            "restingDrive": 0,
+            "precision": "float64",
+            "integration": "exact exponential leak, then delayed instantaneous synaptic jumps"
+          },
+          "statusAfterRestart": "paused",
+          "neuralAfterRestart": {
+            "tick": 1000,
+            "simTimeMs": 1000,
+            "spikes": 0,
+            "totalSpikes": 0,
+            "traversedEdges": 0,
+            "minimum": 0,
+            "maximum": 0
+          }
+        }
+      ],
+      "probesApplied": 0,
+      "drive": "zero",
+      "configuredCapacityChanged": false,
+      "limitations": "Zero-drive isolated research workers only: no sensory inputs, probes, rewards, renderer, active-edge stress, behavior or learning. Pair batches wait for both workers; ratio uses time per individual, not summed clocks. Sampled process-wide RSS is not summed across threads and can miss transient peaks. These measurements do not grant capacity or establish real-time interactive performance.",
+      "runtime": "v26.0.0",
+      "platform": "darwin",
+      "architecture": "arm64",
+      "osRelease": "25.6.0",
+      "cpuModel": "Apple M5 Max",
+      "logicalCpuCount": 18,
+      "physicalMemoryBytes": 137438953472
+    },
+    {
+      "scenario": "male-banc-pair",
+      "schemaVersion": 1,
+      "status": "measured-zero-drive",
+      "residentCount": 2,
+      "config": {
+        "steps": 1000,
+        "batchSteps": 100,
+        "maxMemoryMiB": 2048,
+        "timeoutSeconds": 120
+      },
+      "baselineRssBytes": 52199424,
+      "loadedRssBytes": 559874048,
+      "sampledPeakRssBytes": 596213760,
+      "measuredIncrementBytes": 544014336,
+      "loadWallMs": 767.647958,
+      "steppingWallMs": 654.635125,
+      "restartWallMs": 798.4959999999999,
+      "totalWallMs": 2248.236958,
+      "simulatedMsPerResident": 1000,
+      "simulatedToWallRatioPerResident": 1.527568506196486,
+      "cpuUserMs": 2878.833,
+      "cpuSystemMs": 136.159,
+      "checkpointJsonBytes": [
+        991278,
+        935690
+      ],
+      "batches": [
+        {
+          "completedStepsPerResident": 100,
+          "wallMs": 71.98675000000003
+        },
+        {
+          "completedStepsPerResident": 200,
+          "wallMs": 63.988042000000064
+        },
+        {
+          "completedStepsPerResident": 300,
+          "wallMs": 63.72787500000004
+        },
+        {
+          "completedStepsPerResident": 400,
+          "wallMs": 66.45754099999988
+        },
+        {
+          "completedStepsPerResident": 500,
+          "wallMs": 66.90441699999997
+        },
+        {
+          "completedStepsPerResident": 600,
+          "wallMs": 64.6468339999999
+        },
+        {
+          "completedStepsPerResident": 700,
+          "wallMs": 64.02841599999988
+        },
+        {
+          "completedStepsPerResident": 800,
+          "wallMs": 64.75450000000001
+        },
+        {
+          "completedStepsPerResident": 900,
+          "wallMs": 64.52637499999992
+        },
+        {
+          "completedStepsPerResident": 1000,
+          "wallMs": 63.56929100000002
+        }
+      ],
+      "residents": [
+        {
+          "individualId": "abd6780d-1ef5-4405-a384-2aa922560a1d",
+          "graphSha256": "fa50e6e9add2a426f950cddc02b29b1c3dc267b98e1da33bf79cc1e5e1b3ce6a",
+          "provenance": {
+            "dataset": "male-cns:v1.0",
+            "selection": "status-traced-v1",
+            "manifestSha256": "12759115c299175db5afa38b4a94a9a702f19a4e453c2bebb7dfaa85e5a3b915",
+            "neuronCount": 165122,
+            "edgeCount": 25563197,
+            "contactCount": 124025046
+          },
+          "model": {
+            "id": "malecns-traced-lif-v1",
+            "dtMs": 1,
+            "tauMs": 20,
+            "threshold": 1,
+            "reset": 0,
+            "refractorySteps": 2,
+            "delaySteps": 1,
+            "contactGain": 0.001,
+            "restingDrive": 0,
+            "precision": "float64",
+            "integration": "exact exponential leak, then delayed instantaneous synaptic jumps"
+          },
+          "statusAfterRestart": "paused",
+          "neuralAfterRestart": {
+            "tick": 1000,
+            "simTimeMs": 1000,
+            "spikes": 0,
+            "totalSpikes": 0,
+            "traversedEdges": 0,
+            "minimum": 0,
+            "maximum": 0
+          }
+        },
+        {
+          "individualId": "18aa8ba6-5419-4423-843b-737f7547b29d",
+          "graphSha256": "b8e648ec2585061b91fb07ad22b33d41939e0b2c8b56e7f7dbf7d6f172025e99",
+          "provenance": {
+            "dataset": "banc:v888",
+            "selection": "proofread-or-roughly-neurons-v3-synapses-v1",
+            "manifestSha256": "6d24b3d65b879c1d456fc48e2ac84e81ecae61fdf17749de0c58b3b9c1b5ac99",
+            "neuronCount": 155858,
+            "edgeCount": 13366670,
+            "contactCount": 41845636
+          },
+          "model": {
+            "id": "banc-proofread-lif-v1",
+            "dtMs": 1,
+            "tauMs": 20,
+            "threshold": 1,
+            "reset": 0,
+            "refractorySteps": 2,
+            "delaySteps": 1,
+            "contactGain": 0.001,
+            "restingDrive": 0,
+            "precision": "float64",
+            "integration": "exact exponential leak, then delayed instantaneous synaptic jumps"
+          },
+          "statusAfterRestart": "paused",
+          "neuralAfterRestart": {
+            "tick": 1000,
+            "simTimeMs": 1000,
+            "spikes": 0,
+            "totalSpikes": 0,
+            "traversedEdges": 0,
+            "minimum": 0,
+            "maximum": 0
+          }
+        }
+      ],
+      "probesApplied": 0,
+      "drive": "zero",
+      "configuredCapacityChanged": false,
+      "limitations": "Zero-drive isolated research workers only: no sensory inputs, probes, rewards, renderer, active-edge stress, behavior or learning. Pair batches wait for both workers; ratio uses time per individual, not summed clocks. Sampled process-wide RSS is not summed across threads and can miss transient peaks. These measurements do not grant capacity or establish real-time interactive performance.",
+      "runtime": "v26.0.0",
+      "platform": "darwin",
+      "architecture": "arm64",
+      "osRelease": "25.6.0",
+      "cpuModel": "Apple M5 Max",
+      "logicalCpuCount": 18,
+      "physicalMemoryBytes": 137438953472
+    }
+  ]
+}
