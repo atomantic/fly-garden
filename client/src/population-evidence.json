@@ -1,0 +1,146 @@
+{
+  "schemaVersion": 1,
+  "measuredDate": "2026-09-12",
+  "zeroDrive": {
+    "environment": {
+      "runtime": "v26.0.0",
+      "platform": "darwin",
+      "architecture": "arm64",
+      "cpuModel": "Apple M5 Max",
+      "logicalCpuCount": 18,
+      "physicalMemoryBytes": 137438953472
+    },
+    "runs": [
+      {
+        "scenario": "male-single",
+        "residentCount": 1,
+        "steppingWallMs": 639.748875,
+        "sampledPeakRssBytes": 386383872,
+        "simulatedMsPerResident": 1000,
+        "models": [
+          "malecns-traced-lif-v1"
+        ]
+      },
+      {
+        "scenario": "banc-single",
+        "residentCount": 1,
+        "steppingWallMs": 605.175209,
+        "sampledPeakRssBytes": 294404096,
+        "simulatedMsPerResident": 1000,
+        "models": [
+          "banc-proofread-lif-v1"
+        ]
+      },
+      {
+        "scenario": "male-banc-pair",
+        "residentCount": 2,
+        "steppingWallMs": 654.635125,
+        "sampledPeakRssBytes": 596213760,
+        "simulatedMsPerResident": 1000,
+        "models": [
+          "malecns-traced-lif-v1",
+          "banc-proofread-lif-v1"
+        ]
+      }
+    ]
+  },
+  "activeEdge": {
+    "runtime": "v26.0.0",
+    "platform": "darwin",
+    "architecture": "arm64",
+    "executedSteps": 1600,
+    "runCount": 8,
+    "sampledPeakRssBytes": 469237760,
+    "totalWallMs": 5960.7678750000005,
+    "runs": [
+      {
+        "dataset": "male-cns:v1.0",
+        "condition": "unchanged-black",
+        "executedSteps": 200,
+        "finalClockTicks": 180,
+        "downstreamResponseObserved": false,
+        "yawObserved": false,
+        "model": "malecns-traced-lif-v1",
+        "totalSpikes": 0,
+        "traversedEdges": 0
+      },
+      {
+        "dataset": "male-cns:v1.0",
+        "condition": "changed-left-half-onset",
+        "executedSteps": 200,
+        "finalClockTicks": 180,
+        "downstreamResponseObserved": false,
+        "yawObserved": false,
+        "model": "malecns-traced-lif-v1",
+        "totalSpikes": 875,
+        "traversedEdges": 13333
+      },
+      {
+        "dataset": "male-cns:v1.0",
+        "condition": "encoder-disconnected",
+        "executedSteps": 200,
+        "finalClockTicks": 180,
+        "downstreamResponseObserved": false,
+        "yawObserved": false,
+        "model": "malecns-traced-lif-v1",
+        "totalSpikes": 0,
+        "traversedEdges": 0
+      },
+      {
+        "dataset": "male-cns:v1.0",
+        "condition": "motor-disconnected",
+        "executedSteps": 200,
+        "finalClockTicks": 180,
+        "downstreamResponseObserved": false,
+        "yawObserved": false,
+        "model": "malecns-traced-lif-v1",
+        "totalSpikes": 875,
+        "traversedEdges": 13333
+      },
+      {
+        "dataset": "banc:v888",
+        "condition": "unchanged-black",
+        "executedSteps": 200,
+        "finalClockTicks": 180,
+        "downstreamResponseObserved": false,
+        "yawObserved": false,
+        "model": "banc-proofread-lif-v1",
+        "totalSpikes": 0,
+        "traversedEdges": 0
+      },
+      {
+        "dataset": "banc:v888",
+        "condition": "changed-left-half-onset",
+        "executedSteps": 200,
+        "finalClockTicks": 180,
+        "downstreamResponseObserved": false,
+        "yawObserved": false,
+        "model": "banc-proofread-lif-v1",
+        "totalSpikes": 716,
+        "traversedEdges": 11614
+      },
+      {
+        "dataset": "banc:v888",
+        "condition": "encoder-disconnected",
+        "executedSteps": 200,
+        "finalClockTicks": 180,
+        "downstreamResponseObserved": false,
+        "yawObserved": false,
+        "model": "banc-proofread-lif-v1",
+        "totalSpikes": 0,
+        "traversedEdges": 0
+      },
+      {
+        "dataset": "banc:v888",
+        "condition": "motor-disconnected",
+        "executedSteps": 200,
+        "finalClockTicks": 180,
+        "downstreamResponseObserved": false,
+        "yawObserved": false,
+        "model": "banc-proofread-lif-v1",
+        "totalSpikes": 716,
+        "traversedEdges": 11614
+      }
+    ]
+  }
+}
