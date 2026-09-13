@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
+import { moveAtlasCamera } from './atlas-camera.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
 const COLORS = [0x84d7bd, 0xe8be75, 0x9eacf5, 0xe8a7c8, 0xa8d779, 0x76c8e4, 0xd6cfe7];
@@ -88,7 +89,7 @@ export default function AtlasCanvas({ positions, valid, groups, visibleGroups, s
     renderer.domElement.addEventListener('pointerup', click);
     renderer.domElement.addEventListener('pointercancel', cancel);
     renderer.domElement.addEventListener('webglcontextlost', contextLost);
-    view.current = { edgeGeometry, edgeMaterial, geometry, material, marker, selectionGeometry, normalized, fit, render, camera, controls, indices: [] };
+    view.current = { edgeGeometry, edgeMaterial, geometry, material, marker, selectionGeometry, normalized, fit, render, camera, controls, indices: [], fitted: false };
     resize();
     return () => {
       benchmark.current?.(); view.current = null; observer.disconnect(); controls.dispose();
@@ -105,7 +106,8 @@ export default function AtlasCanvas({ positions, valid, groups, visibleGroups, s
     for (let i = 0; i < valid.length; i++) if (valid[i] && enabled.has(groups[i])) index.array[count++] = i;
     index.needsUpdate = true; current.geometry.setDrawRange(0, count);
     const indices = index.array.subarray(0, count); current.indices = indices;
-    current.fit(indices); current.render();
+    if (!current.fitted && count) { current.fit(indices); current.fitted = true; }
+    current.render();
   }, [visibleGroups, positions, valid, groups]);
   useEffect(() => { const current = view.current; if (current) { current.material.size = pointSize; current.render(); } }, [pointSize]);
   useEffect(() => {
@@ -159,16 +161,13 @@ export default function AtlasCanvas({ positions, valid, groups, visibleGroups, s
     if (benchmark.current) { benchmark.current(); setMeasuring(false); setMeasurement({ error: 'Camera changed; measurement cancelled.' }); }
     const { camera, controls } = current;
     if (action === 'fit') return current.fit(current.indices);
-    const offset = camera.position.clone().sub(controls.target);
-    if (action === 'in' || action === 'out') offset.multiplyScalar(action === 'in' ? 0.8 : 1.25);
-    else { const spherical = new THREE.Spherical().setFromVector3(offset); spherical.theta += action === 'left' ? -0.25 : action === 'right' ? 0.25 : 0;
-      spherical.phi += action === 'up' ? -0.2 : action === 'down' ? 0.2 : 0; spherical.makeSafe(); offset.setFromSpherical(spherical); }
-    camera.position.copy(controls.target).add(offset); controls.update(); current.render();
+    moveAtlasCamera(camera, controls, action); current.render();
   }
   return <div>
     <div role="group" aria-label="Anatomical camera controls" style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
-      {Object.entries({ fit: 'Fit visible anatomy', left: 'Rotate left', right: 'Rotate right', up: 'Rotate up', down: 'Rotate down', in: 'Zoom in', out: 'Zoom out' }).map(([action, label]) => <button key={action} onClick={() => cameraCommand(action)}>{label}</button>)}
+      {Object.entries({ fit: 'Fit visible anatomy', left: 'Rotate left', right: 'Rotate right', up: 'Rotate up', down: 'Rotate down', in: 'Zoom in', out: 'Zoom out', 'pan-left': 'Pan left', 'pan-right': 'Pan right', 'pan-up': 'Pan up', 'pan-down': 'Pan down' }).map(([action, label]) => <button key={action} disabled={Boolean(failure)} onClick={() => cameraCommand(action)}>{label}</button>)}
     </div>
+    <p>All camera controls work with Tab and Enter or Space. Views change immediately without animation. Group filters keep the camera fixed; choose Fit visible anatomy to reframe.</p>
     <button disabled={measuring || Boolean(failure)} onClick={measureRedraws}>Measure 60 redraws</button>
     {measuring && <p role="status">Measuring 60 static browser redraws (10-second limit)…</p>}
     {measurement && <p role="status">{measurement.error || `${measurement.points.toLocaleString()} points and ${measurement.lines.toLocaleString()} lines; 60 redraws in ${measurement.elapsedMs.toFixed(1)} ms (${measurement.rate.toFixed(1)} redraws/s). Geometry buffer estimate: ${measurement.bytes.toLocaleString()} bytes.`}</p>}
