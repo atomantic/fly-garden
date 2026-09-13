@@ -163,7 +163,18 @@ The initial publication contains this research plan, a welfare charter, contribu
 
 ## Foundation delivered September 12, 2026
 
-A runnable synthetic fixture now supplies the original garden/pod interface, live neural inspector, bounded input encounters and event history. The PortOS-managed PM2 process serves the UI and health API and starts paused. The fixture has no retained learning, real connectome, LLM or Eidoverse bridge. See [PRD.md](PRD.md) for acceptance requirements.
+A runnable synthetic fixture now supplies the original garden/pod interface, live neural inspector, bounded input encounters and event history. The PortOS-managed PM2 process serves the UI and health API and starts paused. See [PRD.md](PRD.md) for acceptance requirements.
+
+### Status at `631e7ab`, September 12, 2026
+
+The paragraph above described the first foundation. Four of its four stated absences have moved, and each moved a different distance. The current per-requirement position, re-derived by reading the code at this revision, is in the [requirement evidence matrix](docs/REQUIREMENT_EVIDENCE.md); read that before quoting any of the following.
+
+- **Real connectome: present as a separate research lab, not as the habitat's brain.** Both pinned full graphs load, checkpoint and step under explicit control ([operating envelope](docs/OPERATING_ENVELOPE.md)), and the full nervous-system atlas renders their measured coordinates. There is still no connectome-driven body: the one authorized full-graph visual causal campaign is a completed 8-of-8 **negative** — mapped input populations spiked while DNa02 and yaw stayed zero in both datasets ([visual causal validation](docs/VISUAL_CAUSAL_VALIDATION.md)).
+- **Retained learning: still absent, and now a recorded gate-closed negative rather than an open question.** The preregistered campaign was invoked, assigned 64 runs, and refused at gate preflight with zero runs executed, because the pinned data closes two of the protocol's own gates ([benign learning result](docs/BENIGN_LEARNING_RESULT.md)). Phase 2's exit gate below is therefore satisfied in its negative branch: an explicit negative report now prevents a learning claim. A positive claim needs a new, separately reviewed protocol version.
+- **LLM: present as an optional, explicitly armed telemetry interpreter.** Caretaker chat and a neural/behavioural detector with visible budgets, cooldown and disarm are implemented ([language gate](docs/LANGUAGE_GATE.md)). Boot, replay and disarmed ticks cause zero provider requests, and no real provider has yet been contacted.
+- **Eidoverse bridge: present as a scoped visitor bridge with one isolated running-host run.** Real visitor phases drive the pod, host visitor capacity is negotiated (an absent field means exactly one), and patch interaction is an optional capability a host may omit without losing move-only visits ([managed visitors](docs/managed-visitors.md)). One bounded two-fixture round trip ran against an actual Eidoverse sequencer and the actual PortOS broker implementations ([live visitor fixture evidence](docs/LIVE_VISITOR_FIXTURE_EVIDENCE.md)), with a WebSocket spectator reading presence messages. No live PortOS-managed host run with a human observer exists, and PortOS/Eidoverse-side changes remain work for those repositories.
+
+Also delivered since: a shared fixture session with opt-in version 2 per-member `active`/`resting` state and withdrawal at a recorded boundary; measured shared sensory coupling, including a real-GPU byte measurement of the neurally generated trajectory ([shared retinal evidence](docs/SHARED_RETINAL_EVIDENCE.md)); configurable non-evicting population capacity; and measured contrast, reduced-motion, forced-colors and small-screen accessibility evidence on two browsers ([observatory accessibility](docs/OBSERVATORY_ACCESSIBILITY.md)).
 
 ## Implementation issues
 
@@ -181,7 +192,9 @@ A runnable synthetic fixture now supplies the original garden/pod interface, liv
 
 ## Configurable population extension
 
-The single-fly loop remains the first validation gate. The first social validation uses one MaleCNS v1.0 individual and one BANC v888 individual. Capacity is configurable rather than hard-coded to two. The live fixture still implements only one synthetic runtime; this section is planned work.
+The single-fly loop remains the first validation gate. The first social validation uses one MaleCNS v1.0 individual and one BANC v888 individual. Capacity is configurable rather than hard-coded to two.
+
+Delivered at `631e7ab`: configurable capacity with a default of one, paused residents counted, and a lowered limit that stops new admissions without evicting or resetting anyone; a shared fixed-step fixture session joining 2–64 admitted synthetic runtimes with atomic barriers, joint checkpoints and per-recipient encounter adapters; and opt-in version 2 sessions in which one member may rest or withdraw at a recorded boundary while the world continues for the others. Still planned: a shared session containing a full-connectome worker, explicit per-backend neural substeps, and integrated active-pair resource measurement. The zero-drive pair envelope measured so far is two independently owned workers, not a coupled world.
 
 - Download version-pinned annotations/connectivity first; retain separate licenses, hashes and namespace mappings. [MaleCNS downloads](https://male-cns.janelia.org/download/) and [BANC publication and v888 data availability](https://www.nature.com/articles/s41586-026-10735-w) are primary sources. [BANC data deposit](https://doi.org/10.7910/DVN/7WTH1N) supplies the published artifacts. FlyWire FAFB v783 is a brain-only alternative, not a silently interchangeable female CNS.
 - Benchmark each graph and the pair before selecting operational limits. Expose configured capacity, resident/running counts, current headroom and estimated incremental cost. Paused loaded brains count; saved unloaded individuals retain their identity without consuming a worker slot. Unknown capacity is not a successful admission check.
