@@ -31,10 +31,15 @@ test('the built-in 60-redraw display measurement runs on each pinned atlas profi
     return;
   }
 
+  // Regression for #78: re-selecting the already-active profile must leave the loaded atlas in
+  // place rather than blanking it (the selector used to clear `data` unconditionally on change,
+  // even when the parent's profile prop did not actually change).
+  const dataset = page.getByLabel('Atlas dataset');
+  const activeValue = await dataset.inputValue();
+  await dataset.selectOption(activeValue);
+  await expect(table).toBeVisible();
+
   for (const profile of PROFILES) {
-    const dataset = page.getByLabel('Atlas dataset');
-    // Only switch when the profile actually differs: re-selecting the current value clears the view
-    // without reloading it, because the parent dataset state never changes.
     if ((await dataset.inputValue()) !== profile.value) await dataset.selectOption(profile.value);
     const measure = page.getByRole('button', { name: 'Measure 60 redraws' });
     await expect(measure).toBeEnabled({ timeout: 120_000 });

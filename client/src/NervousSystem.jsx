@@ -157,7 +157,11 @@ export default function NervousSystem({ dataset = "male-cns:v1.0", individualId 
     <span className="eyebrow">ANATOMY ONLY / PINNED DATASET</span>
     <h2>Brain and nerve cord</h2>
     <p>Measured cell locations across the brain and nerve cord. Anatomy only; no activity or learning is inferred from this view.</p>
-    <label>Atlas dataset <select value={profile} onChange={e => { setData(null); setConnectionsEnabled(false); setConnectivity(null); selectCell(null); onDatasetChange(e.target.value === 'banc-v888' ? 'banc:v888' : 'male-cns:v1.0'); }}>{PROFILES.map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></label>
+    <label>Atlas dataset <select value={profile} onChange={e => {
+      if (e.target.value === profile) return;
+      setData(null); setConnectionsEnabled(false); setConnectivity(null); selectCell(null);
+      onDatasetChange(e.target.value === 'banc-v888' ? 'banc:v888' : 'male-cns:v1.0');
+    }}>{PROFILES.map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></label>
     {individualId && <p>Selected connectome individual: <code>{individualId}</code>. This anatomy view has no live activity overlay. Viewing does not load or start its simulation.</p>}
     <p><a href="#Connectome%20lab">Open full-connectome individuals and paused controls →</a></p>
     {error && <p role="alert">{error} Generate the pinned atlas with the documented local importer, then reload this view.</p>}
