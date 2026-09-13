@@ -75,22 +75,47 @@ export function validateAtlasBuffers(manifest, { positions, valid, groups, nodes
   return { manifest, positions, valid, groups, nodes };
 }
 
-/** Exact known profile and hashes only; paths are selected by the application, not a manifest. */
-export async function loadAtlas(directory, dataset, { signal } = {}) {
+/** Metadata can be verified independently; no position or mask is synthesized. */
+export function validateAtlasNodes(manifest, nodes) {
+  validateAtlasMetadata(manifest);
+  if (!Array.isArray(nodes) || nodes.length !== manifest.counts.retained) fail('Atlas metadata length mismatch');
+  let previous = 0n;
+  for (const row of nodes) {
+    if (!Array.isArray(row) || row.length !== 6 || !row.every(value => typeof value === 'string' && value.length <= 1024)
+      || !/^[1-9]\d{0,18}$/.test(row[1]) || BigInt(row[1]) >= 2n ** 63n || BigInt(row[1]) <= previous
+      || row[0] !== `${manifest.dataset}/${row[1]}` || ![manifest.pointKind,'missing','invalid-coordinate'].includes(row[5])) fail('Invalid atlas neuron identity/metadata');
+    previous = BigInt(row[1]);
+  }
+  return nodes;
+}
+
+async function pinnedManifest(directory, dataset, signal) {
   if (!Object.hasOwn(PROFILES, dataset ?? '') || endianness() !== 'LE') fail('Unsupported atlas profile/byte order');
   const lock = JSON.parse(await readFile(new URL('../connectome/atlas.lock.json', import.meta.url), 'utf8'));
   if (lock.schemaVersion !== 1 || !validHash(lock.profiles?.[dataset]?.manifestSha256)) fail('Missing compatible atlas lock');
   if ((await stat(join(directory, 'manifest.json'))).size > 65536) fail('Oversized atlas manifest');
-  const manifestBytes = await readFile(join(directory, 'manifest.json'), { signal });
-  const manifestSha256 = hash(manifestBytes);
+  const bytes = await readFile(join(directory, 'manifest.json'), { signal }), manifestSha256 = hash(bytes);
   if (manifestSha256 !== lock.profiles[dataset].manifestSha256) fail('Atlas manifest hash mismatch');
-  const manifest = validateAtlasMetadata(JSON.parse(manifestBytes), dataset), files = {};
-  for (const name of ATLAS_FILES) {
-    if ((await stat(join(directory, name))).size !== manifest.files[name].bytes) fail('Atlas buffer size mismatch');
-    const bytes = await readFile(join(directory, name), { signal });
-    if (bytes.length !== manifest.files[name].bytes || hash(bytes) !== manifest.files[name].sha256) fail('Atlas buffer hash mismatch');
-    files[name] = bytes;
-  }
+  return { manifest: validateAtlasMetadata(JSON.parse(bytes), dataset), manifestSha256 };
+}
+async function pinnedAsset(directory, manifest, name, signal) {
+  if ((await stat(join(directory, name))).size !== manifest.files[name].bytes) fail('Atlas buffer size mismatch');
+  const bytes = await readFile(join(directory, name), { signal });
+  if (bytes.length !== manifest.files[name].bytes || hash(bytes) !== manifest.files[name].sha256) fail('Atlas buffer hash mismatch');
+  return bytes;
+}
+export async function loadAtlasNodeMetadata(directory, dataset, { signal } = {}) {
+  const { manifest, manifestSha256 } = await pinnedManifest(directory, dataset, signal);
+  const bytes = await pinnedAsset(directory, manifest, 'nodes.json', signal);
+  const nodes = validateAtlasNodes(manifest, JSON.parse(bytes));
+  if (signal?.aborted) throw signal.reason;
+  return { manifest, manifestSha256, nodes, assets: { 'nodes.json': bytes } };
+}
+
+/** Exact known profile and hashes only; paths are selected by the application, not a manifest. */
+export async function loadAtlas(directory, dataset, { signal } = {}) {
+  const { manifest, manifestSha256 } = await pinnedManifest(directory, dataset, signal), files = {};
+  for (const name of ATLAS_FILES) files[name] = await pinnedAsset(directory, manifest, name, signal);
   const positionBytes = files['positions.f32'];
   const positions = positionBytes.byteOffset % 4 === 0 ? new Float32Array(positionBytes.buffer, positionBytes.byteOffset, positionBytes.length / 4)
     : new Float32Array(Uint8Array.from(positionBytes).buffer);

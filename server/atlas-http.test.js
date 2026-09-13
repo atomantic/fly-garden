@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { createAtlasHttp } from './atlas-http.js';
 
-async function fixture(t, load) {
-  const handler = createAtlasHttp({ directory: '/known-atlas-root', load });
+async function fixture(t, load, loadNodes) {
+  const handler = createAtlasHttp({ directory: '/known-atlas-root', load, ...(loadNodes ? { loadNodes } : {}) });
   const server = createServer(async (request, response) => {
     if (!await handler(request, response, new URL(request.url, 'http://localhost').pathname)) { response.writeHead(404); response.end(); }
   });
@@ -47,4 +47,15 @@ test('missing or corrupt anatomical assets report unavailable without fallback; 
   assert.equal(calls, 2);
   available = true;
   assert.equal((await (await request('/api/atlas/male-cns-v1')).json()).available, true);
+});
+
+test('verified metadata fallback serves only nodes, never invented geometry, and can recover on explicit read',async t=>{
+ let repaired=false,metadataGood=true;const bytes=Buffer.from('verified nodes');
+ const full={manifest:{files:{'nodes.json':{sha256:'nodehash'},'positions.f32':{sha256:'positionhash'}}},manifestSha256:'pinned',assets:{'nodes.json':bytes,'positions.f32':Buffer.from('positions')}};
+ const request=await fixture(t,async()=>{if(!repaired)throw new Error('missing geometry');return full;},async()=>{if(!metadataGood)throw new Error('invalid metadata');return{...full,assets:{'nodes.json':bytes}};});
+ let status=await(await request('/api/atlas/male-cns-v1')).json();assert.equal(status.available,true);assert.equal(status.geometryAvailable,false);
+ assert.equal(await(await request('/api/atlas/male-cns-v1/nodes.json')).text(),'verified nodes');
+ for(const name of ['positions.f32','valid.u8','groups.u8'])assert.equal((await request('/api/atlas/male-cns-v1/'+name)).status,503);
+ metadataGood=false;assert.equal((await(await request('/api/atlas/male-cns-v1')).json()).available,false);
+ repaired=true;status=await(await request('/api/atlas/male-cns-v1')).json();assert.equal(status.geometryAvailable,true);
 });

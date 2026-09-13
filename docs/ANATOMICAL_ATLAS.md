@@ -66,3 +66,24 @@ Browser verification on September 12, 2026 used the complete pinned data at the 
 Bounded connection samples and paginated incoming/outgoing inspection are now available through an explicit connectivity read; see [connectivity and browser evidence](ATLAS_CONNECTIVITY.md). Matching live/replay activity remains unavailable until an integrated runtime supplies this exact anatomical dataset and source window. No unavailable overlay is shown as zero activity. Anatomical axis directions, reconstructed neurites and full peripheral coverage remain unclaimed.
 
 Explicit full-profile static redraw measurements and their limits are recorded in [display evidence](ATLAS_DISPLAY_EVIDENCE.md).
+
+### Verified metadata when geometry is unavailable
+
+If the complete geometry bundle cannot be validated, the atlas separately verifies
+its pinned manifest and `nodes.json` bytes before exposing a searchable cell list.
+The list retains exact dataset-qualified IDs and source annotation/status fields;
+it supplies no substitute coordinates, valid-position mask, or display groups.
+The UI explicitly labels geometry unavailable and hides drawing controls and
+full-load timing metrics. Position coverage remains the pinned source declaration,
+not evidence that geometry loaded. If either metadata hash or node schema fails,
+the atlas stays unavailable. A subsequent explicit read can discover repaired
+local geometry; this does not download data or load a neural worker.
+
+Validation on 2026-09-12 used temporary copies of only the real pinned manifests
+and node files: 165,122 MaleCNS rows and 155,858 BANC rows. Both remained searchable
+in Chrome with no geometry files. Selecting MaleCNS `10001` showed its qualified
+ID and unavailable coordinates; switching to BANC cleared the old selection and
+published BANC's list. A same-length metadata-byte mutation was rejected by the
+actual loader. The isolated preview had no neural service. Automated tests cover
+namespace/order/duplicate/schema rejection, missing geometry asset responses,
+unavailable metadata and recovery to a complete validated bundle.

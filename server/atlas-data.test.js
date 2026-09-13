@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { ATLAS_GROUPS, validateAtlasMetadata, validateAtlasBuffers, loadAtlas } from './atlas-data.js';
+import { ATLAS_GROUPS, validateAtlasMetadata, validateAtlasBuffers, validateAtlasNodes, loadAtlasNodeMetadata, loadAtlas } from './atlas-data.js';
 const h = 'a'.repeat(64);
 function sample() {
   const bounds = Object.fromEntries(['whole','brain','cord',...ATLAS_GROUPS].map(key => [key, ['whole','brain','central-brain'].includes(key) ? { min:[1,2,3],max:[1,2,3] } : null]));
@@ -39,4 +39,17 @@ test('canceled atlas load cannot return a partially validated profile', async t 
   await writeFile(join(directory,'manifest.json'),JSON.stringify(sample().manifest));
   const controller=new AbortController();controller.abort();
   await assert.rejects(loadAtlas(directory,'male-cns:v1.0',{signal:controller.signal}), error => error.name==='AbortError');
+});
+
+test('independent node metadata validates exact ordered namespace without needing positions or masks',()=>{
+ const {manifest,buffers}=sample();assert.equal(validateAtlasNodes(manifest,buffers.nodes),buffers.nodes);
+ for(const mutate of [rows=>rows.reverse(),rows=>rows[1][0]='banc:v888/9007199254740993',rows=>rows[1]=rows[0],rows=>rows.pop(),rows=>rows[0][5]='invented']){
+  const rows=structuredClone(buffers.nodes);mutate(rows);assert.throws(()=>validateAtlasNodes(manifest,rows));
+ }
+});
+test('metadata fallback cannot bypass pinned manifest or cancelled request',async t=>{
+ const directory=await mkdtemp(join(tmpdir(),'atlas-node-pin-'));t.after(()=>rm(directory,{recursive:true,force:true}));
+ await writeFile(join(directory,'manifest.json'),JSON.stringify(sample().manifest));
+ await assert.rejects(loadAtlasNodeMetadata(directory,'male-cns:v1.0'),/hash/);
+ const controller=new AbortController();controller.abort();await assert.rejects(loadAtlasNodeMetadata(directory,'male-cns:v1.0',{signal:controller.signal}));
 });

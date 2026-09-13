@@ -52,6 +52,16 @@ export default function NervousSystem({ dataset = "male-cns:v1.0", individualId 
       if (!Number.isSafeInteger(n) || n < 1 || n > 250000 || !Array.isArray(manifest.groups) || manifest.groups.length !== 5
         || !manifest.files || !['positions.f32', 'valid.u8', 'groups.u8', 'nodes.json'].every(name => Number.isSafeInteger(manifest.files[name]?.bytes)
           && manifest.files[name].bytes > 0 && manifest.files[name].bytes <= 64 * 1024 * 1024)) throw new Error('Invalid anatomical manifest limits.');
+      if (status.geometryAvailable === false) {
+        const response = await fetch(`/api/atlas/${profile}/nodes.json`, { signal: controller.signal });
+        if (!response.ok) throw new Error('Verified cell metadata unavailable.');
+        const bytes = await response.arrayBuffer();
+        if (bytes.byteLength !== manifest.files['nodes.json'].bytes) throw new Error('Cell metadata length mismatch.');
+        const nodes = JSON.parse(new TextDecoder().decode(bytes));
+        if (!Array.isArray(nodes) || nodes.length !== n || nodes.some(row => !Array.isArray(row) || row.length !== 6 || row.some(value => typeof value !== 'string'))) throw new Error('Invalid cell metadata.');
+        if (current) setData({ ...status, profile, nodes, positions: null, valid: null, groups: null });
+        return;
+      }
       const files = await Promise.all(['positions.f32', 'valid.u8', 'groups.u8', 'nodes.json'].map(async filename => {
         const response = await fetch(`/api/atlas/${profile}/${filename}`, { signal: controller.signal });
         if (!response.ok) throw new Error('Anatomical asset is unavailable.');
@@ -72,7 +82,7 @@ export default function NervousSystem({ dataset = "male-cns:v1.0", individualId 
       const loadMetrics = atlasLoadMetrics({ profile, startedAt, assetsReadyAt, finishedAt: performance.now(),
         declaredBytes: ['positions.f32', 'valid.u8', 'groups.u8', 'nodes.json'].reduce((sum, name) => sum + manifest.files[name].bytes, 0),
         receivedBytes: files.reduce((sum, file) => sum + file.byteLength, 0) });
-      if (current) { setData({ ...status, profile, positions, valid, groups, nodes, loadMetrics }); setVisibleGroups(manifest.groups.map((_, i) => i)); }
+      if (current) { setData({ ...status, geometryAvailable: true, profile, positions, valid, groups, nodes, loadMetrics }); setVisibleGroups(manifest.groups.map((_, i) => i)); }
     }
     load().catch(e => { if (current) setError(e.message); });
     return () => { current = false; controller.abort(); };
@@ -127,7 +137,7 @@ export default function NervousSystem({ dataset = "male-cns:v1.0", individualId 
     }
     return { count, rows };
   }, [data, deferredFilter]);
-  const displayed = useMemo(() => { if (!data) return 0; let count = 0;
+  const displayed = useMemo(() => { if (!data?.valid) return 0; let count = 0;
     for (let i = 0; i < data.valid.length; i++) if (data.valid[i] && visibleGroups.includes(data.groups[i])) count++;
     return count;
   }, [data, visibleGroups]);
@@ -137,7 +147,7 @@ export default function NervousSystem({ dataset = "male-cns:v1.0", individualId 
       || kind === 'brain' && ['visual-system', 'central-brain'].includes(name)
       || kind === 'cord' && name === 'ventral-nerve-cord').map(({ index }) => index));
   }
-  const displayEdges = useMemo(() => connectivity?.edges.filter(edge => data?.valid[edge.sourceIndex] && data.valid[edge.targetIndex]
+  const displayEdges = useMemo(() => connectivity?.edges.filter(edge => data?.valid?.[edge.sourceIndex] && data.valid[edge.targetIndex]
     && visibleGroups.includes(data.groups[edge.sourceIndex]) && visibleGroups.includes(data.groups[edge.targetIndex])) ?? [], [connectivity, data, visibleGroups]);
   const loadMetrics = matchingAtlasLoadMetrics(data, profile);
   const selected = data && selectedIndex !== null ? data.nodes[selectedIndex] : null;
@@ -151,12 +161,14 @@ export default function NervousSystem({ dataset = "male-cns:v1.0", individualId 
     {error && <p role="alert">{error} Generate the pinned atlas with the documented local importer, then reload this view.</p>}
     {!data && !error && <p role="status">Loading and validating pinned anatomical data…</p>}
     {data && <>
+      {!data.geometryAvailable && <p role="alert">Geometry unavailable. Only independently verified cell metadata is loaded; coordinates, display groups and connection drawing are unavailable. Position coverage below is the pinned source declaration, not a successful geometry load.</p>}
       <p role="status">{data.manifest.counts.retained.toLocaleString()} retained cells · {data.manifest.counts.positioned.toLocaleString()} positioned · {data.manifest.counts.missing.toLocaleString()} without a valid position · {displayed.toLocaleString()} displayed. Hidden and missing cells remain searchable.</p>
       {loadMetrics && <details><summary>Measured local atlas load</summary>
         <p>{loadMetrics.elapsedMs.toFixed(1)} ms total before rendering: {loadMetrics.metadataAndAssetsMs.toFixed(1)} ms for metadata and four asset reads; {loadMetrics.parseAndValidationMs.toFixed(1)} ms for browser parsing and structural validation.</p>
         <p>{loadMetrics.declaredAssetBytes.toLocaleString()} declared asset bytes; {loadMetrics.receivedAssetBytes.toLocaleString()} decoded bytes received and length-checked. Profile: {loadMetrics.profile}. Metadata response and HTTP overhead are excluded from byte counts; cache and compression mean these are not measured network wire bytes.</p>
         <p>One successful load in this browser. Elapsed time includes scheduling and local server work; it excludes GPU upload, first paint, connectivity reads, total browser memory and neural throughput. No worker is loaded or advanced.</p>
       </details>}
+      {data.geometryAvailable && <>
       <div role="group" aria-label="Anatomical presets" style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
         <button onClick={() => preset('whole')}>Whole retained nervous system</button><button onClick={() => preset('brain')}>Brain</button><button onClick={() => preset('cord')}>Nerve cord</button>
       </div>
@@ -177,14 +189,15 @@ export default function NervousSystem({ dataset = "male-cns:v1.0", individualId 
         </>}
       </fieldset>
       </details>
+      </>}
       <p>Cell locations and straight connection lines are not reconstructed neurites or full peripheral anatomy. No activity overlay is attached. Brain/cord presets use source annotation groups.</p>
       <label>Search cells by exact ID, type or region <input ref={searchInput} id={searchId} value={filter} onChange={e => setFilter(e.target.value)} placeholder="Exact ID, type or annotation" /></label>
       <p role="status" aria-atomic="true">{matches.count.toLocaleString()} matches; showing the first {matches.rows.length}. Search includes cells without coordinates.</p>
       <div tabIndex={0} role="region" aria-label="Searchable anatomical cells" style={{ overflowX: 'auto' }}><table><thead><tr><th>Cell</th><th>Type</th><th>Region</th><th>Display group</th><th>Position</th></tr></thead><tbody>
-        {matches.rows.map(i => <tr key={data.nodes[i][0]}><td><button aria-pressed={i === selectedIndex} onClick={() => selectCell(i, true)}>{data.nodes[i][1]}{i === selectedIndex ? ' · selected' : ''}</button></td><td>{data.nodes[i][2] || 'Unclassified'}</td><td>{data.nodes[i][4] || 'Unclassified'}</td><td>{LABELS[data.manifest.groups[data.groups[i]]] || 'Unclassified'}</td><td>{data.nodes[i][5]}</td></tr>)}
+        {matches.rows.map(i => <tr key={data.nodes[i][0]}><td><button aria-pressed={i === selectedIndex} onClick={() => selectCell(i, true)}>{data.nodes[i][1]}{i === selectedIndex ? ' · selected' : ''}</button></td><td>{data.nodes[i][2] || 'Unclassified'}</td><td>{data.nodes[i][4] || 'Unclassified'}</td><td>{data.groups ? LABELS[data.manifest.groups[data.groups[i]]] || 'Unclassified' : 'Unavailable'}</td><td>{data.nodes[i][5]}</td></tr>)}
       </tbody></table></div>
       <section aria-label="Anatomical cell inspector"><h3 ref={inspectorHeading} tabIndex={-1} style={{overflowWrap: "anywhere"}}>{selected ? selected[0] : 'Select an anatomical cell'}</h3>
-        {selected && <><p>Type: {selected[2] || 'Unclassified'} · class: {selected[3] || 'Unclassified'} · region: {selected[4] || 'Unclassified'}.</p><p>{selected[5]} {data.valid[selectedIndex] ? `Coordinates (${data.manifest.coordinates.units}): ${Array.from(data.positions.subarray(selectedIndex * 3, selectedIndex * 3 + 3)).map(v => v.toFixed(3)).join(', ')}. ${visibleGroups.includes(data.groups[selectedIndex]) ? '' : 'Its display group is currently hidden.'}` : 'No point is drawn; coordinates are never invented.'}</p></>}
+        {selected && <><p>Type: {selected[2] || 'Unclassified'} · class: {selected[3] || 'Unclassified'} · region: {selected[4] || 'Unclassified'}.</p><p>{selected[5]} {!data.geometryAvailable ? 'Coordinates unavailable; no position is drawn or inferred.' : data.valid[selectedIndex] ? `Coordinates (${data.manifest.coordinates.units}): ${Array.from(data.positions.subarray(selectedIndex * 3, selectedIndex * 3 + 3)).map(v => v.toFixed(3)).join(', ')}. ${visibleGroups.includes(data.groups[selectedIndex]) ? '' : 'Its display group is currently hidden.'}` : 'No point is drawn; coordinates are never invented.'}</p></>}
         {selected && <ConnectomeNeuronSample individualId={individualId} dataset={dataset} neuronId={selected[0]} graphManifestSha256={data.manifest.graphManifestSha256} />}
         {selected && connectionsEnabled && <>
           <h4>Incoming and outgoing anatomical connections</h4>

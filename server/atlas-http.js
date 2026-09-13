@@ -1,5 +1,5 @@
 import { join } from 'node:path';
-import { loadAtlas, ATLAS_FILES } from './atlas-data.js';
+import { loadAtlas, loadAtlasNodeMetadata, ATLAS_FILES } from './atlas-data.js';
 
 const PROFILES = Object.freeze({ 'male-cns-v1': 'male-cns:v1.0', 'banc-v888': 'banc:v888' });
 const sendJson = (response, status, value) => {
@@ -9,7 +9,7 @@ const sendJson = (response, status, value) => {
 /** Lazy, read-only anatomical assets. A profile is verified once and serves those exact bytes.
  * Unavailable/corrupt sources are never replaced with a fixture or downloaded automatically.
  */
-export function createAtlasHttp({ directory, load = loadAtlas }) {
+export function createAtlasHttp({ directory, load = loadAtlas, loadNodes = loadAtlasNodeMetadata }) {
   const cache = new Map();
   return async (request, response, pathname) => {
     if (!pathname.startsWith('/api/atlas/')) return false;
@@ -20,7 +20,7 @@ export function createAtlasHttp({ directory, load = loadAtlas }) {
     }
     if (request.method !== 'GET') { sendJson(response, 405, { error: 'Anatomical assets are read-only.' }); return true; }
     const [, slug, file] = match;
-    if (!cache.has(slug)) cache.set(slug, load(join(directory, slug), PROFILES[slug]).then(({ manifest, manifestSha256, assets }) => ({ manifest, manifestSha256, assets })).catch(() => null));
+    if (!cache.has(slug)) cache.set(slug, load(join(directory, slug), PROFILES[slug]).then(({ manifest, manifestSha256, assets }) => ({ manifest, manifestSha256, assets, geometryAvailable: true })).catch(() => loadNodes(join(directory, slug), PROFILES[slug]).then(value => ({ ...value, geometryAvailable: false })).catch(() => null)));
     const atlas = await cache.get(slug);
     if (!atlas) {
       // Permit a later explicit read to see locally generated/repaired files, never retry in a loop.
@@ -28,7 +28,9 @@ export function createAtlasHttp({ directory, load = loadAtlas }) {
       sendJson(response, file ? 503 : 200, { available: false, dataset: PROFILES[slug], reason: 'Exact pinned anatomical files are missing, incompatible or unreadable. No synthetic anatomy substituted.' });
       return true;
     }
-    if (!file) sendJson(response, 200, { available: true, manifest: atlas.manifest, manifestSha256: atlas.manifestSha256 });
+    if (!atlas.geometryAvailable) cache.delete(slug); // A later explicit load can see repaired geometry.
+    if (!file) sendJson(response, 200, { available: true, geometryAvailable: atlas.geometryAvailable, geometryReason: atlas.geometryAvailable ? null : 'Geometry unavailable; independently verified cell metadata remains searchable.', manifest: atlas.manifest, manifestSha256: atlas.manifestSha256 });
+    else if (!atlas.assets[file]) sendJson(response, 503, { available: false, reason: 'Verified geometry is unavailable; no substitute coordinates or masks are supplied.' });
     else {
       response.writeHead(200, { 'Content-Type': file === 'nodes.json' ? 'application/json' : 'application/octet-stream',
         'Content-Length': atlas.assets[file].length, 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff',
