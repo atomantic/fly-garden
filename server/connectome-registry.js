@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { openConnectomeBackend } from './connectome.js';
 import { validateNeuronSampleIds } from './sparse-lif.js';
 import { connectomeProfile } from './connectome-profiles.js';
-import { createCapacityPolicy } from './population-capacity.js';
+import { createCapacityPolicy, CapacityAdmissionError } from './population-capacity.js';
 
 const exact = (v, keys) => v && typeof v === 'object' && !Array.isArray(v) && Object.keys(v).length === keys.length && keys.every(k => Object.hasOwn(v, k));
 const idValid = id => typeof id === 'string' && /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/.test(id);
@@ -130,7 +130,7 @@ export function createConnectomeRegistry({ identities = [], capacity = createCap
           .filter(value => !(resources.residents ?? []).some(existing => existing.individualId === value.individualId))
           .map(value => ({ individualId: value.individualId, status: value.lifecycle }))];
         const decision = capacity.preflight({ ...resources, residents, incrementalMemoryBytes: footprint });
-        if (!decision.admitted) throw new Error(`Connectome load rejected: ${decision.code}: ${decision.reason}`);
+        if (!decision.admitted) throw new CapacityAdmissionError(decision.code);
         let checkpoint = r.saved;
         if (loadCheckpoint && r.checkpointId !== null) {
           checkpoint = await loadCheckpoint({ individualId: id, dataset: r.dataset, checkpointId: r.checkpointId });

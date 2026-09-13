@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { DEFAULT_CAPACITY_SETTINGS, validateCapacitySettings, estimateFootprint, assessAdmission, createCapacityPolicy } from './population-capacity.js';
+import { DEFAULT_CAPACITY_SETTINGS, validateCapacitySettings, estimateFootprint, assessAdmission, createCapacityPolicy, CapacityAdmissionError, CAPACITY_REFUSALS } from './population-capacity.js';
 const settings = { maxResidentFlies: 2, maxAggregateMemoryBytes: 1000, minFreeMemoryBytes: 100 };
 const resources = { residents: [], incrementalMemoryBytes: 100, aggregateMemoryBytes: 100, availableMemoryBytes: 1000 };
 
@@ -93,4 +93,9 @@ test('bounded fixture probe stays paused and rejects unknown or excessive alloca
   assert.equal(measureFixtureFootprint(fixture, { memoryUsage: () => ({ heapUsed: 0, rss: 0 }) }).incrementalMemoryBytes, null);
   assert.equal(measureFixtureFootprint(fixture, { memoryUsage: () => ({ heapUsed: used += 100, rss: 1000 }), maxProbeBytes: 50 }).incrementalMemoryBytes, null);
   assert.equal(measureFixtureFootprint(() => ({ snapshot: () => ({ status: 'running' }) })).incrementalMemoryBytes, null);
+});
+
+test('public admission errors accept only canonical local policy codes',()=>{
+ for(const code of Object.keys(CAPACITY_REFUSALS)){const error=new CapacityAdmissionError(code);assert.equal(error.code,code);assert(error.message.includes(CAPACITY_REFUSALS[code]));}
+ for(const code of ['PRIVATE_PATH','toString','__proto__',null,['resident-limit']])assert.throws(()=>new CapacityAdmissionError(code));
 });

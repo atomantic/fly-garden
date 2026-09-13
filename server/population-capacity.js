@@ -10,6 +10,23 @@ export const DEFAULT_CAPACITY_SETTINGS = Object.freeze({
 const positive = value => Number.isSafeInteger(value) && value > 0;
 const nonnegative = value => Number.isSafeInteger(value) && value >= 0;
 
+export const CAPACITY_REFUSALS = Object.freeze({
+  'invalid-residents': 'Resident inventory is unavailable.',
+  'resident-limit': 'Configured resident capacity is exhausted; paused loaded individuals count.',
+  'unknown-footprint': 'Incremental footprint is unknown; complete a bounded resource measurement before loading.',
+  'unknown-resources': 'Current aggregate memory or host headroom is unavailable.',
+  'aggregate-memory': 'Loading would exceed the aggregate memory budget.',
+  'memory-headroom': 'Loading would consume reserved host memory headroom.',
+});
+/** Only these local policy codes are public; worker/storage exception messages remain private. */
+export class CapacityAdmissionError extends Error {
+  constructor(code) {
+    if (typeof code !== 'string' || !Object.hasOwn(CAPACITY_REFUSALS, code)) throw new Error('Unknown capacity refusal code');
+    super(`Connectome load rejected: ${code}: ${CAPACITY_REFUSALS[code]}`);
+    Object.defineProperty(this, 'code', { value: code, enumerable: true });
+  }
+}
+
 export function validateCapacitySettings(value) {
   const keys = Object.keys(DEFAULT_CAPACITY_SETTINGS);
   if (!value || typeof value !== 'object' || Array.isArray(value)
@@ -37,13 +54,13 @@ export function estimateFootprint(components) {
 export function assessAdmission({ settings = DEFAULT_CAPACITY_SETTINGS, residents = [],
   incrementalMemoryBytes, aggregateMemoryBytes, availableMemoryBytes }) {
   settings = validateCapacitySettings(settings);
-  const reject = (code, reason) => ({ admitted: false, code, reason });
-  if (!Array.isArray(residents)) return reject('invalid-residents', 'Resident inventory is unavailable.');
-  if (residents.length >= settings.maxResidentFlies) return reject('resident-limit', 'Configured resident capacity is exhausted; paused loaded individuals count.');
-  if (!positive(incrementalMemoryBytes)) return reject('unknown-footprint', 'Incremental footprint is unknown; complete a bounded resource measurement before loading.');
-  if (!nonnegative(aggregateMemoryBytes) || !nonnegative(availableMemoryBytes)) return reject('unknown-resources', 'Current aggregate memory or host headroom is unavailable.');
-  if (incrementalMemoryBytes > settings.maxAggregateMemoryBytes - aggregateMemoryBytes) return reject('aggregate-memory', 'Loading would exceed the aggregate memory budget.');
-  if (incrementalMemoryBytes > availableMemoryBytes - settings.minFreeMemoryBytes) return reject('memory-headroom', 'Loading would consume reserved host memory headroom.');
+  const reject = code => ({ admitted: false, code, reason: CAPACITY_REFUSALS[code] });
+  if (!Array.isArray(residents)) return reject('invalid-residents');
+  if (residents.length >= settings.maxResidentFlies) return reject('resident-limit');
+  if (!positive(incrementalMemoryBytes)) return reject('unknown-footprint');
+  if (!nonnegative(aggregateMemoryBytes) || !nonnegative(availableMemoryBytes)) return reject('unknown-resources');
+  if (incrementalMemoryBytes > settings.maxAggregateMemoryBytes - aggregateMemoryBytes) return reject('aggregate-memory');
+  if (incrementalMemoryBytes > availableMemoryBytes - settings.minFreeMemoryBytes) return reject('memory-headroom');
   return { admitted: true, code: 'admitted', reason: 'Configured capacity and measured memory headroom permit a paused load.' };
 }
 

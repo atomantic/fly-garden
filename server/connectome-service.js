@@ -1,3 +1,4 @@
+import { CapacityAdmissionError } from './population-capacity.js';
 import { randomUUID } from 'node:crypto';
 import { RuntimeError } from './runtime.js';
 import { CONNECTOME_PROFILES } from './connectome-profiles.js';
@@ -29,7 +30,7 @@ export function createConnectomeService({store=null,profiles={},reason=null,capa
   function checkHealthy(){if(storageFault)fail('Catalog recovery is required before new loads or mutations.');}
   async function boundary(operation){try{return await operation();}catch(error){
     if(error.code==='CONNECTOME_DURABILITY_UNCERTAIN'||error.code==='CONNECTOME_STORE_RECOVERY_REQUIRED')storageFault=true;
-    if(error instanceof RuntimeError)throw error;
+    if(error instanceof RuntimeError || error instanceof CapacityAdmissionError)throw error;
     fail(storageFault?'Catalog selection durability is uncertain; recover storage before explicit paused reload.':'Research operation failed. Refresh current state before retrying.');
   }}
   async function create(body){
