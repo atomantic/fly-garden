@@ -11,7 +11,7 @@ const color = v => typeof v === 'string' && /^#[0-9a-fA-F]{6}$/.test(v);
 const exact = (v, names) => { if (!keys(v, names)) invalid(); };
 
 export function validateCreativeSource(input) {
-  exact(input, ['schemaVersion', 'kind', 'sessionId', 'worldId', 'modelVersion', 'checkpointId', 'participantIds', 'arrangement', 'actions', ...(Object.hasOwn(input ?? {}, 'capture') ? ['capture'] : [])]);
+  exact(input, ['schemaVersion', 'kind', 'sessionId', 'worldId', 'modelVersion', 'checkpointId', 'participantIds', 'arrangement', 'actions', ...(Object.hasOwn(input ?? {}, 'capture') ? ['capture'] : []), ...(Object.hasOwn(input ?? {}, 'participantProvenance') ? ['participantProvenance'] : [])]);
   if (input.capture !== undefined) {
     exact(input.capture, ['complete', 'reason']);
     if (typeof input.capture.complete !== 'boolean' || !(input.capture.reason === null || (typeof input.capture.reason === 'string' && input.capture.reason.length <= 256))
@@ -21,6 +21,18 @@ export function validateCreativeSource(input) {
     || !(input.checkpointId === null || text(input.checkpointId)) || !Array.isArray(input.participantIds)
     || input.participantIds.length < 1 || input.participantIds.length > CREATIVE_LIMITS.participants || !input.participantIds.every(text)
     || new Set(input.participantIds).size !== input.participantIds.length) invalid();
+  if (input.participantProvenance !== undefined) {
+    if (!Array.isArray(input.participantProvenance) || input.participantProvenance.length !== input.participantIds.length) invalid();
+    const seen = new Set();
+    for (const p of input.participantProvenance) {
+      exact(p, ['individualId', 'sessionId', 'dataset', 'modelVersion', 'checkpointId']);
+      if (!input.participantIds.includes(p.individualId) || seen.has(p.individualId) || ![p.sessionId, p.modelVersion].every(text)
+        || !(p.checkpointId === null || text(p.checkpointId))) invalid();
+      exact(p.dataset, ['namespace', 'release', 'modelId']);
+      if (!Object.values(p.dataset).every(text)) invalid();
+      seen.add(p.individualId);
+    }
+  }
   const arrangement = input.arrangement;
   exact(arrangement, ['id', 'humanContributionId', 'mappingVersion', 'flowers', 'pollen']);
   if (![arrangement.id, arrangement.humanContributionId].every(text) || arrangement.mappingVersion !== 'flower-pollen-v1'
@@ -45,6 +57,8 @@ export function validateCreativeSource(input) {
       || !Number.isSafeInteger(a.wallTimeMs) || a.wallTimeMs < 0 || a.worldTimeMs < worldTime) invalid();
     for (const point of [a.from, a.to]) { exact(point, ['x', 'y']); if (![point.x, point.y].every(v => number(v, 0, 1))) invalid(); }
     const last = previous.get(a.individualId);
+    const provenance = input.participantProvenance?.find(p => p.individualId === a.individualId);
+    if (provenance && provenance.sessionId !== a.sessionId) invalid();
     if (last && (a.sessionId !== last.sessionId || a.simulationTimeMs <= last.simulationTimeMs || a.from.x !== last.to.x || a.from.y !== last.to.y)) invalid();
     if (a.kind === 'rest' && (a.from.x !== a.to.x || a.from.y !== a.to.y)) invalid();
     actionIds.add(a.id); worldTime = a.worldTimeMs; previous.set(a.individualId, a);
@@ -88,7 +102,8 @@ function midiChunk(type, data) { const size = Buffer.alloc(4); size.writeUInt32B
 export function exportCreativeMIDI(input) {
   const artifact = deriveCreativeEvents(input);
   const metadata = Buffer.from(JSON.stringify({ kind: artifact.kind, sessionId: artifact.source.sessionId, worldId: artifact.source.worldId,
-    modelVersion: artifact.source.modelVersion, checkpointId: artifact.source.checkpointId, arrangement: artifact.source.arrangement, capture: artifact.source.capture ?? null }));
+    modelVersion: artifact.source.modelVersion, checkpointId: artifact.source.checkpointId, arrangement: artifact.source.arrangement, capture: artifact.source.capture ?? null,
+    ...(artifact.source.participantProvenance ? { participantProvenance: artifact.source.participantProvenance } : {}) }));
   const timeline = [];
   for (const e of artifact.events.filter(e => e.kind === 'note')) {
     const attribution = Buffer.from(JSON.stringify(e));

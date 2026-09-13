@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import SharedCreativeControls from './SharedCreativeControls.jsx';
 
 async function request(path, body, signal) {
   const response = await fetch(path, { signal, ...(body === undefined ? {} : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }) });
@@ -57,7 +58,8 @@ export default function SharedControls({ individuals = [], shared = null, contro
     <label>Joint checkpoint <select value={checkpoint} disabled={busy || disabled} onChange={e => setCheckpoint(e.target.value)}><option value="">Select joint save</option>
       {checkpoints.filter(item => item.payload.members.length === 2).map(item => <option key={item.jointCheckpointId} value={item.jointCheckpointId}>{item.createdAt} · tick {item.payload.tick}</option>)}</select></label>
     <button disabled={busy || disabled || !checkpoint} onClick={() => act('restore')}>Restore joint checkpoint (paused)</button>
-    <p>Restore requires both saved members already admitted and loaded. Pause or loss of either camera pauses both; separate to permit independent rest. No proximity objective, automatic encounters, language, or creative capture is enabled by joining. Shared movement capture is currently unavailable.</p>
+    <p>Restore requires both saved members already admitted and loaded. Pause or loss of either camera pauses both; separate to permit independent rest. No proximity objective, automatic encounters, language, or creative capture is enabled by joining.</p>
+    <SharedCreativeControls shared={shared} />
     {error && <p role="alert">{error}</p>}
   </section>;
 }
