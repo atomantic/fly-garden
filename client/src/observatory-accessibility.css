@@ -1,0 +1,17 @@
+/* Visible keyboard location without relying on the selected row's background. */
+.observatory-accessible :focus-visible {
+  outline: 3px solid #ffe19c;
+  outline-offset: 3px;
+}
+.observatory-accessible [role="region"][tabindex="0"] { max-width: 100%; }
+.observatory-accessible h3[tabindex="-1"] { scroll-margin-top: 16px; }
+@media (prefers-reduced-motion: reduce) {
+  .observatory-accessible, .observatory-accessible * {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+}
+@media (forced-colors: active) {
+  .observatory-accessible :focus-visible { outline-color: Highlight; }
+}

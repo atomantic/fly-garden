@@ -1,4 +1,6 @@
-import { useDeferredValue, useEffect, useMemo, useState } from 'react';
+import { useDeferredValue, useEffect, useMemo, useState, useRef, useId } from 'react';
+import './observatory-accessibility.css';
+import { selectAtlasCell } from './atlas-selection.js';
 import AtlasCanvas from './AtlasCanvas.jsx';
 import ConnectomeRecordings from './ConnectomeRecordings.jsx';
 import ConnectomeNeuronSample from './ConnectomeNeuronSample.jsx';
@@ -29,6 +31,8 @@ function validateEdges(result, data, limit) {
 
 
 export default function NervousSystem({ dataset = "male-cns:v1.0", individualId = null, onDatasetChange = () => {} }) {
+  const searchId = useId(), searchInput = useRef(null), inspectorHeading = useRef(null), focusInspector = useRef(false);
+  const [fitRevision, setFitRevision] = useState(0);
   const [connectionsEnabled, setConnectionsEnabled] = useState(false), [edgeLimit, setEdgeLimit] = useState(1000), [edgeOpacity, setEdgeOpacity] = useState(0.15);
   const [connectivity, setConnectivity] = useState(null), [connectivityError, setConnectivityError] = useState('');
   const [adjacency, setAdjacency] = useState(null), [adjacencyError, setAdjacencyError] = useState(''), [edgeOffset, setEdgeOffset] = useState(0);
@@ -67,7 +71,12 @@ export default function NervousSystem({ dataset = "male-cns:v1.0", individualId 
     load().catch(e => { if (current) setError(e.message); });
     return () => { current = false; controller.abort(); };
   }, [profile]);
-  function selectCell(index) { setSelectedIndex(index); setEdgeOffset(0); setAdjacency(null); setAdjacencyError(''); }
+  function selectCell(index, focus = false) {
+    selectAtlasCell(selectedIndex, index, focus, {
+      focusHeading: () => inspectorHeading.current?.focus(),
+      changeSelection: (next, moveFocus) => { focusInspector.current = moveFocus; setSelectedIndex(next); setEdgeOffset(0); setAdjacency(null); setAdjacencyError(''); },
+    });
+  }
   useEffect(() => {
     const controller = new AbortController(); let current = true;
     setConnectivity(null); setConnectivityError('');
@@ -99,6 +108,7 @@ export default function NervousSystem({ dataset = "male-cns:v1.0", individualId 
     }
     return () => { current = false; controller.abort(); };
   }, [connectionsEnabled, data, profile, selectedIndex, edgeOffset]);
+  useEffect(() => { if (focusInspector.current) { focusInspector.current = false; inspectorHeading.current?.focus(); } }, [selectedIndex]);
   const deferredFilter = useDeferredValue(filter);
   const matches = useMemo(() => {
     if (!data) return { count: 0, rows: [] };
@@ -116,6 +126,7 @@ export default function NervousSystem({ dataset = "male-cns:v1.0", individualId 
     return count;
   }, [data, visibleGroups]);
   function preset(kind) {
+    setFitRevision(value => value + 1);
     setVisibleGroups(data.manifest.groups.map((name, index) => ({ name, index })).filter(({ name }) => kind === 'whole'
       || kind === 'brain' && ['visual-system', 'central-brain'].includes(name)
       || kind === 'cord' && name === 'ventral-nerve-cord').map(({ index }) => index));
@@ -123,7 +134,7 @@ export default function NervousSystem({ dataset = "male-cns:v1.0", individualId 
   const displayEdges = useMemo(() => connectivity?.edges.filter(edge => data?.valid[edge.sourceIndex] && data.valid[edge.targetIndex]
     && visibleGroups.includes(data.groups[edge.sourceIndex]) && visibleGroups.includes(data.groups[edge.targetIndex])) ?? [], [connectivity, data, visibleGroups]);
   const selected = data && selectedIndex !== null ? data.nodes[selectedIndex] : null;
-  return <section className="card content-panel" aria-label="Full nervous-system atlas">
+  return <section className="card content-panel observatory-accessible" aria-label="Full nervous-system atlas">
     <span className="eyebrow">ANATOMY ONLY / PINNED DATASET</span>
     <h2>Brain and nerve cord</h2>
     <p>Measured cell locations across the brain and nerve cord. Anatomy only; no activity or learning is inferred from this view.</p>
@@ -138,7 +149,8 @@ export default function NervousSystem({ dataset = "male-cns:v1.0", individualId 
         <button onClick={() => preset('whole')}>Whole retained nervous system</button><button onClick={() => preset('brain')}>Brain</button><button onClick={() => preset('cord')}>Nerve cord</button>
       </div>
       <p className="muted">Source X/Y/Z axes · {data.manifest.coordinates.units} · anatomical direction labels not independently established</p>
-      <AtlasCanvas edges={displayEdges} edgeOpacity={edgeOpacity} positions={data.positions} valid={data.valid} groups={data.groups} visibleGroups={visibleGroups} selectedIndex={selectedIndex} pointSize={pointSize} onSelect={selectCell} />
+      <p><a href={`#${searchId}`} onClick={event => { event.preventDefault(); searchInput.current?.focus(); }}>Skip spatial controls to searchable cells</a></p>
+      <AtlasCanvas fitRevision={fitRevision} edges={displayEdges} edgeOpacity={edgeOpacity} positions={data.positions} valid={data.valid} groups={data.groups} visibleGroups={visibleGroups} selectedIndex={selectedIndex} pointSize={pointSize} onSelect={selectCell} />
       <details className="atlas-display-settings"><summary>Display groups, point size and optional connections</summary>
       <fieldset style={{ margin: '12px 0' }}><legend>Display groups (classification from source annotations)</legend>
         {data.manifest.groups.map((name, index) => <label key={name} style={{ display: 'inline-flex', gap: 5, marginRight: 15 }}><input type="checkbox" checked={visibleGroups.includes(index)} onChange={e => setVisibleGroups(current => e.target.checked ? [...current, index] : current.filter(value => value !== index))} />{LABELS[name] || name}</label>)}
@@ -154,21 +166,21 @@ export default function NervousSystem({ dataset = "male-cns:v1.0", individualId 
       </fieldset>
       </details>
       <p>Cell locations and straight connection lines are not reconstructed neurites or full peripheral anatomy. No activity overlay is attached. Brain/cord presets use source annotation groups.</p>
-      <label>Search cells by exact ID, type or region <input value={filter} onChange={e => setFilter(e.target.value)} placeholder="Exact ID, type or annotation" /></label>
-      <p>{matches.count.toLocaleString()} matches; showing the first {matches.rows.length}. Search includes cells without coordinates.</p>
-      <div style={{ overflowX: 'auto' }}><table><thead><tr><th>Cell</th><th>Type</th><th>Region</th><th>Position</th></tr></thead><tbody>
-        {matches.rows.map(i => <tr key={data.nodes[i][0]}><td><button aria-pressed={i === selectedIndex} onClick={() => selectCell(i)}>{data.nodes[i][1]}</button></td><td>{data.nodes[i][2] || 'Unclassified'}</td><td>{data.nodes[i][4] || 'Unclassified'}</td><td>{data.nodes[i][5]}</td></tr>)}
+      <label>Search cells by exact ID, type or region <input ref={searchInput} id={searchId} value={filter} onChange={e => setFilter(e.target.value)} placeholder="Exact ID, type or annotation" /></label>
+      <p role="status" aria-atomic="true">{matches.count.toLocaleString()} matches; showing the first {matches.rows.length}. Search includes cells without coordinates.</p>
+      <div tabIndex={0} role="region" aria-label="Searchable anatomical cells" style={{ overflowX: 'auto' }}><table><thead><tr><th>Cell</th><th>Type</th><th>Region</th><th>Display group</th><th>Position</th></tr></thead><tbody>
+        {matches.rows.map(i => <tr key={data.nodes[i][0]}><td><button aria-pressed={i === selectedIndex} onClick={() => selectCell(i, true)}>{data.nodes[i][1]}{i === selectedIndex ? ' · selected' : ''}</button></td><td>{data.nodes[i][2] || 'Unclassified'}</td><td>{data.nodes[i][4] || 'Unclassified'}</td><td>{LABELS[data.manifest.groups[data.groups[i]]] || 'Unclassified'}</td><td>{data.nodes[i][5]}</td></tr>)}
       </tbody></table></div>
-      <section aria-label="Anatomical cell inspector" aria-live="polite"><h3 style={{overflowWrap: "anywhere"}}>{selected ? selected[0] : 'Select an anatomical cell'}</h3>
+      <section aria-label="Anatomical cell inspector"><h3 ref={inspectorHeading} tabIndex={-1} style={{overflowWrap: "anywhere"}}>{selected ? selected[0] : 'Select an anatomical cell'}</h3>
         {selected && <><p>Type: {selected[2] || 'Unclassified'} · class: {selected[3] || 'Unclassified'} · region: {selected[4] || 'Unclassified'}.</p><p>{selected[5]} {data.valid[selectedIndex] ? `Coordinates (${data.manifest.coordinates.units}): ${Array.from(data.positions.subarray(selectedIndex * 3, selectedIndex * 3 + 3)).map(v => v.toFixed(3)).join(', ')}. ${visibleGroups.includes(data.groups[selectedIndex]) ? '' : 'Its display group is currently hidden.'}` : 'No point is drawn; coordinates are never invented.'}</p></>}
         {selected && <ConnectomeNeuronSample individualId={individualId} dataset={dataset} neuronId={selected[0]} graphManifestSha256={data.manifest.graphManifestSha256} />}
         {selected && connectionsEnabled && <>
           <h4>Incoming and outgoing anatomical connections</h4>
           {adjacencyError ? <p role="alert">{adjacencyError}</p> : !adjacency ? <p role="status">Reading selected-cell adjacency…</p> : <>
             <p>{adjacency.totalIncoming.toLocaleString()} incoming / {adjacency.totalOutgoing.toLocaleString()} outgoing edges; {adjacency.incomingContacts.toLocaleString()} incoming / {adjacency.outgoingContacts.toLocaleString()} outgoing contacts. Showing {adjacency.returnedEdges} of {adjacency.totalMatching.toLocaleString()} matching edges. Signs and weights below are engineered model mappings, not measured synaptic efficacy or learning.</p>
-            <div style={{overflowX: 'auto'}}><table><thead><tr><th>Direction</th><th>Neighbor</th><th>Contacts</th><th>Engineered sign</th><th>Engineered weight</th><th>Position</th></tr></thead><tbody>{adjacency.edges.map(edge => {
+            <div tabIndex={0} role="region" aria-label="Selected cell connections" style={{overflowX: 'auto'}}><table><thead><tr><th>Direction</th><th>Neighbor</th><th>Contacts</th><th>Engineered sign</th><th>Engineered weight</th><th>Position</th></tr></thead><tbody>{adjacency.edges.map(edge => {
               const neighbor = edge.sourceIndex === selectedIndex ? edge.targetIndex : edge.sourceIndex;
-              return <tr key={edge.edgeIndex}><td>{edge.direction}</td><td><button onClick={() => selectCell(neighbor)}>{data.nodes[neighbor][1]}</button></td><td>{edge.anatomicalContacts}</td><td>{edge.engineeredSign === -1 ? 'Inhibitory' : edge.engineeredSign === 1 ? 'Excitatory' : 'Unmapped'}</td><td>{edge.engineeredWeight.toPrecision(4)}</td><td>{data.nodes[neighbor][5]}</td></tr>;
+              return <tr key={edge.edgeIndex}><td>{edge.direction}</td><td><button onClick={() => selectCell(neighbor, true)}>{data.nodes[neighbor][1]}</button></td><td>{edge.anatomicalContacts}</td><td>{edge.engineeredSign === -1 ? 'Inhibitory' : edge.engineeredSign === 1 ? 'Excitatory' : 'Unmapped'}</td><td>{edge.engineeredWeight.toPrecision(4)}</td><td>{data.nodes[neighbor][5]}</td></tr>;
             })}</tbody></table></div>
             <button disabled={edgeOffset === 0} onClick={() => { setAdjacency(null); setEdgeOffset(Math.max(0, edgeOffset - 100)); }}>Previous connections</button>
             <button disabled={adjacency.nextOffset === null} onClick={() => { setAdjacency(null); setEdgeOffset(adjacency.nextOffset); }}>Next connections</button>

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { DATASETS, currentLabRequest, labCommand, mergeConnectomeState, readConnectomeState, readConnectomeHistory, readLabCommandReply } from './connectome-lab-state.js';
 import './connectome-lab.css';
 import ConnectomeRecordings from './ConnectomeRecordings.jsx';
+import './observatory-accessibility.css';
 
 const LABELS = {'male-cns:v1.0':'MaleCNS v1.0','banc:v888':'BANC v888'};
 const number = value => Number.isFinite(value) ? value.toLocaleString() : 'Unavailable';
@@ -105,7 +106,7 @@ export default function ConnectomeLab({ selectedIndividualId, onSelectIndividual
   const chosenProfile=catalog?.profiles.find(item=>item.dataset===dataset);
   const blocked=busy || Boolean(readError), resident=Boolean(state?.resident), transitioning=['loading','stopping'].includes(state?.status);
   const canCommand=Boolean(state)&&!blocked&&!transitioning;
-  return <section className="connectome-lab card content-panel" aria-label="Full connectome research lab">
+  return <section className="connectome-lab card content-panel observatory-accessible" aria-label="Full connectome research lab">
     <span className="eyebrow">COMPLETE PINNED GRAPHS / EXPLICIT RESEARCH STEPS</span>
     <h2>Full connectome lab</h2>
     <p>Choose an independent MaleCNS or BANC individual. The sparse LIF model retains the complete imported graph. Anatomy comes from the pinned source reconstructions. Neuron dynamics are engineered, and presynaptic signs use a simplifying mapping from source transmitter annotations. This lab has no body mapping, sensory input, learning, chemistry or language feedback.</p>
@@ -160,7 +161,7 @@ export default function ConnectomeLab({ selectedIndividualId, onSelectIndividual
           <dt>Anatomical contacts</dt><dd>{number(state.provenance?.contactCount)}</dd><dt>Model</dt><dd>{state.model?.id??profile?.modelId??'Unavailable'}</dd>
           <dt>Graph SHA-256</dt><dd>{state.graphSha256??profile?.graphSha256??'Unavailable'}</dd><dt>Manifest SHA-256</dt><dd>{state.provenance?.manifestSha256??profile?.manifestSha256??'Unavailable'}</dd>
           <dt>Worker epoch</dt><dd>{state.sessionEpoch}</dd><dt>Current durable head</dt><dd>{state.checkpointId??'No checkpoint saved'}</dd></dl>
-          <div className="lab-history"><table><thead><tr><th>Checkpoint</th><th>Parent</th><th>Restored from</th><th>SHA-256</th><th>Bytes</th></tr></thead><tbody>{history.map(item=><tr key={item.checkpointId}>
+          <div className="lab-history" tabIndex={0} role="region" aria-label="Checkpoint provenance table"><table><thead><tr><th>Checkpoint</th><th>Parent</th><th>Restored from</th><th>SHA-256</th><th>Bytes</th></tr></thead><tbody>{history.map(item=><tr key={item.checkpointId}>
             <td>{item.checkpointId}</td><td>{item.parentId??'Initial'}</td><td>{item.restoredFrom??'—'}</td><td>{item.sha256}</td><td>{number(item.bytes)}</td></tr>)}</tbody></table></div></details>
       </section>}
     </>}
