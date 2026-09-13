@@ -57,7 +57,7 @@ pm2 stop fly-garden
 
 One forked process serves the built UI and API on loopback by default. Health is available at `/api/health` and distinguishes service availability from simulation and integration availability. PM2 waits for readiness; no simulation or provider work begins on startup. Ports are defined in `ecosystem.config.cjs`. For frontend development, run `npm run dev:server` and `npm run dev` in separate terminals; Vite uses port `8791`. Rebuild before restarting production after UI changes.
 
-PM2 daemon startup/resurrection is managed by your installation. Synthetic individuals have durable explicit checkpoints, configurable resource admission, explicit paused load/unload, bounded recording/replay, and an offline backup CLI. Full connectomes have a separate [durable catalog and offline backup API](docs/CONNECTOME_STORE.md); unified automated backup remains planned. See [capacity](docs/POPULATION_CAPACITY.md), [recording](docs/RECORDINGS.md), and [backup recovery](docs/BACKUP_RECOVERY.md). Do not treat fixture persistence as validated biological continuity.
+PM2 daemon startup/resurrection is managed by your installation. Synthetic individuals have durable explicit checkpoints, configurable resource admission, explicit paused load/unload, bounded recording/replay, and an offline backup CLI. Full connectomes have a [durable catalog](docs/CONNECTOME_STORE.md); the explicit unified backup command preserves both catalogs and recording history together. See [capacity](docs/POPULATION_CAPACITY.md), [recording](docs/RECORDINGS.md), [backup recovery](docs/BACKUP_RECOVERY.md), and [operational verification](docs/OPERATIONAL_READINESS.md). Do not treat fixture persistence as validated biological continuity.
 
 ## Respect is a design requirement
 

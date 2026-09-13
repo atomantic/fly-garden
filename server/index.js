@@ -138,14 +138,33 @@ export function createServer({ runtime = createRuntime(), identities = null, dis
         if (request.method === 'GET' && url.pathname === '/api/health') {
           const state = snapshot();
           const research = connectomes.view();
+          const visitorStates = visitors ? identities.list().map(({ individualId }) => visitors.snapshot(individualId)) : [];
+          const visitorConfigured = visitorStates.some(value => value.available);
+          const visitorAdmitted = visitorStates.some(value => value.phase === 'visiting' && value.owned && value.expiresAt > Date.now());
+          const uiAvailable = await stat(resolve(distDir, 'index.html')).then(value => value.isFile(), () => false);
           return json(response, 200, { service: 'online', mode: state.source,
+            ui: { available: uiAvailable, reason: uiAvailable ? 'Built entry point is present; browser behavior is verified separately.' : 'Built UI is missing or unreadable; build the frontend.' },
+            runtime: { node: process.version, platform: process.platform, architecture: process.arch },
             simulation: state.status, persistence: identities ? 'durable-fixture' : 'session-only',
             connectome: { available: research.available, mode: 'sparse-lif-research',
               reason: research.reason ?? (research.available ? 'Complete local graph research is available; explicit paused load and bounded steps only. No garden body coupling.' : 'No verified local connectome catalog is available.'),
               residentCount: research.individuals.filter(value => value.resident).length,
               runningCount: research.individuals.filter(value => value.status === 'running').length,
+              individuals: research.individuals.map(({ individualId, dataset, resident, status, checkpointId, recoveryRequired, neural }) => ({
+                individualId, dataset, resident, status, checkpointId, recoveryRequired,
+                tick: neural?.tick ?? null, simulationTimeMs: neural?.simTimeMs ?? null,
+              })),
               profiles: research.profiles.map(({ dataset, available, neuronCount, edgeCount, measurement }) => ({ dataset, available, neuronCount, edgeCount, measuredMemoryAvailable: measurement.available })),
-              embodiment: false }, eidoverse: state.capabilities.eidoverse,
+              embodiment: false }, eidoverse: {
+                available: visitorAdmitted,
+                configured: visitorConfigured,
+                reason: visitorAdmitted
+                  ? 'A scoped fixture visit was acknowledged; this health read does not probe remote liveness.'
+                  : visitorConfigured
+                    ? 'Local bridge configured; explicit admission is required. Host readiness is not probed by health.'
+                    : 'Local managed visitor bridge is disabled; no host connection is claimed.',
+                individuals: visitorStates.map(({ individualId, phase, owned, running }) => ({ individualId, phase, owned, running })),
+              },
             llm: state.capabilities.llm, population: identities ? population() : null,
             environmentCaptureFailure,
             recording: recordings ? { ...recordings.status(), failure: recordingFailure } : { available: false } });
