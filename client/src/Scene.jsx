@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { environmentKey, topDownRetinalRGB } from "./retinal-frame.js";
+import { environmentKey } from "./retinal-frame.js";
+import { CONTROLLER_RETINA, createControllerCamera, deriveControllerRaster } from "./controller-retina.js";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 
@@ -77,10 +78,10 @@ export default function Scene({ neural, brain = false, state = null, controllerT
       return o;
     };
     let points, pointIds, body;
-    const controllerCamera = new THREE.PerspectiveCamera(90, 2, 0.05, 30);
-    const retinalTarget = new THREE.WebGLRenderTarget(8, 4, { minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter });
+    const controllerCamera = createControllerCamera();
+    const retinalTarget = new THREE.WebGLRenderTarget(CONTROLLER_RETINA.width, CONTROLLER_RETINA.height, { minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter });
     retinalTarget.texture.colorSpace = THREE.SRGBColorSpace;
-    const rgba = new Uint8Array(8 * 4 * 4);
+    const rgba = new Uint8Array(CONTROLLER_RETINA.width * CONTROLLER_RETINA.height * 4);
     let stopped = false, inFlight = false, requestController = null, boundKey = null, boundToken = null, acceptedState = null, faulted = false, previousStatus = null;
     async function sendRetina() {
       const current = source.current.state, key = environmentKey(current), token = source.current.controllerToken;
@@ -94,17 +95,13 @@ export default function Scene({ neural, brain = false, state = null, controllerT
       const latest = acceptedState && acceptedState.commandSequence === current.commandSequence && acceptedState.simTimeMs > current.simTimeMs ? acceptedState : current;
       const environment = latest.environmentAdapter, pose = environment.pose;
       if (!pose || ![pose.x, pose.z, pose.yaw].every(Number.isFinite)) { faulted = true; setFrameError('Authoritative controller pose unavailable.'); return; }
-      controllerCamera.position.set(pose.x + Math.sin(pose.yaw) * 0.95, 1.0, pose.z + Math.cos(pose.yaw) * 0.95);
-      controllerCamera.lookAt(pose.x + Math.sin(pose.yaw) * 3, 1.0, pose.z + Math.cos(pose.yaw) * 3);
       inFlight = true; requestController = new AbortController();
       const timeout = setTimeout(() => requestController?.abort(), 1000);
       try {
-        // Only original garden geometry enters the offscreen controller camera. Never sample desktop or observer camera.
-        if (body) body.visible = false;
-        renderer.setRenderTarget(retinalTarget); renderer.render(scene, controllerCamera);
-        renderer.readRenderTargetPixels(retinalTarget, 0, 0, 8, 4, rgba);
-        renderer.setRenderTarget(null); if (body) body.visible = true;
-        const rgb = topDownRetinalRGB(rgba);
+        // Only original garden geometry enters the offscreen controller camera, aimed solely by the
+        // authoritative pose. Never sample the desktop or the freely orbiting observer camera.
+        const rgb = deriveControllerRaster({ pose, camera: controllerCamera, renderer, scene, target: retinalTarget, rgba, body });
+        if (!rgb) throw new Error('Authoritative controller pose unavailable');
         const response = await fetch(`/api/individuals/${current.individualId}/environment/frames`, {
           method: 'POST', signal: requestController.signal, headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ controllerToken: token, version: 1, individualId: current.individualId, sessionId: current.sessionId,

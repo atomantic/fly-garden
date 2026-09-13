@@ -34,10 +34,51 @@ A separate perspective camera has a 90-degree vertical field of view and 2:1 asp
 
 Only one frame request is in flight. Returned individual/session/environment identity must still match the selected source before updating the body or preview. A changed epoch aborts pending work; errors, stale live snapshots and unmount stop frame delivery. Server freshness checks pause attached simulation when frames cease. The visible preview shows the last accepted raster, its simulation window, mapped currents and bounded motor output. Closing a view does not attempt a hidden detach or resume command.
 
-The row-orientation and response-identity helpers have automated tests, and the production build compiles the renderer. These checks do not replace a rendered scene-change and observer-camera-isolation browser test; that visual acceptance evidence must be reported separately.
+The row-orientation, response-identity and controller-raster helpers have automated tests, and the production build compiles the renderer. `client/src/controller-retina.js` holds the extracted single-fly derivation: `aimControllerCamera` reads the authoritative pose and nothing else, and `readControllerRaster` receives only that camera, the scene and the offscreen target. These checks do not replace a GPU-rendered scene-change browser capture; that visual acceptance evidence must be reported separately.
 
 Controller ownership is a per-recipient private lease. Every successful explicit attach returns a fresh top-level `controllerToken` only in that command response and pauses with a new environment epoch. Attaching an already attached individual deliberately transfers control while preserving its current pose. The controlling tab keeps the token locally and includes it with every frame; the registry validates and removes it before sensory processing. Ordinary state/environment reads, traces, checkpoints, health, recordings and artifact hooks never include the token. Read-only observers therefore cannot become frame producers simply by opening a tab. Pause/start/rest rotate observation epochs but retain the lease; detach/home/restore/unload revoke it. A closed or reloaded controlling tab requires explicit attachment to regain control.
 
 ## Browser integration evidence
 
 On September 12, 2026, an isolated local browser session explicitly attached and ran the controller camera. Accepted 8×4 renders advanced fixture time and exposed nonzero bounded motor output. A 717-action movement capture exported all four formats, with 717 marks and zero notes; the original flower regions were not entered during that interval. A second observer visibly reported no controller lease. Navigating the controller tab away from the garden stopped rendering, and the server paused at tick 2620 while the other observer remained open. These are synthetic-fixture integration results, not real-connectome validation. The automated dark/left-bright comparison provides the causal numerical control; the dedicated observer and controller cameras are separate Three.js objects.
+
+## Single-fly observer-isolation measurement
+
+`server/controller-retina.test.js` exercises the extracted derivation with a deterministic CPU
+projection stand-in, because `node --test` has no WebGL context. That stand-in is not the
+production rasterizer and its absolute bytes would differ from a GPU's; what it reproduces
+exactly is the property under test, that pixels are a function of the camera passed to
+`render`, of object visibility, and of nothing else. A fixed scene of fifteen original landmark
+meshes plus the illustrated body was rastered from pose `(x=0, z=-1, yaw=0)`.
+
+Four observer manipulations — orbiting to `(6.5, 5.4, 8)`, to `(-5, 2, -4)`, a top-down view at
+`(0, 12, 0.01)` and a close view at `(1.2, 0.8, 1.2)` retargeted onto the arrival pod, with the
+observer field of view changed from 40° to 25° and 70° — each changed **0 of 96 channels**, with
+**0 total absolute byte difference**; re-rastering the unchanged pose also changed 0 channels.
+The same derivation is not merely insensitive: translating the authoritative pose to `x=1.1`
+changed **27 of 96 channels** (absolute difference 3,055), yawing by π/2 changed **18** (2,114)
+and yawing by π changed **17** (1,687). Every raster render used the controller camera and the
+offscreen target, and no observer render ever wrote to that target. An unusable pose returns no
+raster and leaves the controller camera unmoved, and the illustrated body is restored even when
+the renderer throws mid-raster.
+
+This covers the single-fly `Scene.jsx` path at the criterion the SharedScene path already records
+in [SHARED_RETINAL_EVIDENCE.md](SHARED_RETINAL_EVIDENCE.md), where a real browser measured 0
+changed channels under observer motion and 48 under a partner's pose change. These are
+engineered-fixture numbers from one scene and pose pair. They do not establish coverage of all
+orientations, occlusion cases or graphics hardware, and they are not biological vision, behaviour
+or learning.
+
+## Registry frame-cessation coverage
+
+`server/environment-registry-freshness.test.js` drives the registry timer (identity-store
+`stepIndividual`, the path the server interval calls) rather than the adapter alone. While frames
+stay fresh the timer never advances the attached fixture, and an unattached neighbour keeps its
+own independent clock through the same timer. When rendering stops past the 250 ms bound, one
+timer tick pauses the runtime, rotates the environment epoch, resets the frame sequence and motor
+output to zero, and revokes enabled encounters, while tick, simulated time and neural state stay
+identical to the last accepted frame. Fifty further ticks neither free-run the paused recipient
+nor rotate the epoch again. A frame captured before the pause is refused on the retired epoch, and
+a frame rebuilt on the rotated epoch is still refused until an explicit resume; the retained pose
+and the controller lease survive the pause. The HTTP case repeats this through the local API and
+confirms the late in-flight frame is rejected with 409.
