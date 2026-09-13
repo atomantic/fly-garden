@@ -29,6 +29,31 @@ Six module tests cover no initial/disabled doses, overlapping contacts, long dwe
 
 After accepting one retinal frame, the registry supplies only its authoritative resulting pose and clock to the contact state machine. An admitted garden encounter is staged on an isolated same-identity/runtime-session copy through the existing policy. Its checkpoint reservation is written before the live runtime admits the exact same effect. A write failure faults only that recipient, leaves the previous checkpoint intact, revokes encounter enablement and never delivers the new pulse. Receipt-scoped withdrawal cancels delivery without refunding budgets. The next neural step applies any admitted pulse normally through the common policy currents.
 
+### Shared populations
+
+A joined member is no longer excluded. Each shared member owns one adapter keyed by its
+individual ID **and** the owning shared session ID; changing either scope discards the old
+adapter rather than carrying its contact state across. The adapter is fed from the committed
+barrier trace of that member alone — its own authoritative pose, its own frame ID, its own
+neural clock and status — and is bound to that member's own `createStimulusPolicy` through its
+own runtime. A partner's pose, receipts, recovery or `reservedDose` are never readable from it,
+and one member's admission can never consume or alter another member's aggregate budget.
+
+Enabling requires the shared world to be running and that member to be active; a paused world
+or a resting member refuses enablement rather than queueing it. The shared world epoch is the
+environment epoch, so starting, pausing or separating the world revokes every member's optional
+input and never silently rearms it. Resting a member, withdrawing it, or faulting it cancels
+only that member's transient delivery, retains its spent reservations without refund, and
+leaves every other member's contact state, active receipt and recovery untouched. A failure
+inside one member's update revokes only that recipient's enablement and never rewinds the
+committed barrier.
+
+Tests assert, on one shared flower with three members: two members holding independent
+receipts from the same flower while the third never doses and keeps `reservedDose` at zero;
+per-recipient habituation across 120 further barriers; a resting member's recovery clock frozen
+while the active member's keeps recovering; and rest and withdrawal each canceling only their
+own delivery.
+
 Registry tests drive actual accepted fixture frames into a small declared test flower. They inspect the persistence boundary before live delivery, verify saved garden-source reservations, exercise lifecycle revocation, and inject a disk failure while another recipient remains unchanged. Production uses the original spiral flower geometry; the small test flower is constructor-injected for bounded numerical tests and is not configurable through the HTTP API.
 
 

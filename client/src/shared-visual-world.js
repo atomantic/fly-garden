@@ -54,7 +54,9 @@ export function createSharedVisualWorld(renderer, scene, memberCount = 2) {
     finally { bodies[i].visible=true; renderer.setRenderTarget(null); }
     return rgb;
   };
-  return { applyPoses, readRetina, readBatch: () => readCompleteRetinalBatch(memberCount, readRetina), dispose: () => target.dispose() };
+  // bodies/cameras are the exact production objects. Exposing them lets headless evidence
+  // measure the real camera transform without re-deriving the placement formula above.
+  return { applyPoses, readRetina, bodies, cameras, readBatch: () => readCompleteRetinalBatch(memberCount, readRetina), dispose: () => target.dispose() };
 }
 
 /** Never return a partial sensory batch, even when a synchronous camera exceeds its budget. */

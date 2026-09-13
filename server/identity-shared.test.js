@@ -229,3 +229,21 @@ test('direct frame timeout and backward clock pause and rotate the epoch before 
     session.accept(fresh); assert.equal(session.snapshot().tick, 1);
   }
 });
+
+test('a failed version 2 joint save preserves every member mode, clock and durable head', t => {
+  let fail = false;
+  const { store, ids, path } = setup(t, { write: (path, text) => { if (fail) throw new Error('disk full'); writeFileSync(path, text); } });
+  const joined = store.sharedJoin(ids, 2);
+  store.sharedControl(joined.sharedId, 'start');
+  store.sharedMemberControl(joined.sharedId, ids[0], 'rest');
+  const before = readFileSync(join(path, 'identities.json'), 'utf8'), states = ids.map(id => store.snapshot(id));
+  fail = true; assert.throws(() => store.sharedSave(joined.sharedId), /disk full/);
+  assert.equal(readFileSync(join(path, 'identities.json'), 'utf8'), before);
+  assert.equal(store.sharedCheckpoints().length, 0);
+  const paused = store.sharedSnapshot(joined.sharedId);
+  assert.equal(paused.status, 'paused');
+  assert.deepEqual(paused.participants.map(member => member.mode), ['resting', 'active']);
+  assert.deepEqual(ids.map(id => store.snapshot(id).status), ['resting', 'paused']);
+  assert.deepEqual(ids.map(id => store.snapshot(id).simTimeMs), states.map(state => state.simTimeMs));
+  assert.deepEqual(ids.map(id => store.snapshot(id).neural), states.map(state => state.neural));
+});

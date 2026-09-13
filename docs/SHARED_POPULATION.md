@@ -29,13 +29,27 @@ at most 341. Prior artifacts and smaller participant counts remain readable.
 Capture output labels individual/session provenance and the original human
 arrangement; it does not supply reward feedback.
 
-Rest still freezes an individual's neural state. Existing shared Rest/Home
-separation and Pause-all semantics are unchanged. Frozen Rest coexistence needs
-a separate versioned world/neural-clock contract and is not implemented here.
+Rest freezes an individual's neural state. A version 1 group keeps the original
+Rest/Home separation and Pause-all semantics unchanged. A version 2 group, chosen
+explicitly at join time, adds per-member `active | resting` modes: a resting member
+keeps its frame slot with a `null` raster, advances no neural time, holds its pose
+and zero motor, and the barrier continues for the others. An all-resting group
+reports status `resting` and refuses every batch rather than running silently.
+Version 2 also supports partial withdrawal at the committed boundary: membership is
+rebuilt in place, the boundary is recorded in the session event ring, survivors keep
+their session and camera lease, and a withdrawal that would leave fewer than two
+members is refused so the caller separates the whole group instead. Rest and
+withdrawal carry no penalty, no escalation and no loss of baseline support.
+
+Each member of a shared group also owns its own encounter adapter, keyed by its
+individual ID and the owning shared session, fed only from its own committed pose
+and bound only to its own stimulus policy. One member's dose, receipt or recovery
+never reaches another member's aggregate budget.
 
 Validation uses a three-fixture one-step HTTP transaction, missing-member atomic
 rejection, joint paused restore, 64-member envelope doubles, 64-participant bounded
-capture records, and a three-body geometry check without WebGL. No high-population
+capture records, a three-body geometry check without WebGL, a three-member rest and
+partial-withdrawal transaction, and a per-recipient shared encounter isolation run. No high-population
 active simulation or full graph was run. Rendering cost includes every body in
 every controller view, so large populations may be explicitly unavailable on the
 local browser even when neural residency fits. No 64-body performance is claimed.
