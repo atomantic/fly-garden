@@ -1,0 +1,14 @@
+{
+ "version":"signed-contract-held-out-v1",
+ "executionAllowed":false,
+ "reason":"Requires separate model-specific cost review and explicit authorization; no full-graph executor exists here.",
+ "profiles":["malecns-v1","banc-v888"],
+ "cases":["gray","left-bright","right-bright","left-dark","whole-bright","bar-right","bar-encoder-disconnected","bar-readout-disconnected"],
+ "image":{"width":32,"height":16,"reference":0.5,"bright":0.75,"dark":0.25,"bar":0.625},
+ "schedule":{"grayInitialTicks":[0,39],"halfOrWholeTicks":[40,79],"barColumns8to11Ticks":[40,59],"barColumns12to15Ticks":[60,79],"grayFinalTicks":[80,255]},
+ "checkpointTick":224,"continuationTicks":32,"actualUpdatesPerCase":288,
+ "maxActualUpdates":4608,"maxWorkers":1,"deadlineSeconds":120,"sampledRssLimitBytes":2147483648,
+ "retries":0,"gainAdaptation":false,
+ "detection":{"absoluteZ":0.000001,"consecutiveTicks":10,"claim":"engineering detection floor only"},
+ "limitations":["BANC half-image projection sees identical averages at both bar positions: no direction information is present.","Full-edge workload may require 89694413568 edge visits; silent-LIF throughput is not evidence of feasibility.","No natural vision, biological fit, learning or body-control claim."]
+}
