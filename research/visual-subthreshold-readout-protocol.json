@@ -1,0 +1,37 @@
+{
+  "version": "visual-subthreshold-readout-v1",
+  "status": "frozen-before-implementation",
+  "supersedesClaim": null,
+  "relatedNegativeResults": ["#4 fixed-causal-motor-readout", "#6 compartment-specific-plasticity-validation"],
+  "reason": "DNa02 receives zero signed contact from the visual onset volley and never spikes under the binary LIF model. The kernel already tracks continuous subthreshold potential for every neuron regardless of spiking (docs/VISUAL_PROPAGATION.md). This protocol tests whether that potential, one hop downstream of the visual encoder, carries a decodable left/right signal a trained (not anatomical) readout could use.",
+  "profiles": ["male-cns:v1.0", "banc:v888"],
+  "conditions": ["unchanged-black", "changed-left-half-onset", "changed-right-half-onset", "changed-whole-field-onset"],
+  "feature": {
+    "definition": "meanPotential(hop2TargetsOfRightSideInputPorts) - meanPotential(hop2TargetsOfLeftSideInputPorts)",
+    "hop2Targets": "For each visual input port neuron (mapping.inputs), the set of CSR outgoing-edge target indices from the pinned graph. A hop-2 neuron reached from both a left-side and a right-side port contributes to both group means (no exclusive partition, no invented weighting).",
+    "readTick": 22,
+    "readSource": "kernel.inspect().potential, unmodified continuous membrane state; no spikes, gains, or invented values",
+    "reuses": "The same left/right side split and pixel-difference contrast already computed by createVisualEncoder/createOnsetEpisode (server/visual-mapping.js, server/visual-onset.js) - no new stimulus encoding is introduced"
+  },
+  "fitConditions": ["changed-left-half-onset", "changed-right-half-onset"],
+  "heldOutConditions": ["unchanged-black", "changed-whole-field-onset"],
+  "droppedControl": {
+    "name": "side-label-swap",
+    "reason": "Caught before any execution, not after seeing results: the feature is defined as mean(rightTargets) - mean(leftTargets), so swapping which group is called left/right is algebraically just negation. A control that is guaranteed to pass by the formula's own antisymmetry is vacuous, not evidence. Dropped in favor of the exact-zero requirement below, which is a real, falsifiable constraint the formula does not guarantee on its own."
+  },
+  "fit": {
+    "rule": "scale = 0.25 / max(abs(feature(changed-left-half-onset)), abs(feature(changed-right-half-onset))), clamped to [0, 1e6]",
+    "output": "yawRadiansPerSecond = clamp(scale * feature, -0.25, 0.25); forwardSpeed = 0",
+    "neuralWeights": "frozen; this rule is fit once from the two named conditions and is never adjusted after seeing held-out or control results"
+  },
+  "successThreshold": {
+    "separationFloor": 1e-6,
+    "separationRule": "abs(feature(changed-left-half-onset) - feature(changed-right-half-onset)) >= separationFloor, and the two features are not both exactly zero",
+    "blackExactZero": "feature(unchanged-black) === 0 exactly (not a band): with no onset ever injected, every hop-2 target's potential must remain at its initial zero, so any nonzero value here is a real bug, not noise.",
+    "wholeFieldBand": "abs(yaw(changed-whole-field-onset)) <= 0.01 (an engineering detection floor, not a biological claim; unlike black, whole-field is not required to be exactly zero because the left/right hop-2 target sets need not be anatomically identical in size or distribution)"
+  },
+  "outcomeRule": "A negative result on any single criterion (no separation, a nonzero black feature, or whole-field exceeding its band) is a complete, valid, disclosed outcome. No re-tuning of the feature, tick, or scale rule after seeing results.",
+  "budget": { "maxWorkers": 1, "deadlineSeconds": 60, "sampledRssLimitBytes": 1073741824, "retries": 0, "runsPerProfile": 4, "totalRuns": 8 },
+  "explicitlyOutOfScope": ["Full-graph plasticity or gain tuning", "FlyGym/MuJoCo biomechanical embodiment (see research/body_smoke.py)", "Rendering the readout's output on a live 3D body (deferred to a separate follow-up issue if this succeeds)", "Reopening or closing #4's spiking-causal claim, which remains a standing negative"],
+  "disclosure": "Engineered, trained external readout over real subthreshold connectome voltage. Never neural plasticity, never a claim of vision, perception, or biological control."
+}

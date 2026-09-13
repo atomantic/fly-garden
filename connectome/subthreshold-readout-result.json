@@ -1,0 +1,2255 @@
+{
+  "schemaVersion": 1,
+  "status": "completed-fixed-campaign",
+  "runCount": 8,
+  "results": [
+    {
+      "condition": "unchanged-black",
+      "status": "completed-bounded-trial",
+      "model": {
+        "id": "malecns-traced-lif-v1",
+        "dtMs": 1,
+        "tauMs": 20,
+        "threshold": 1,
+        "reset": 0,
+        "refractorySteps": 2,
+        "delaySteps": 1,
+        "contactGain": 0.001,
+        "restingDrive": 0,
+        "precision": "float64",
+        "integration": "exact exponential leak, then delayed instantaneous synaptic jumps"
+      },
+      "executedSteps": 25,
+      "finalClockTicks": 25,
+      "readTick": 22,
+      "feature": 0,
+      "trace": [
+        {
+          "executedStep": 1,
+          "tick": 1,
+          "simTimeMs": 1,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 2,
+          "tick": 2,
+          "simTimeMs": 2,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 3,
+          "tick": 3,
+          "simTimeMs": 3,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 4,
+          "tick": 4,
+          "simTimeMs": 4,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 5,
+          "tick": 5,
+          "simTimeMs": 5,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 6,
+          "tick": 6,
+          "simTimeMs": 6,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 7,
+          "tick": 7,
+          "simTimeMs": 7,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 8,
+          "tick": 8,
+          "simTimeMs": 8,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 9,
+          "tick": 9,
+          "simTimeMs": 9,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 10,
+          "tick": 10,
+          "simTimeMs": 10,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 11,
+          "tick": 11,
+          "simTimeMs": 11,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 12,
+          "tick": 12,
+          "simTimeMs": 12,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 13,
+          "tick": 13,
+          "simTimeMs": 13,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 14,
+          "tick": 14,
+          "simTimeMs": 14,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 15,
+          "tick": 15,
+          "simTimeMs": 15,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 16,
+          "tick": 16,
+          "simTimeMs": 16,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 17,
+          "tick": 17,
+          "simTimeMs": 17,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 18,
+          "tick": 18,
+          "simTimeMs": 18,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 19,
+          "tick": 19,
+          "simTimeMs": 19,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 20,
+          "tick": 20,
+          "simTimeMs": 20,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 21,
+          "tick": 21,
+          "simTimeMs": 21,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 22,
+          "tick": 22,
+          "simTimeMs": 22,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0,
+          "subthresholdFeature": 0
+        },
+        {
+          "executedStep": 23,
+          "tick": 23,
+          "simTimeMs": 23,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 24,
+          "tick": 24,
+          "simTimeMs": 24,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 25,
+          "tick": 25,
+          "simTimeMs": 25,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        }
+      ],
+      "interpretation": "Synthetic raster intervention and engineered subthreshold-voltage readout only; no rendered body, natural control, learning, spiking claim or subjective inference.",
+      "dataset": "male-cns:v1.0",
+      "graphSha256": "fa50e6e9add2a426f950cddc02b29b1c3dc267b98e1da33bf79cc1e5e1b3ce6a",
+      "graphManifestSha256": "12759115c299175db5afa38b4a94a9a702f19a4e453c2bebb7dfaa85e5a3b915",
+      "neuronCount": 165122,
+      "edgeCount": 25563197
+    },
+    {
+      "condition": "changed-left-half-onset",
+      "status": "completed-bounded-trial",
+      "model": {
+        "id": "malecns-traced-lif-v1",
+        "dtMs": 1,
+        "tauMs": 20,
+        "threshold": 1,
+        "reset": 0,
+        "refractorySteps": 2,
+        "delaySteps": 1,
+        "contactGain": 0.001,
+        "restingDrive": 0,
+        "precision": "float64",
+        "integration": "exact exponential leak, then delayed instantaneous synaptic jumps"
+      },
+      "executedSteps": 25,
+      "finalClockTicks": 25,
+      "readTick": 22,
+      "feature": 0.017678151985900493,
+      "trace": [
+        {
+          "executedStep": 1,
+          "tick": 1,
+          "simTimeMs": 1,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 2,
+          "tick": 2,
+          "simTimeMs": 2,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 3,
+          "tick": 3,
+          "simTimeMs": 3,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 4,
+          "tick": 4,
+          "simTimeMs": 4,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 5,
+          "tick": 5,
+          "simTimeMs": 5,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 6,
+          "tick": 6,
+          "simTimeMs": 6,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 7,
+          "tick": 7,
+          "simTimeMs": 7,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 8,
+          "tick": 8,
+          "simTimeMs": 8,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 9,
+          "tick": 9,
+          "simTimeMs": 9,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 10,
+          "tick": 10,
+          "simTimeMs": 10,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 11,
+          "tick": 11,
+          "simTimeMs": 11,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 12,
+          "tick": 12,
+          "simTimeMs": 12,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 13,
+          "tick": 13,
+          "simTimeMs": 13,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 14,
+          "tick": 14,
+          "simTimeMs": 14,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 15,
+          "tick": 15,
+          "simTimeMs": 15,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 16,
+          "tick": 16,
+          "simTimeMs": 16,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 17,
+          "tick": 17,
+          "simTimeMs": 17,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 18,
+          "tick": 18,
+          "simTimeMs": 18,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 19,
+          "tick": 19,
+          "simTimeMs": 19,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 20,
+          "tick": 20,
+          "simTimeMs": 20,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 21,
+          "tick": 21,
+          "simTimeMs": 21,
+          "spikes": 875,
+          "totalSpikes": 875,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 22,
+          "tick": 22,
+          "simTimeMs": 22,
+          "spikes": 0,
+          "totalSpikes": 875,
+          "traversedEdges": 13333,
+          "minimum": -0.127,
+          "maximum": 0,
+          "subthresholdFeature": 0.017678151985900493
+        },
+        {
+          "executedStep": 23,
+          "tick": 23,
+          "simTimeMs": 23,
+          "spikes": 0,
+          "totalSpikes": 875,
+          "traversedEdges": 13333,
+          "minimum": -0.12080613691159069,
+          "maximum": 0
+        },
+        {
+          "executedStep": 24,
+          "tick": 24,
+          "simTimeMs": 24,
+          "spikes": 0,
+          "totalSpikes": 875,
+          "traversedEdges": 13333,
+          "minimum": -0.11491435209056687,
+          "maximum": 0
+        },
+        {
+          "executedStep": 25,
+          "tick": 25,
+          "simTimeMs": 25,
+          "spikes": 0,
+          "totalSpikes": 875,
+          "traversedEdges": 13333,
+          "minimum": -0.10930991300598235,
+          "maximum": 0
+        }
+      ],
+      "interpretation": "Synthetic raster intervention and engineered subthreshold-voltage readout only; no rendered body, natural control, learning, spiking claim or subjective inference.",
+      "dataset": "male-cns:v1.0",
+      "graphSha256": "fa50e6e9add2a426f950cddc02b29b1c3dc267b98e1da33bf79cc1e5e1b3ce6a",
+      "graphManifestSha256": "12759115c299175db5afa38b4a94a9a702f19a4e453c2bebb7dfaa85e5a3b915",
+      "neuronCount": 165122,
+      "edgeCount": 25563197
+    },
+    {
+      "condition": "changed-right-half-onset",
+      "status": "completed-bounded-trial",
+      "model": {
+        "id": "malecns-traced-lif-v1",
+        "dtMs": 1,
+        "tauMs": 20,
+        "threshold": 1,
+        "reset": 0,
+        "refractorySteps": 2,
+        "delaySteps": 1,
+        "contactGain": 0.001,
+        "restingDrive": 0,
+        "precision": "float64",
+        "integration": "exact exponential leak, then delayed instantaneous synaptic jumps"
+      },
+      "executedSteps": 25,
+      "finalClockTicks": 25,
+      "readTick": 22,
+      "feature": -0.01900187460346108,
+      "trace": [
+        {
+          "executedStep": 1,
+          "tick": 1,
+          "simTimeMs": 1,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 2,
+          "tick": 2,
+          "simTimeMs": 2,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 3,
+          "tick": 3,
+          "simTimeMs": 3,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 4,
+          "tick": 4,
+          "simTimeMs": 4,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 5,
+          "tick": 5,
+          "simTimeMs": 5,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 6,
+          "tick": 6,
+          "simTimeMs": 6,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 7,
+          "tick": 7,
+          "simTimeMs": 7,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 8,
+          "tick": 8,
+          "simTimeMs": 8,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 9,
+          "tick": 9,
+          "simTimeMs": 9,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 10,
+          "tick": 10,
+          "simTimeMs": 10,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 11,
+          "tick": 11,
+          "simTimeMs": 11,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 12,
+          "tick": 12,
+          "simTimeMs": 12,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 13,
+          "tick": 13,
+          "simTimeMs": 13,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 14,
+          "tick": 14,
+          "simTimeMs": 14,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 15,
+          "tick": 15,
+          "simTimeMs": 15,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 16,
+          "tick": 16,
+          "simTimeMs": 16,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 17,
+          "tick": 17,
+          "simTimeMs": 17,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 18,
+          "tick": 18,
+          "simTimeMs": 18,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 19,
+          "tick": 19,
+          "simTimeMs": 19,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 20,
+          "tick": 20,
+          "simTimeMs": 20,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 21,
+          "tick": 21,
+          "simTimeMs": 21,
+          "spikes": 892,
+          "totalSpikes": 892,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 22,
+          "tick": 22,
+          "simTimeMs": 22,
+          "spikes": 0,
+          "totalSpikes": 892,
+          "traversedEdges": 14407,
+          "minimum": -0.14800000000000002,
+          "maximum": 0,
+          "subthresholdFeature": -0.01900187460346108
+        },
+        {
+          "executedStep": 23,
+          "tick": 23,
+          "simTimeMs": 23,
+          "spikes": 0,
+          "totalSpikes": 892,
+          "traversedEdges": 14407,
+          "minimum": -0.1407819548261057,
+          "maximum": 0
+        },
+        {
+          "executedStep": 24,
+          "tick": 24,
+          "simTimeMs": 24,
+          "spikes": 0,
+          "totalSpikes": 892,
+          "traversedEdges": 14407,
+          "minimum": -0.13391593786932204,
+          "maximum": 0
+        },
+        {
+          "executedStep": 25,
+          "tick": 25,
+          "simTimeMs": 25,
+          "spikes": 0,
+          "totalSpikes": 892,
+          "traversedEdges": 14407,
+          "minimum": -0.12738478051090857,
+          "maximum": 0
+        }
+      ],
+      "interpretation": "Synthetic raster intervention and engineered subthreshold-voltage readout only; no rendered body, natural control, learning, spiking claim or subjective inference.",
+      "dataset": "male-cns:v1.0",
+      "graphSha256": "fa50e6e9add2a426f950cddc02b29b1c3dc267b98e1da33bf79cc1e5e1b3ce6a",
+      "graphManifestSha256": "12759115c299175db5afa38b4a94a9a702f19a4e453c2bebb7dfaa85e5a3b915",
+      "neuronCount": 165122,
+      "edgeCount": 25563197
+    },
+    {
+      "condition": "changed-whole-field-onset",
+      "status": "completed-bounded-trial",
+      "model": {
+        "id": "malecns-traced-lif-v1",
+        "dtMs": 1,
+        "tauMs": 20,
+        "threshold": 1,
+        "reset": 0,
+        "refractorySteps": 2,
+        "delaySteps": 1,
+        "contactGain": 0.001,
+        "restingDrive": 0,
+        "precision": "float64",
+        "integration": "exact exponential leak, then delayed instantaneous synaptic jumps"
+      },
+      "executedSteps": 25,
+      "finalClockTicks": 25,
+      "readTick": 22,
+      "feature": -0.001323722617560582,
+      "trace": [
+        {
+          "executedStep": 1,
+          "tick": 1,
+          "simTimeMs": 1,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 2,
+          "tick": 2,
+          "simTimeMs": 2,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 3,
+          "tick": 3,
+          "simTimeMs": 3,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 4,
+          "tick": 4,
+          "simTimeMs": 4,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 5,
+          "tick": 5,
+          "simTimeMs": 5,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 6,
+          "tick": 6,
+          "simTimeMs": 6,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 7,
+          "tick": 7,
+          "simTimeMs": 7,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 8,
+          "tick": 8,
+          "simTimeMs": 8,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 9,
+          "tick": 9,
+          "simTimeMs": 9,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 10,
+          "tick": 10,
+          "simTimeMs": 10,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 11,
+          "tick": 11,
+          "simTimeMs": 11,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 12,
+          "tick": 12,
+          "simTimeMs": 12,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 13,
+          "tick": 13,
+          "simTimeMs": 13,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 14,
+          "tick": 14,
+          "simTimeMs": 14,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 15,
+          "tick": 15,
+          "simTimeMs": 15,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 16,
+          "tick": 16,
+          "simTimeMs": 16,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 17,
+          "tick": 17,
+          "simTimeMs": 17,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 18,
+          "tick": 18,
+          "simTimeMs": 18,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 19,
+          "tick": 19,
+          "simTimeMs": 19,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 20,
+          "tick": 20,
+          "simTimeMs": 20,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 21,
+          "tick": 21,
+          "simTimeMs": 21,
+          "spikes": 1767,
+          "totalSpikes": 1767,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 22,
+          "tick": 22,
+          "simTimeMs": 22,
+          "spikes": 0,
+          "totalSpikes": 1767,
+          "traversedEdges": 27740,
+          "minimum": -0.14800000000000002,
+          "maximum": 0,
+          "subthresholdFeature": -0.001323722617560582
+        },
+        {
+          "executedStep": 23,
+          "tick": 23,
+          "simTimeMs": 23,
+          "spikes": 0,
+          "totalSpikes": 1767,
+          "traversedEdges": 27740,
+          "minimum": -0.1407819548261057,
+          "maximum": 0
+        },
+        {
+          "executedStep": 24,
+          "tick": 24,
+          "simTimeMs": 24,
+          "spikes": 0,
+          "totalSpikes": 1767,
+          "traversedEdges": 27740,
+          "minimum": -0.13391593786932204,
+          "maximum": 0
+        },
+        {
+          "executedStep": 25,
+          "tick": 25,
+          "simTimeMs": 25,
+          "spikes": 0,
+          "totalSpikes": 1767,
+          "traversedEdges": 27740,
+          "minimum": -0.12738478051090857,
+          "maximum": 0
+        }
+      ],
+      "interpretation": "Synthetic raster intervention and engineered subthreshold-voltage readout only; no rendered body, natural control, learning, spiking claim or subjective inference.",
+      "dataset": "male-cns:v1.0",
+      "graphSha256": "fa50e6e9add2a426f950cddc02b29b1c3dc267b98e1da33bf79cc1e5e1b3ce6a",
+      "graphManifestSha256": "12759115c299175db5afa38b4a94a9a702f19a4e453c2bebb7dfaa85e5a3b915",
+      "neuronCount": 165122,
+      "edgeCount": 25563197
+    },
+    {
+      "condition": "unchanged-black",
+      "status": "completed-bounded-trial",
+      "model": {
+        "id": "banc-proofread-lif-v1",
+        "dtMs": 1,
+        "tauMs": 20,
+        "threshold": 1,
+        "reset": 0,
+        "refractorySteps": 2,
+        "delaySteps": 1,
+        "contactGain": 0.001,
+        "restingDrive": 0,
+        "precision": "float64",
+        "integration": "exact exponential leak, then delayed instantaneous synaptic jumps"
+      },
+      "executedSteps": 25,
+      "finalClockTicks": 25,
+      "readTick": 22,
+      "feature": 0,
+      "trace": [
+        {
+          "executedStep": 1,
+          "tick": 1,
+          "simTimeMs": 1,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 2,
+          "tick": 2,
+          "simTimeMs": 2,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 3,
+          "tick": 3,
+          "simTimeMs": 3,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 4,
+          "tick": 4,
+          "simTimeMs": 4,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 5,
+          "tick": 5,
+          "simTimeMs": 5,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 6,
+          "tick": 6,
+          "simTimeMs": 6,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 7,
+          "tick": 7,
+          "simTimeMs": 7,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 8,
+          "tick": 8,
+          "simTimeMs": 8,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 9,
+          "tick": 9,
+          "simTimeMs": 9,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 10,
+          "tick": 10,
+          "simTimeMs": 10,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 11,
+          "tick": 11,
+          "simTimeMs": 11,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 12,
+          "tick": 12,
+          "simTimeMs": 12,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 13,
+          "tick": 13,
+          "simTimeMs": 13,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 14,
+          "tick": 14,
+          "simTimeMs": 14,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 15,
+          "tick": 15,
+          "simTimeMs": 15,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 16,
+          "tick": 16,
+          "simTimeMs": 16,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 17,
+          "tick": 17,
+          "simTimeMs": 17,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 18,
+          "tick": 18,
+          "simTimeMs": 18,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 19,
+          "tick": 19,
+          "simTimeMs": 19,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 20,
+          "tick": 20,
+          "simTimeMs": 20,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 21,
+          "tick": 21,
+          "simTimeMs": 21,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 22,
+          "tick": 22,
+          "simTimeMs": 22,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0,
+          "subthresholdFeature": 0
+        },
+        {
+          "executedStep": 23,
+          "tick": 23,
+          "simTimeMs": 23,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 24,
+          "tick": 24,
+          "simTimeMs": 24,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 25,
+          "tick": 25,
+          "simTimeMs": 25,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        }
+      ],
+      "interpretation": "Synthetic raster intervention and engineered subthreshold-voltage readout only; no rendered body, natural control, learning, spiking claim or subjective inference.",
+      "dataset": "banc:v888",
+      "graphSha256": "b8e648ec2585061b91fb07ad22b33d41939e0b2c8b56e7f7dbf7d6f172025e99",
+      "graphManifestSha256": "6d24b3d65b879c1d456fc48e2ac84e81ecae61fdf17749de0c58b3b9c1b5ac99",
+      "neuronCount": 155858,
+      "edgeCount": 13366670
+    },
+    {
+      "condition": "changed-left-half-onset",
+      "status": "completed-bounded-trial",
+      "model": {
+        "id": "banc-proofread-lif-v1",
+        "dtMs": 1,
+        "tauMs": 20,
+        "threshold": 1,
+        "reset": 0,
+        "refractorySteps": 2,
+        "delaySteps": 1,
+        "contactGain": 0.001,
+        "restingDrive": 0,
+        "precision": "float64",
+        "integration": "exact exponential leak, then delayed instantaneous synaptic jumps"
+      },
+      "executedSteps": 25,
+      "finalClockTicks": 25,
+      "readTick": 22,
+      "feature": 0.006935268713589282,
+      "trace": [
+        {
+          "executedStep": 1,
+          "tick": 1,
+          "simTimeMs": 1,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 2,
+          "tick": 2,
+          "simTimeMs": 2,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 3,
+          "tick": 3,
+          "simTimeMs": 3,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 4,
+          "tick": 4,
+          "simTimeMs": 4,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 5,
+          "tick": 5,
+          "simTimeMs": 5,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 6,
+          "tick": 6,
+          "simTimeMs": 6,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 7,
+          "tick": 7,
+          "simTimeMs": 7,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 8,
+          "tick": 8,
+          "simTimeMs": 8,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 9,
+          "tick": 9,
+          "simTimeMs": 9,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 10,
+          "tick": 10,
+          "simTimeMs": 10,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 11,
+          "tick": 11,
+          "simTimeMs": 11,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 12,
+          "tick": 12,
+          "simTimeMs": 12,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 13,
+          "tick": 13,
+          "simTimeMs": 13,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 14,
+          "tick": 14,
+          "simTimeMs": 14,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 15,
+          "tick": 15,
+          "simTimeMs": 15,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 16,
+          "tick": 16,
+          "simTimeMs": 16,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 17,
+          "tick": 17,
+          "simTimeMs": 17,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 18,
+          "tick": 18,
+          "simTimeMs": 18,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 19,
+          "tick": 19,
+          "simTimeMs": 19,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 20,
+          "tick": 20,
+          "simTimeMs": 20,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 21,
+          "tick": 21,
+          "simTimeMs": 21,
+          "spikes": 716,
+          "totalSpikes": 716,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 22,
+          "tick": 22,
+          "simTimeMs": 22,
+          "spikes": 0,
+          "totalSpikes": 716,
+          "traversedEdges": 11614,
+          "minimum": -0.121,
+          "maximum": 0.074,
+          "subthresholdFeature": 0.006935268713589282
+        },
+        {
+          "executedStep": 23,
+          "tick": 23,
+          "simTimeMs": 23,
+          "spikes": 0,
+          "totalSpikes": 716,
+          "traversedEdges": 11614,
+          "minimum": -0.1150987603645864,
+          "maximum": 0.07039097741305284
+        },
+        {
+          "executedStep": 24,
+          "tick": 24,
+          "simTimeMs": 24,
+          "spikes": 0,
+          "totalSpikes": 716,
+          "traversedEdges": 11614,
+          "minimum": -0.1094853275823511,
+          "maximum": 0.06695796893466101
+        },
+        {
+          "executedStep": 25,
+          "tick": 25,
+          "simTimeMs": 25,
+          "spikes": 0,
+          "totalSpikes": 716,
+          "traversedEdges": 11614,
+          "minimum": -0.104145665147432,
+          "maximum": 0.06369239025545428
+        }
+      ],
+      "interpretation": "Synthetic raster intervention and engineered subthreshold-voltage readout only; no rendered body, natural control, learning, spiking claim or subjective inference.",
+      "dataset": "banc:v888",
+      "graphSha256": "b8e648ec2585061b91fb07ad22b33d41939e0b2c8b56e7f7dbf7d6f172025e99",
+      "graphManifestSha256": "6d24b3d65b879c1d456fc48e2ac84e81ecae61fdf17749de0c58b3b9c1b5ac99",
+      "neuronCount": 155858,
+      "edgeCount": 13366670
+    },
+    {
+      "condition": "changed-right-half-onset",
+      "status": "completed-bounded-trial",
+      "model": {
+        "id": "banc-proofread-lif-v1",
+        "dtMs": 1,
+        "tauMs": 20,
+        "threshold": 1,
+        "reset": 0,
+        "refractorySteps": 2,
+        "delaySteps": 1,
+        "contactGain": 0.001,
+        "restingDrive": 0,
+        "precision": "float64",
+        "integration": "exact exponential leak, then delayed instantaneous synaptic jumps"
+      },
+      "executedSteps": 25,
+      "finalClockTicks": 25,
+      "readTick": 22,
+      "feature": -0.012350784747525621,
+      "trace": [
+        {
+          "executedStep": 1,
+          "tick": 1,
+          "simTimeMs": 1,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 2,
+          "tick": 2,
+          "simTimeMs": 2,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 3,
+          "tick": 3,
+          "simTimeMs": 3,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 4,
+          "tick": 4,
+          "simTimeMs": 4,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 5,
+          "tick": 5,
+          "simTimeMs": 5,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 6,
+          "tick": 6,
+          "simTimeMs": 6,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 7,
+          "tick": 7,
+          "simTimeMs": 7,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 8,
+          "tick": 8,
+          "simTimeMs": 8,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 9,
+          "tick": 9,
+          "simTimeMs": 9,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 10,
+          "tick": 10,
+          "simTimeMs": 10,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 11,
+          "tick": 11,
+          "simTimeMs": 11,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 12,
+          "tick": 12,
+          "simTimeMs": 12,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 13,
+          "tick": 13,
+          "simTimeMs": 13,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 14,
+          "tick": 14,
+          "simTimeMs": 14,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 15,
+          "tick": 15,
+          "simTimeMs": 15,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 16,
+          "tick": 16,
+          "simTimeMs": 16,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 17,
+          "tick": 17,
+          "simTimeMs": 17,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 18,
+          "tick": 18,
+          "simTimeMs": 18,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 19,
+          "tick": 19,
+          "simTimeMs": 19,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 20,
+          "tick": 20,
+          "simTimeMs": 20,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 21,
+          "tick": 21,
+          "simTimeMs": 21,
+          "spikes": 874,
+          "totalSpikes": 874,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 22,
+          "tick": 22,
+          "simTimeMs": 22,
+          "spikes": 0,
+          "totalSpikes": 874,
+          "traversedEdges": 17220,
+          "minimum": -0.136,
+          "maximum": 0.064,
+          "subthresholdFeature": -0.012350784747525621
+        },
+        {
+          "executedStep": 23,
+          "tick": 23,
+          "simTimeMs": 23,
+          "spikes": 0,
+          "totalSpikes": 874,
+          "traversedEdges": 17220,
+          "minimum": -0.12936720173209712,
+          "maximum": 0.0608786831680457
+        },
+        {
+          "executedStep": 24,
+          "tick": 24,
+          "simTimeMs": 24,
+          "spikes": 0,
+          "totalSpikes": 874,
+          "traversedEdges": 17220,
+          "minimum": -0.12305788885289051,
+          "maximum": 0.057909594754301415
+        },
+        {
+          "executedStep": 25,
+          "tick": 25,
+          "simTimeMs": 25,
+          "spikes": 0,
+          "totalSpikes": 874,
+          "traversedEdges": 17220,
+          "minimum": -0.11705628479380788,
+          "maximum": 0.0550853104912037
+        }
+      ],
+      "interpretation": "Synthetic raster intervention and engineered subthreshold-voltage readout only; no rendered body, natural control, learning, spiking claim or subjective inference.",
+      "dataset": "banc:v888",
+      "graphSha256": "b8e648ec2585061b91fb07ad22b33d41939e0b2c8b56e7f7dbf7d6f172025e99",
+      "graphManifestSha256": "6d24b3d65b879c1d456fc48e2ac84e81ecae61fdf17749de0c58b3b9c1b5ac99",
+      "neuronCount": 155858,
+      "edgeCount": 13366670
+    },
+    {
+      "condition": "changed-whole-field-onset",
+      "status": "completed-bounded-trial",
+      "model": {
+        "id": "banc-proofread-lif-v1",
+        "dtMs": 1,
+        "tauMs": 20,
+        "threshold": 1,
+        "reset": 0,
+        "refractorySteps": 2,
+        "delaySteps": 1,
+        "contactGain": 0.001,
+        "restingDrive": 0,
+        "precision": "float64",
+        "integration": "exact exponential leak, then delayed instantaneous synaptic jumps"
+      },
+      "executedSteps": 25,
+      "finalClockTicks": 25,
+      "readTick": 22,
+      "feature": -0.005415516033936338,
+      "trace": [
+        {
+          "executedStep": 1,
+          "tick": 1,
+          "simTimeMs": 1,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 2,
+          "tick": 2,
+          "simTimeMs": 2,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 3,
+          "tick": 3,
+          "simTimeMs": 3,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 4,
+          "tick": 4,
+          "simTimeMs": 4,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 5,
+          "tick": 5,
+          "simTimeMs": 5,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 6,
+          "tick": 6,
+          "simTimeMs": 6,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 7,
+          "tick": 7,
+          "simTimeMs": 7,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 8,
+          "tick": 8,
+          "simTimeMs": 8,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 9,
+          "tick": 9,
+          "simTimeMs": 9,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 10,
+          "tick": 10,
+          "simTimeMs": 10,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 11,
+          "tick": 11,
+          "simTimeMs": 11,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 12,
+          "tick": 12,
+          "simTimeMs": 12,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 13,
+          "tick": 13,
+          "simTimeMs": 13,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 14,
+          "tick": 14,
+          "simTimeMs": 14,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 15,
+          "tick": 15,
+          "simTimeMs": 15,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 16,
+          "tick": 16,
+          "simTimeMs": 16,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 17,
+          "tick": 17,
+          "simTimeMs": 17,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 18,
+          "tick": 18,
+          "simTimeMs": 18,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 19,
+          "tick": 19,
+          "simTimeMs": 19,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 20,
+          "tick": 20,
+          "simTimeMs": 20,
+          "spikes": 0,
+          "totalSpikes": 0,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 21,
+          "tick": 21,
+          "simTimeMs": 21,
+          "spikes": 1590,
+          "totalSpikes": 1590,
+          "traversedEdges": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        {
+          "executedStep": 22,
+          "tick": 22,
+          "simTimeMs": 22,
+          "spikes": 0,
+          "totalSpikes": 1590,
+          "traversedEdges": 28834,
+          "minimum": -0.136,
+          "maximum": 0.074,
+          "subthresholdFeature": -0.005415516033936338
+        },
+        {
+          "executedStep": 23,
+          "tick": 23,
+          "simTimeMs": 23,
+          "spikes": 0,
+          "totalSpikes": 1590,
+          "traversedEdges": 28834,
+          "minimum": -0.12936720173209712,
+          "maximum": 0.07039097741305284
+        },
+        {
+          "executedStep": 24,
+          "tick": 24,
+          "simTimeMs": 24,
+          "spikes": 0,
+          "totalSpikes": 1590,
+          "traversedEdges": 28834,
+          "minimum": -0.12305788885289051,
+          "maximum": 0.06695796893466101
+        },
+        {
+          "executedStep": 25,
+          "tick": 25,
+          "simTimeMs": 25,
+          "spikes": 0,
+          "totalSpikes": 1590,
+          "traversedEdges": 28834,
+          "minimum": -0.11705628479380788,
+          "maximum": 0.06369239025545428
+        }
+      ],
+      "interpretation": "Synthetic raster intervention and engineered subthreshold-voltage readout only; no rendered body, natural control, learning, spiking claim or subjective inference.",
+      "dataset": "banc:v888",
+      "graphSha256": "b8e648ec2585061b91fb07ad22b33d41939e0b2c8b56e7f7dbf7d6f172025e99",
+      "graphManifestSha256": "6d24b3d65b879c1d456fc48e2ac84e81ecae61fdf17749de0c58b3b9c1b5ac99",
+      "neuronCount": 155858,
+      "edgeCount": 13366670
+    }
+  ],
+  "sampledPeakRssBytes": 446038016,
+  "totalWallMs": 4295.976458,
+  "maxMemoryBytes": 1073741824,
+  "maxWallMs": 60000,
+  "retries": 0,
+  "runtime": "v24.14.1",
+  "platform": "darwin",
+  "architecture": "arm64"
+}
