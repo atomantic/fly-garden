@@ -76,3 +76,39 @@ test('joint restore requires the entire exact saved membership before counters o
  }
  assert.equal(await request(members.slice(0,3).toReversed()),200);assert.equal(consumed,1);assert.equal(restored,1);
 });
+
+// HTTP contract doubles for the per-member quiet-state route. No runtime or neural advancement.
+test('per-member rest, resume and withdrawal use one sequenced envelope and never bypass membership', async () => {
+ const sharedId=randomUUID(),worldEpoch=randomUUID();
+ const members=Array.from({length:3},()=>({protocolVersion:1,individualId:randomUUID(),sessionId:randomUUID(),sequence:1}));
+ const states=new Map(members.map(m=>[m.individualId,{...m,source:'fixture',persistence:{resident:true}}]));
+ const participants=members.map(m=>({individualId:m.individualId,sessionId:m.sessionId,mode:'active'}));
+ const calls=[];let joinVersion=null;
+ const state=()=>({version:2,sharedId,worldEpoch,participants});
+ const handler=createSharedHttp({identities:{
+   sharedJoin:(ids,version)=>{joinVersion=version;return state();},
+   sharedSnapshot:()=>state(),
+   sharedMemberControl:(id,individualId,action)=>{calls.push([id,individualId,action]);return state();}},
+  snapshot:id=>states.get(id),consumeSequences:()=>{}});
+ const request=async(path,body)=>{const req=Readable.from([Buffer.from(JSON.stringify(body))]);req.method='POST';req.headers={'content-type':'application/json'};
+  let status,payload;await handler(req,{writeHead:s=>status=s,end:text=>{payload=JSON.parse(text);}},new URL(`http://localhost/api/shared/${path}`));return {status,payload};};
+ assert.equal((await request('join',{protocolVersion:1,members,sharedVersion:2})).status,200);
+ assert.equal(joinVersion,2);
+ assert.equal((await request('join',{protocolVersion:1,members,sharedVersion:3})).status,400);
+ assert.equal((await request('join',{protocolVersion:1,members})).status,200);
+ assert.equal(joinVersion,1);
+ const envelope=(extra={})=>({protocolVersion:1,sharedId,worldEpoch,sequence:1,individualId:members[0].individualId,action:'rest',...extra});
+ assert.equal((await request(`${sharedId}/member`,envelope())).status,200);
+ assert.deepEqual(calls,[[sharedId,members[0].individualId,'rest']]);
+ // Replayed, stale-epoch, unknown-member, unsupported-action and extra-key envelopes all reject.
+ for (const bad of [envelope(),envelope({sequence:5}),envelope({worldEpoch:'stale'}),envelope({sharedId:'other'}),
+   envelope({individualId:randomUUID()}),envelope({action:'start'}),envelope({action:'separate'}),{...envelope({sequence:2}),extra:1}]) {
+   assert.equal((await request(`${sharedId}/member`,bad)).status,409,JSON.stringify(bad));
+ }
+ assert.equal(calls.length,1);
+ assert.equal((await request(`${sharedId}/member`,envelope({sequence:2,action:'resume'}))).status,200);
+ assert.equal((await request(`${sharedId}/member`,envelope({sequence:3,action:'withdraw',individualId:members[2].individualId}))).status,200);
+ assert.deepEqual(calls.map(call=>call[2]),['rest','resume','withdraw']);
+ // The member route carries no controller token and stays POST-only.
+ assert.equal(JSON.stringify((await request(`${sharedId}/member`,envelope({sequence:4,action:'rest'}))).payload).includes('controllerToken'),false);
+});

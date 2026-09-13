@@ -29,7 +29,7 @@ export function createSharedHttp({ identities, snapshot = id => identities.snaps
   }
   return async (request, response, url) => {
     const special = /^\/api\/shared\/(join|restore|checkpoints)$/.exec(url.pathname);
-    const route = /^\/api\/shared\/([0-9a-f-]+)(?:\/(control|frames))?$/.exec(url.pathname);
+    const route = /^\/api\/shared\/([0-9a-f-]+)(?:\/(control|frames|member))?$/.exec(url.pathname);
     if (!special && !route) return false;
     try {
       if (!identities) throw new RuntimeError('Durable shared fixture sessions are unavailable.', 409);
@@ -39,8 +39,10 @@ export function createSharedHttp({ identities, snapshot = id => identities.snaps
       if (request.method !== 'POST' || (route && !route[2]) || special?.[1] === 'checkpoints') throw new RuntimeError('Unsupported shared method.', 405);
       const body = await bodyFor(request);
       if (special) {
-        const action = special[1], keys = action === 'restore' ? ['protocolVersion', 'jointCheckpointId', 'members'] : ['protocolVersion', 'members'];
-        if (!exact(body, keys) || body.protocolVersion !== 1) throw new RuntimeError('Invalid shared membership request.');
+        const action = special[1], keys = action === 'restore' ? ['protocolVersion', 'jointCheckpointId', 'members']
+          : ['protocolVersion', 'members', ...(Object.hasOwn(body ?? {}, 'sharedVersion') ? ['sharedVersion'] : [])];
+        if (!exact(body, keys) || body.protocolVersion !== 1
+          || (Object.hasOwn(body, 'sharedVersion') && ![1, 2].includes(body.sharedVersion))) throw new RuntimeError('Invalid shared membership request.');
         let expected = null;
         if (action === 'restore') {
           const checkpoint = identities.sharedCheckpoints().find(item => item.jointCheckpointId === body.jointCheckpointId);
@@ -51,7 +53,7 @@ export function createSharedHttp({ identities, snapshot = id => identities.snaps
         // Validation of all recipient envelopes precedes any sequence consumption or runtime mutation.
         const previousSharedIds = body.members.map(member => snapshot(member.individualId).sharedSession?.sharedId).filter(Boolean);
         consumeSequences(body.members);
-        const result = action === 'join' ? identities.sharedJoin(body.members.map(item => item.individualId)) : identities.sharedRestore(body.jointCheckpointId);
+        const result = action === 'join' ? identities.sharedJoin(body.members.map(item => item.individualId), body.sharedVersion ?? 1) : identities.sharedRestore(body.jointCheckpointId);
         const { controllerToken, ...state } = result;
         for (const previousId of previousSharedIds) sequences.delete(previousId);
         sequences.set(state.sharedId, 0);
@@ -59,7 +61,19 @@ export function createSharedHttp({ identities, snapshot = id => identities.snaps
         send(response, 200, { ...bundle(state), controllerToken });
       } else {
         const [, id, action] = route, prior = identities.sharedSnapshot(id);
-        if (action === 'frames') {
+        if (action === 'member') {
+          // Per-member quiet state and partial withdrawal. Membership/mode changes keep the world
+          // epoch, so a still valid controller lease is never revoked by another member's rest.
+          if (!exact(body, ['protocolVersion', 'sharedId', 'worldEpoch', 'sequence', 'individualId', 'action']) || body.protocolVersion !== 1
+            || body.sharedId !== id || body.worldEpoch !== prior.worldEpoch || !Number.isSafeInteger(body.sequence)
+            || body.sequence !== (sequences.get(id) ?? 0) + 1 || typeof body.individualId !== 'string'
+            || !prior.participants.some(item => item.individualId === body.individualId)
+            || !['rest', 'resume', 'withdraw'].includes(body.action)) throw new RuntimeError('Stale or invalid shared member envelope.', 409);
+          sequences.set(id, body.sequence);
+          const state = identities.sharedMemberControl(id, body.individualId, body.action);
+          afterTransition(prior.participants.map(item => item.individualId), body.action);
+          send(response, 200, bundle(state));
+        } else if (action === 'frames') {
           const result = identities.sharedFrame(id, body);
           afterFrames(result.traces, id);
           send(response, 200, { ...bundle(identities.sharedSnapshot(id)), traces: result.traces });

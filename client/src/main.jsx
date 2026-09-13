@@ -551,9 +551,11 @@ function App() {
             <h2>Explore. Encounter. Recover.</h2>
             <p>
               These manual fixture inputs exercise bounded circuit modulation.
-              Encounter-driven scent fields, receptor mappings and learned
-              choices are planned; these controls do not model real
-              pharmacology.
+              Encounter-driven contact proxies now ship: an explicitly enabled
+              running visual session, independently for each member of a shared
+              garden, offers one bounded pulse per flower entry through this same
+              policy. Receptor mappings and learned choices remain unavailable,
+              and none of this models real pharmacology.
             </p>
             <div className="compound-grid">
               {(state?.chemistry || []).map((c) => (

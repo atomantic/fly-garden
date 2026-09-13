@@ -10,14 +10,14 @@ async function request(path, body, signal) {
 }
 export default function SharedControls({ individuals = [], shared = null, controllerToken = null, disabled = false, onCommandStart = () => null, onCommandEnd = () => {}, onMutation = () => {} }) {
   const [chosen, setChosen] = useState([]), [checkpoints, setCheckpoints] = useState([]), [checkpoint, setCheckpoint] = useState('');
-  const [busy, setBusy] = useState(false), [error, setError] = useState('');
+  const [busy, setBusy] = useState(false), [error, setError] = useState(''), [restCoexistence, setRestCoexistence] = useState(true);
   const live = useRef({ shared, onMutation }), epoch = useRef(0);
   live.current = { shared, onMutation };
   useEffect(() => { const controller = new AbortController();
     request('/api/shared/checkpoints', undefined, controller.signal).then(value => setCheckpoints(value.checkpoints)).catch(e => { if (!controller.signal.aborted) setError(e.message); });
     return () => { controller.abort(); epoch.current++; };
   }, []);
-  async function act(action) {
+  async function act(action, individualId = null) {
     const generation = ++epoch.current, prior = live.current.shared, context = onCommandStart();
     const controller = new AbortController(), timeout = setTimeout(() => controller.abort(), 5000);
     setBusy(true); setError('');
@@ -29,7 +29,11 @@ export default function SharedControls({ individuals = [], shared = null, contro
         // Refresh all command sessions at explicit action time; reading does not load or allocate a resident.
         const states = await Promise.all(ids.map(id => request(`/api/individuals/${id}`, undefined, controller.signal)));
         const members = states.map(state => ({ protocolVersion: 1, individualId: state.individualId, sessionId: state.sessionId, sequence: state.commandSequence + 1 }));
-        next = await request(`/api/shared/${action}`, { protocolVersion: 1, members, ...(action === 'restore' ? { jointCheckpointId: checkpoint } : {}) }, controller.signal);
+        next = await request(`/api/shared/${action}`, { protocolVersion: 1, members,
+          ...(action === 'restore' ? { jointCheckpointId: checkpoint } : { sharedVersion: restCoexistence ? 2 : 1 }) }, controller.signal);
+      } else if (individualId) {
+        next = await request(`/api/shared/${prior.sharedId}/member`, { protocolVersion: 1, sharedId: prior.sharedId, worldEpoch: prior.worldEpoch,
+          sequence: prior.commandSequence + 1, individualId, action }, controller.signal);
       } else {
         next = await request(`/api/shared/${prior.sharedId}/control`, { protocolVersion: 1, sharedId: prior.sharedId, worldEpoch: prior.worldEpoch, sequence: prior.commandSequence + 1, action }, controller.signal);
       }
@@ -49,12 +53,22 @@ export default function SharedControls({ individuals = [], shared = null, contro
         {resident.map(item => <label key={item.individualId} style={{ display: 'block', overflowWrap: 'anywhere' }}><input type="checkbox" checked={chosen.includes(item.individualId)}
           onChange={e => setChosen(ids => e.target.checked ? [...ids, item.individualId] : ids.filter(id => id !== item.individualId))} />{item.individualId}</label>)}
       </fieldset>
+      <label style={{ display: 'block' }}><input type="checkbox" checked={restCoexistence} disabled={busy || disabled}
+        onChange={e => setRestCoexistence(e.target.checked)} />Allow per-member rest and partial withdrawal (version 2 barrier)</label>
       <button disabled={busy || disabled || !validSharedCount(chosen.length)} onClick={() => act('join')}>Join selected population (paused)</button>
     </> : <>
       <p role="status">{shared.status} · world tick {shared.tick} · {shared.reason || 'One complete atomic retinal batch per 5 ms step.'}</p>
       <p>{controllerToken ? 'This tab owns the controller cameras.' : 'Observer only; no controller lease. Separate and explicitly rejoin here to acquire cameras.'}</p>
       {['start', 'pause', 'save', 'separate'].map(action => <button key={action} disabled={busy || disabled || (action === 'start' && (!controllerToken || shared.status === 'running'))} onClick={() => act(action)}>
         {{ start: 'Start shared population', pause: 'Pause all', save: 'Save joint checkpoint', separate: 'Separate (all paused)' }[action]}</button>)}
+      {shared.version === 2 && <fieldset disabled={busy || disabled}><legend>Per-member quiet state</legend>
+        <p>Rest freezes only that body's neural clock and pose; the world barrier continues for the others. Resting is never penalized and never escalates input. Withdrawal leaves the rest of the population joined and is refused when fewer than two members would remain — separate the whole session instead.</p>
+        {shared.participants.map(member => <p key={member.individualId} style={{ overflowWrap: 'anywhere' }}>
+          <span>{member.individualId} · {member.mode}</span>
+          <button onClick={() => act(member.mode === 'resting' ? 'resume' : 'rest', member.individualId)}>{member.mode === 'resting' ? 'Resume this member' : 'Rest this member'}</button>
+          <button disabled={shared.participants.length < 3} onClick={() => act('withdraw', member.individualId)}>Withdraw this member</button>
+        </p>)}
+      </fieldset>}
     </>}
     <label>Joint checkpoint <select value={checkpoint} disabled={busy || disabled} onChange={e => setCheckpoint(e.target.value)}><option value="">Select joint save</option>
       {checkpoints.filter(item => validSharedCount(item.payload.members.length)).map(item => <option key={item.jointCheckpointId} value={item.jointCheckpointId}>{item.createdAt} · tick {item.payload.tick}</option>)}</select></label>

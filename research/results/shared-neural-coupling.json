@@ -1,0 +1,155 @@
+{
+ "version": 1,
+ "kind": "neural-shared-coupling-evidence",
+ "threeRevision": "186",
+ "runtime": "v26.0.0",
+ "barriers": 4000,
+ "simTimeMs": 20000,
+ "initial": [
+  {
+   "x": 0,
+   "z": -1,
+   "yaw": 0
+  },
+  {
+   "x": 0,
+   "z": 0.2,
+   "yaw": 0
+  }
+ ],
+ "final": [
+  {
+   "x": 8.006147924545653e-7,
+   "z": -0.9999362559730401,
+   "yaw": 0.029112500000126218
+  },
+  {
+   "x": 0.004465482651008529,
+   "z": 0.48419422525209665,
+   "yaw": 0.01653750000005516
+  }
+ ],
+ "integrated": [
+  {
+   "x": 8.006147924545653e-7,
+   "z": -0.9999362559730401,
+   "yaw": 0.029112500000126218
+  },
+  {
+   "x": 0.004465482651008529,
+   "z": 0.48419422525209665,
+   "yaw": 0.01653750000005516
+  }
+ ],
+ "peakMotor": [
+  0.0005,
+  0.018375
+ ],
+ "displacement": [
+  0.00006374905455851624,
+  0.28422930567052
+ ],
+ "measurement": {
+  "before": {
+   "vertices": 1549,
+   "visibleVertices": 1499,
+   "cells": [
+    0,
+    1,
+    2,
+    5,
+    6,
+    7,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    18,
+    19,
+    20,
+    21,
+    26,
+    27,
+    28,
+    29
+   ],
+   "ndcBounds": {
+    "minX": -0.927322,
+    "maxX": 0.927322,
+    "minY": -0.890239,
+    "maxY": 0.9727
+   }
+  },
+  "after": {
+   "vertices": 1549,
+   "visibleVertices": 1549,
+   "cells": [
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    19,
+    20,
+    21
+   ],
+   "ndcBounds": {
+    "minX": -0.616385,
+    "maxX": 0.729944,
+    "minY": -0.489915,
+    "maxY": 0.439211
+   }
+  },
+  "control": {
+   "vertices": 1549,
+   "visibleVertices": 1499,
+   "cells": [
+    0,
+    1,
+    2,
+    5,
+    6,
+    7,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    18,
+    19,
+    20,
+    21,
+    26,
+    27,
+    28,
+    29
+   ],
+   "ndcBounds": {
+    "minX": -0.927322,
+    "maxX": 0.927322,
+    "minY": -0.890239,
+    "maxY": 0.9727
+   }
+  },
+  "changedCells": [
+   0,
+   1,
+   2,
+   5,
+   6,
+   7,
+   18,
+   26,
+   27,
+   28,
+   29
+  ],
+  "visibleVertexDelta": 50,
+  "repeatIsIdentical": true
+ },
+ "disclosure": "Neurally generated committed poses from the ordinary fixture barrier, measured through the production shared scene graph and controller camera. The 8×4 cell footprint is a declared geometric proxy for the rendered raster, not GPU bytes; no biological perception, learning, consent or sex comparison is established."
+}

@@ -29,10 +29,14 @@ export default function SharedScene({ shared, controllerToken = null, onFrame = 
         if (!applyPoses(state)) throw new Error('Committed population poses unavailable');
         const capturedAtMs=Date.now(), rasters=visual.readBatch();
         // No await or pose update within this complete raster barrier. The partner remains visible.
+        // A version 2 resting member keeps its slot with an explicit null raster: it receives no
+        // retinal input and advances no neural time while the others continue.
+        const sharedVersion=state.version===2?2:1;
         const frames=state.participants.map((participant,i)=> {
-          const rgb=rasters[i];
-          return { version:1, individualId:participant.individualId,sessionId:participant.sessionId,environmentEpoch:state.worldEpoch,
-            frameId:state.tick,simTimeMs:participant.simTimeMs,capturedAtMs,camera:'controller',width:8,height:4,rgb };
+          const resting=sharedVersion===2 && participant.mode==='resting';
+          return { version:sharedVersion, individualId:participant.individualId,sessionId:participant.sessionId,environmentEpoch:state.worldEpoch,
+            frameId:state.tick,simTimeMs:participant.simTimeMs,capturedAtMs,camera:'controller',width:8,height:4,
+            rgb:resting?null:rasters[i],...(sharedVersion===2?{mode:participant.mode}:{}) };
         });
         const response=await fetch(`/api/shared/${state.sharedId}/frames`,{method:'POST',signal:controller.signal,headers:{'Content-Type':'application/json'},
           body:JSON.stringify({controllerToken:token,worldEpoch:state.worldEpoch,worldTick:state.tick,frames})});
@@ -42,7 +46,7 @@ export default function SharedScene({ shared, controllerToken = null, onFrame = 
         if(value.shared.commandSequence<current.shared.commandSequence || value.shared.tick<current.shared.tick) return;
         if(value.shared.tick!==state.tick+1 || value.shared.participants?.length!==state.participants.length
           || value.shared.participants.some((p,i)=>p.individualId!==state.participants[i].individualId || p.sessionId!==state.participants[i].sessionId)) throw new Error('Shared response recipient or clock mismatch');
-        accepted=value.shared; setRetinas(frames.map((frame,i)=>({individualId:frame.individualId,rgb:frame.rgb,trace:value.traces?.[i]}))); current.onFrame(value);
+        accepted=value.shared; setRetinas(frames.map((frame,i)=>({individualId:frame.individualId,rgb:frame.rgb,mode:frame.mode??'active',trace:value.traces?.[i]}))); current.onFrame(value);
       } catch(e) { if(!stopped && live.current.controllerToken===token && keyFor(live.current.shared)===key) { faulted=true; setError(`Shared cameras stopped: ${e.message}. Explicitly pause and start after recovery.`); } }
       finally {clearTimeout(timeout);inFlight=false;}
     }
@@ -65,8 +69,8 @@ export default function SharedScene({ shared, controllerToken = null, onFrame = 
     <p>Engineered shared visual fixture. Own body hidden only during its own retinal raster; the other body remains visible. No partner neural telemetry, hidden target, automatic contact/scent, or creative capture enters this shared loop. Coincident starting poses are preserved, not forcibly separated.</p>
     {!controllerToken && <p>Observer only: this tab sends no shared retinal batches.</p>}
     {error && <p role="alert">{error}</p>}
-    {retinas.map(retina=><div key={retina.individualId}><p style={{overflowWrap:'anywhere'}}>Retinal recipient: {retina.individualId} · accepted batch input tick {retina.trace?.frameId}</p>
-      <div role="img" aria-label={`Accepted 8 by 4 RGB retina for ${retina.individualId}`} style={{display:'grid',gridTemplateColumns:'repeat(8, 14px)',width:112}}>
-        {Array.from({length:32},(_,i)=><span key={i} style={{height:14,background:`rgb(${retina.rgb.slice(i*3,i*3+3).join(',')})`}} />)}</div></div>)}
+    {retinas.map(retina=><div key={retina.individualId}><p style={{overflowWrap:'anywhere'}}>Retinal recipient: {retina.individualId} · accepted batch input tick {retina.trace?.frameId}{retina.mode==='resting'?' · resting: no retinal input and no neural time':''}</p>
+      {retina.rgb && <div role="img" aria-label={`Accepted 8 by 4 RGB retina for ${retina.individualId}`} style={{display:'grid',gridTemplateColumns:'repeat(8, 14px)',width:112}}>
+        {Array.from({length:32},(_,i)=><span key={i} style={{height:14,background:`rgb(${retina.rgb.slice(i*3,i*3+3).join(',')})`}} />)}</div>}</div>)}
   </section>;
 }

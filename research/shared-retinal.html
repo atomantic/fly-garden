@@ -1,12 +1,22 @@
 <!doctype html><html lang="en"><meta charset="utf-8"><title>Static shared retinal evidence</title>
 <style>body{font:16px system-ui;max-width:70rem;margin:2rem auto;padding:1rem;background:#14221c;color:#eee}button{padding:1rem}canvas{max-width:100%}pre{white-space:pre-wrap;overflow-wrap:anywhere}</style>
 <h1>Static shared retinal evidence</h1><p>Explicitly renders six fixed 8×4 images using the production shared geometry. No app API, neural execution or simulation. Fixed partner-pose contrast, repeat, pose-return and observer-camera controls. One run, no tuning.</p>
-<button id="run">Run static renderer check once</button><p id="status" role="status">Not run.</p><canvas id="view"></canvas><pre id="result"></pre>
+<button id="run">Run static renderer check once</button>
+<button id="neural">Replay the recorded neurally generated trajectory once</button>
+<p>The second button renders only the recorded committed poses from <code>research/results/shared-neural-coupling.json</code>, which the fixture barrier produced from its own motor readout. It runs no simulation and tunes nothing. A zero byte change is a real negative result; record it as one.</p>
+<p id="status" role="status">Not run.</p><canvas id="view"></canvas><pre id="result"></pre>
 <script type="module">
-import { measureSharedRetinalEvidence } from '/client/src/shared-retinal-evidence.js';
+import { measureSharedRetinalEvidence, measureNeuralSharedRetinalEvidence } from '/client/src/shared-retinal-evidence.js';
+const show = (result, ok) => { document.querySelector('#result').textContent = JSON.stringify(result, null, 2); document.querySelector('#status').textContent = ok ? 'Passed fixed raster comparisons.' : 'Negative result: one or more fixed comparisons failed.'; };
 document.querySelector('#run').addEventListener('click', event => {
  event.target.disabled = true;
- try { const result = measureSharedRetinalEvidence(document.querySelector('#view')); document.querySelector('#result').textContent = JSON.stringify(result, null, 2); document.querySelector('#status').textContent = result.passed ? 'Passed fixed raster comparisons.' : 'Negative result: one or more fixed comparisons failed.'; }
+ try { const result = measureSharedRetinalEvidence(document.querySelector('#view')); show(result, result.passed); }
+ catch(error) { document.querySelector('#status').textContent = `Unavailable: ${error.message}`; }
+});
+document.querySelector('#neural').addEventListener('click', async event => {
+ event.target.disabled = true;
+ try { const record = await (await fetch('/research/results/shared-neural-coupling.json')).json();
+  const result = measureNeuralSharedRetinalEvidence(document.querySelector('#view'), record); show(result, result.passed); }
  catch(error) { document.querySelector('#status').textContent = `Unavailable: ${error.message}`; }
 });
 </script></html>
