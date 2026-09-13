@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { topDownRetinalRGB } from './retinal-frame.js';
+import { SHARED_FLOWERS } from '../../shared/shared-garden-arrangement.js';
 
 const keyFor = shared => shared && `${shared.sharedId}/${shared.worldEpoch}`;
 /** Original procedural bodies. Only explicit private tab authority may submit pixels.
@@ -26,8 +27,7 @@ export default function SharedScene({ shared, controllerToken = null, onFrame = 
     const sphere = (mat, parent, position, scale) => add(new THREE.SphereGeometry(1, 16, 10), mat, parent, position, scale);
     add(new THREE.CylinderGeometry(4,4,0.15,48), material(0x526249), scene, [0,-0.1,0]);
     // Visible original neutral landmarks, identical for observer and controller rendering.
-    for (let i = 0; i < 8; i++) {
-      const angle = i * Math.PI / 4, x = Math.sin(angle) * 3.2, z = Math.cos(angle) * 3.2;
+    for (const { x, z } of SHARED_FLOWERS) {
       add(new THREE.CylinderGeometry(0.025,0.035,0.6,6),material(0x567143),scene,[x,0.3,z]);
       for (let p = 0; p < 5; p++) sphere(material(0xf4d78f),scene,[x+Math.sin(p*Math.PI*2/5)*0.15,0.62,z+Math.cos(p*Math.PI*2/5)*0.15],[0.13,0.055,0.1]);
     }
