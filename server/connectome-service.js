@@ -1,17 +1,18 @@
 import { randomUUID } from 'node:crypto';
 import { RuntimeError } from './runtime.js';
 import { CONNECTOME_PROFILES } from './connectome-profiles.js';
+import { openConnectomeBackend } from './connectome.js';
 import { createConnectomeRegistry } from './connectome-registry.js';
 const exact=(v,keys)=>v&&typeof v==='object'&&!Array.isArray(v)&&Object.keys(v).length===keys.length&&keys.every(k=>Object.hasOwn(v,k));
 const fail=(message,status=409)=>{throw new RuntimeError(message,status);};
 const plainState=state=>({...state,reason:state.reason?(state.recoveryRequired?'Storage durability is uncertain; recover the catalog before explicit paused reload.':'Research operation unavailable or paused; refresh state and verify local configuration.'):null});
 /** Trusted application adapter. Browser callers can select IDs/profiles, never directories or neural payloads. */
-export function createConnectomeService({store=null,profiles={},reason=null,capacity,getResources,openBackend}={}) {
+export function createConnectomeService({store=null,profiles={},reason=null,capacity,getResources,openBackend,onLifecycle=()=>{}}={}) {
   const catalogEpoch=randomUUID();let catalogSequence=0,admissions=Promise.resolve(),pressureWork=null,storageFault=false;
   const pending=new Set(), pendingSamples=new Set();
   const registry=store?createConnectomeRegistry({identities:store.identities(),capacity,getResources:async({dataset})=>({...getResources(),measurement:profiles[dataset]?.measurement}),
     loadCheckpoint:({individualId,checkpointId})=>store.readCheckpoint(individualId,checkpointId),
-    persistCheckpoint:request=>store.persistCheckpoint(request),...(openBackend?{openBackend}:{})}):null;
+    persistCheckpoint:request=>store.persistCheckpoint(request),openBackend:(directory,options)=>(openBackend??openConnectomeBackend)(directory,{...options,onExit:()=>{options.onExit();onLifecycle(options.individualId);}})}):null;
   const required=()=>{if(!registry)fail(reason??'No verified local research catalog is available.');return registry;};
   function withAdmission(operation){const result=admissions.then(operation);admissions=result.catch(()=>{});return result;}
   const population=()=>capacity.snapshot(getResources());
@@ -65,7 +66,7 @@ export function createConnectomeService({store=null,profiles={},reason=null,capa
         result=await registry.command(id,envelope,checkpoint,body.action==='restore'?checkpointId:null);
       }
       return{state:plainState(result),population:population()};
-    });}finally{pending.delete(id);}
+    });}finally{pending.delete(id);onLifecycle(id);}
   }
   async function sample(id,body) {
     const current=required();record(id);

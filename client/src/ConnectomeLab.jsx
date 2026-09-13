@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { DATASETS, currentLabRequest, labCommand, mergeConnectomeState, readConnectomeState, readConnectomeHistory, readLabCommandReply } from './connectome-lab-state.js';
 import './connectome-lab.css';
+import ConnectomeRecordings from './ConnectomeRecordings.jsx';
 
 const LABELS = {'male-cns:v1.0':'MaleCNS v1.0','banc:v888':'BANC v888'};
 const number = value => Number.isFinite(value) ? value.toLocaleString() : 'Unavailable';
@@ -163,5 +164,6 @@ export default function ConnectomeLab({ selectedIndividualId, onSelectIndividual
             <td>{item.checkpointId}</td><td>{item.parentId??'Initial'}</td><td>{item.restoredFrom??'—'}</td><td>{item.sha256}</td><td>{number(item.bytes)}</td></tr>)}</tbody></table></div></details>
       </section>}
     </>}
+    <ConnectomeRecordings individualId={selected||null} dataset={state?.dataset??null}/>
   </section>;
 }
