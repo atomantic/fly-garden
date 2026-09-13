@@ -1,0 +1,12 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><title>Static shared retinal evidence</title>
+<style>body{font:16px system-ui;max-width:70rem;margin:2rem auto;padding:1rem;background:#14221c;color:#eee}button{padding:1rem}canvas{max-width:100%}pre{white-space:pre-wrap;overflow-wrap:anywhere}</style>
+<h1>Static shared retinal evidence</h1><p>Explicitly renders six fixed 8×4 images using the production shared geometry. No app API, neural execution or simulation. Fixed partner-pose contrast, repeat, pose-return and observer-camera controls. One run, no tuning.</p>
+<button id="run">Run static renderer check once</button><p id="status" role="status">Not run.</p><canvas id="view"></canvas><pre id="result"></pre>
+<script type="module">
+import { measureSharedRetinalEvidence } from '/client/src/shared-retinal-evidence.js';
+document.querySelector('#run').addEventListener('click', event => {
+ event.target.disabled = true;
+ try { const result = measureSharedRetinalEvidence(document.querySelector('#view')); document.querySelector('#result').textContent = JSON.stringify(result, null, 2); document.querySelector('#status').textContent = result.passed ? 'Passed fixed raster comparisons.' : 'Negative result: one or more fixed comparisons failed.'; }
+ catch(error) { document.querySelector('#status').textContent = `Unavailable: ${error.message}`; }
+});
+</script></html>

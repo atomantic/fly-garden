@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "date": "2026-09-12",
+  "kind": "static-shared-renderer-evidence",
+  "threeRevision": "186",
+  "environment": "Chrome on Darwin arm64; local isolated Vite page; no neural service",
+  "width": 8, "height": 4, "channels": 3,
+  "recipient": {"x":0,"z":-1,"yaw":0},
+  "partnerA": {"x":0,"z":0.2,"yaw":0},
+  "partnerB": {"x":1.5,"z":0.2,"yaw":0},
+  "a": [23,58,50,17,36,35,17,36,35,17,36,35,17,36,35,17,36,35,17,36,35,23,58,50,87,97,54,17,36,35,22,57,50,25,59,51,25,59,51,22,57,50,17,36,35,87,97,54,120,132,85,124,135,87,103,124,74,96,121,71,90,116,69,74,100,59,104,121,75,104,121,74,117,130,83,119,132,84,73,97,58,74,100,59,74,101,60,70,95,56,105,122,75,104,122,75],
+  "b": [17,36,35,17,36,35,17,36,35,17,36,35,17,36,35,17,36,35,17,36,35,17,36,35,87,97,54,17,36,35,17,36,35,17,36,35,17,36,35,17,36,35,17,36,35,87,97,54,9,22,12,15,28,16,126,136,89,118,131,84,109,125,78,106,122,76,104,121,75,104,121,74,117,130,83,119,132,84,120,133,85,116,130,83,109,126,78,106,123,76,105,122,75,104,122,75],
+  "equalToA": ["repeatedA", "restoredA", "observerA", "observerB"],
+  "comparisons": {"partnerChange":{"changedChannels":48,"absoluteDifference":1414},"repeat":{"changedChannels":0,"absoluteDifference":0},"poseReturn":{"changedChannels":0,"absoluteDifference":0},"observerChange":{"changedChannels":0,"absoluteDifference":0}},
+  "passed": true,
+  "disclosure": "Fixed externally arranged poses using the production procedural renderer. No neural execution, behavioral movement, biological sensing or learning established. Equal rasters stored by reference to a."
+}
