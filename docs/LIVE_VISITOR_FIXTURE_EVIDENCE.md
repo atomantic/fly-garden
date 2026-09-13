@@ -49,7 +49,7 @@ used or restarted.
   and did not prevent B's subsequent five steps.
 - Both local runtimes ended paused, with independent clocks preserved.
 
-This was one run, not a capacity or latency benchmark. The spectator checked
+This was one corrected run after the disclosed prior run, not a capacity or latency benchmark. The spectator checked
 presence messages, not rendered pixels. Neural stepping used the disclosed
 engineered patch projection and synthetic fixture motor readout. No learning,
 full-connectome embodiment, joint checkpoint round trip, production deployment,
