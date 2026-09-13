@@ -28,9 +28,14 @@ a test ownership adapter. Admission left both paused. Explicit Start and
 bounded tick calls then advanced A and B by 20 fixture ticks each. Returning
 A released only A; B advanced another five ticks. Returning B left both
 paused at home with their original identities and runtime sessions.
-The observer received population counts 1, 2, 1 and 0.
+The observer received population counts 0, 2, 2, 2, 1, 0.
+Each stage checked the latest presence message, including terminal emptiness.
 
-The test executed 45 fixture steps and zero full-connectome steps. It stopped
+The corrected test executed 45 fixture steps and zero full-connectome steps.
+An earlier 45-step run had an insufficient final observer assertion: it matched
+the initial empty presence rather than proving terminal removal. Independent
+review caught this; the assertion was corrected and the entire bounded run
+repeated. Total fixture execution across both runs was 90 steps. It stopped
 both temporary servers and revoked the temporary broker credential. Production
 Fly Garden identities and the existing PortOS/Eidoverse processes were not
 used or restarted.
