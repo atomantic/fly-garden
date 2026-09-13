@@ -28,7 +28,13 @@ test('portable checkpoint restores the same fixture trajectory, independent iden
     assert.deepEqual(restored.snapshot().neural, source.snapshot().neural);
   }
   assert.equal(fixture().snapshot().tick, 0);
-  assert.deepEqual(saved.unsupported, { rng: null, plasticity: null, refractory: null, delayBuffers: null, embodiment: null });
+  assert.deepEqual(saved.unsupported, { rng: null, plasticity: null, refractory: null, delayBuffers: null, embodiment: null,
+    plasticityGains: null, eligibilityTraces: null, worldPhase: null, bodyPose: null });
+  // Fixture checkpoints written before the research kernel retained plasticity,
+  // world and RNG state must keep loading unchanged.
+  const legacy = structuredClone(saved);
+  legacy.unsupported = { rng: null, plasticity: null, refractory: null, delayBuffers: null, embodiment: null };
+  assert.equal(validateRuntimeCheckpoint(legacy).individualId, saved.individualId);
   saved.dynamics.potentials[0] = 0.99;
   assert.notEqual(restored.checkpoint().dynamics.potentials[0], 0.99);
 });

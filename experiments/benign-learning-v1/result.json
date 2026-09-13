@@ -1,0 +1,1200 @@
+{
+  "schemaVersion": 1,
+  "kind": "benign-learning-campaign-result",
+  "protocolId": "benign-landmark-association-v1",
+  "protocolArtifactSha256": "80ea544b12412a28273d2256dca7218bfb85d50fe649878fa589cff43764cbd8",
+  "mappingManifestSha256": null,
+  "incompleteMappingManifestSha256": "2b21bfb9253f6c8839238c3c2c43f23846076bf7c8438561205a3c44d1082154",
+  "gates": {
+    "exact-per-neuron-sensory-mapping": {
+      "status": "open",
+      "evidence": "Every admitted port resolves to an exact source-qualified graph ID in the pinned manifest."
+    },
+    "fixed-causal-motor-readout": {
+      "basis": "Recomputed first-hop signed drive for the already-recorded left-half onset volley. A first threshold crossing from rest needs 1000 net positive contacts at the fixed contact gain 0.001. This reproduces the recorded 0/8 negative campaign outcome from the source arrays and is independent of the onset amplitude, which only sets how many input ports fire, not the sign of what they deliver.",
+      "profiles": [
+        {
+          "dataset": "male-cns:v1.0",
+          "directedEdgeCount": 25563197,
+          "firstHopCrossesThreshold": false,
+          "firstHopEligibleTargetVoltage": {
+            "maximum": 0,
+            "minimum": -0.127
+          },
+          "firstHopExtremeTargets": {
+            "maximumNeuronId": "male-cns:v1.0/10001",
+            "maximumSignedContacts": 0,
+            "minimumNeuronId": "male-cns:v1.0/52186",
+            "minimumSignedContacts": -127
+          },
+          "graphManifestSha256": "12759115c299175db5afa38b4a94a9a702f19a4e453c2bebb7dfaa85e5a3b915",
+          "mappingSha256": "53b304111f8731c5b1e6d34384cb5b76d7f7b1abfdb955e796cf8cf047232248",
+          "motorDirectSignedContacts": {
+            "left": 0,
+            "right": 0
+          },
+          "netPositiveContactsRequiredForFirstCrossing": 1000,
+          "neuronCount": 165122,
+          "onsetAggregateDeltaV": 1093.75,
+          "onsetDeltaVPerPort": 1.25,
+          "onsetPortCount": 875,
+          "onsetSourceSignCounts": {
+            "negative": 875,
+            "positive": 0,
+            "unknownZero": 0
+          },
+          "outgoingRowsFromOnsetPorts": 13333,
+          "positiveCrossingPossibleAtAnyPositiveGain": false,
+          "thresholdFractionReached": 0
+        },
+        {
+          "dataset": "banc:v888",
+          "directedEdgeCount": 13366670,
+          "firstHopCrossesThreshold": false,
+          "firstHopEligibleTargetVoltage": {
+            "maximum": 0.074,
+            "minimum": -0.121
+          },
+          "firstHopExtremeTargets": {
+            "maximumNeuronId": "banc:v888/720575941689813260",
+            "maximumSignedContacts": 74,
+            "minimumNeuronId": "banc:v888/720575941575662843",
+            "minimumSignedContacts": -121
+          },
+          "graphManifestSha256": "6d24b3d65b879c1d456fc48e2ac84e81ecae61fdf17749de0c58b3b9c1b5ac99",
+          "mappingSha256": "5fed4d875861922897750eb1d1e3330e02def08fd10a2ab646f40aa5325b93d4",
+          "motorDirectSignedContacts": {
+            "left": 0,
+            "right": 0
+          },
+          "netPositiveContactsRequiredForFirstCrossing": 1000,
+          "neuronCount": 155858,
+          "onsetAggregateDeltaV": 895,
+          "onsetDeltaVPerPort": 1.25,
+          "onsetPortCount": 716,
+          "onsetSourceSignCounts": {
+            "negative": 500,
+            "positive": 7,
+            "unknownZero": 209
+          },
+          "outgoingRowsFromOnsetPorts": 11614,
+          "positiveCrossingPossibleAtAnyPositiveGain": true,
+          "thresholdFractionReached": 0.074
+        }
+      ],
+      "status": "closed"
+    },
+    "compartment-specific-plasticity-validation": {
+      "basis": "Attempted to assign each existing KC->MBON edge in the pinned graph to a mushroom-body compartment using only pinned annotations.",
+      "profiles": [
+        {
+          "annotationSha256": "2177e246113e4cfbf1e7772ec37c6da1955ff22e8063d0b1f833101f99a9a3b2",
+          "compartmentMatchEstablished": false,
+          "dataset": "male-cns:v1.0",
+          "edgesLobeConsistentOnly": 57878,
+          "edgesWhereMbonCompartmentStringIsAvailable": 61209,
+          "existingKcToMbonEdgesInPinnedGraph": 61209,
+          "kenyonCellCount": 4064,
+          "kenyonCellsWithResolvedLobe": 4062,
+          "mbonCount": 97,
+          "mbonWithParsedCompartmentString": 97,
+          "perSynapseNeuropilAvailable": false,
+          "pinnedWeightsColumns": [
+            "body_pre",
+            "body_post",
+            "weight"
+          ],
+          "reason": "Male CNS instance strings identify each MBON lobe/compartment label, but Kenyon cells carry only a lobe-level subtype and the pinned weights table has no per-synapse neuropil column, so no individual KC->MBON edge can be assigned to a compartment. BANC annotations carry no mushroom-body compartment field at all. Lobe consistency is the strongest relation derivable here and is coarser than the compartment specificity the protocol requires."
+        },
+        {
+          "annotationSha256": "819bbcff476e52702d6f8d8604ce1f12d1d7b11942281df2f49df2a73a6f15a5",
+          "compartmentMatchEstablished": false,
+          "dataset": "banc:v888",
+          "edgesLobeConsistentOnly": 0,
+          "edgesWhereMbonCompartmentStringIsAvailable": 0,
+          "existingKcToMbonEdgesInPinnedGraph": 17598,
+          "kenyonCellCount": 4447,
+          "kenyonCellsWithResolvedLobe": 4088,
+          "mbonCount": 104,
+          "mbonWithParsedCompartmentString": 0,
+          "perSynapseNeuropilAvailable": false,
+          "pinnedWeightsColumns": [
+            "pre",
+            "post",
+            "count",
+            "norm",
+            "post_count",
+            "pre_count"
+          ],
+          "reason": "Male CNS instance strings identify each MBON lobe/compartment label, but Kenyon cells carry only a lobe-level subtype and the pinned weights table has no per-synapse neuropil column, so no individual KC->MBON edge can be assigned to a compartment. BANC annotations carry no mushroom-body compartment field at all. Lobe consistency is the strongest relation derivable here and is coarser than the compartment specificity the protocol requires."
+        }
+      ],
+      "status": "closed"
+    },
+    "complete-plasticity-world-rng-checkpoint": {
+      "status": "open",
+      "evidence": "The sparse-LIF checkpoint contract carries plasticity gains, eligibility traces, world/layout phase, body pose and RNG state with exact-digest restore equivalence."
+    },
+    "isolated-experiment-catalog-and-capacity": {
+      "status": "open",
+      "evidence": "Experimental branches use research-only identities and never replace a resident individual."
+    },
+    "reviewed-bound-manifest-and-explicit-start": {
+      "status": "closed",
+      "evidence": "Mapping manifest is incomplete; unresolved sections: causalMotorReadout, compartmentMatchedEdges."
+    }
+  },
+  "closedGates": [
+    "fixed-causal-motor-readout",
+    "compartment-specific-plasticity-validation",
+    "reviewed-bound-manifest-and-explicit-start"
+  ],
+  "assignedRuns": [
+    {
+      "runId": "male-cns:v1.0|paired-local-plasticity|0",
+      "dataset": "male-cns:v1.0",
+      "condition": "paired-local-plasticity",
+      "seedIndex": 0,
+      "targetCategory": "ring",
+      "streamSeeds": {
+        "training-layout": "6949453633298046696",
+        "heldout-layout": "5235083009957841081",
+        "retention-layout": "11454708984988240257",
+        "shuffle": "5006512614757872706",
+        "analysis": "3471051887863387296"
+      },
+      "status": "not-run",
+      "executedSteps": 0
+    },
+    {
+      "runId": "male-cns:v1.0|paired-local-plasticity|1",
+      "dataset": "male-cns:v1.0",
+      "condition": "paired-local-plasticity",
+      "seedIndex": 1,
+      "targetCategory": "bar",
+      "streamSeeds": {
+        "training-layout": "3713083238495312769",
+        "heldout-layout": "14078743761463166016",
+        "retention-layout": "14359829845209276410",
+        "shuffle": "6562290157242015127",
+        "analysis": "1716451213427033457"
+      },
+      "status": "not-run",
+      "executedSteps": 0
+    },
+    {
+      "runId": "male-cns:v1.0|paired-local-plasticity|2",
+      "dataset": "male-cns:v1.0",
+      "condition": "paired-local-plasticity",
+      "seedIndex": 2,
+      "targetCategory": "ring",
+      "streamSeeds": {
+        "training-layout": "17787787714362727822",
+        "heldout-layout": "2435732759628189515",
+        "retention-layout": "21431181096124388",
+        "shuffle": "6703133523353350755",
+        "analysis": "11691459626655007090"
+      },
+      "status": "not-run",
+      "executedSteps": 0
+    },
+    {
+      "runId": "male-cns:v1.0|paired-local-plasticity|3",
+      "dataset": "male-cns:v1.0",
+      "condition": "paired-local-plasticity",
+      "seedIndex": 3,
+      "targetCategory": "bar",
+      "streamSeeds": {
+        "training-layout": "13307024102516083027",
+        "heldout-layout": "10808446737571247102",
+        "retention-layout": "5775051235669113469",
+        "shuffle": "12006409984183706566",
+        "analysis": "3335348610299878168"
+      },
+      "status": "not-run",
+      "executedSteps": 0
+    },
+    {
+      "runId": "male-cns:v1.0|paired-local-plasticity|4",
+      "dataset": "male-cns:v1.0",
+      "condition": "paired-local-plasticity",
+      "seedIndex": 4,
+      "targetCategory": "ring",
+      "streamSeeds": {
+        "training-layout": "2803268386420383293",
+        "heldout-layout": "6962797538776264831",
+        "retention-layout": "8377340976203819437",
+        "shuffle": "3930104759151182653",
+        "analysis": "12774271130035064429"
+      },
+      "status": "not-run",
+      "executedSteps": 0
+    },
+    {
+      "runId": "male-cns:v1.0|paired-local-plasticity|5",
+      "dataset": "male-cns:v1.0",
+      "condition": "paired-local-plasticity",
+      "seedIndex": 5,
+      "targetCategory": "bar",
+      "streamSeeds": {
+        "training-layout": "9949676769786412898",
+        "heldout-layout": "7453604388723926064",
+        "retention-layout": "2283179876095502339",
+        "shuffle": "12357437463768747549",
+        "analysis": "1865170339429523354"
+      },
+      "status": "not-run",
+      "executedSteps": 0
+    },
+    {
+      "runId": "male-cns:v1.0|paired-local-plasticity|6",
+      "dataset": "male-cns:v1.0",
+      "condition": "paired-local-plasticity",
+      "seedIndex": 6,
+      "targetCategory": "ring",
+      "streamSeeds": {
+        "training-layout": "2538559386274393076",
+        "heldout-layout": "6932517433636365920",
+        "retention-layout": "2430736675272485808",
+        "shuffle": "15044298483227160060",
+        "analysis": "7007992938991107834"
+      },
+      "status": "not-run",
+      "executedSteps": 0
+    },
+    {
+      "runId": "male-cns:v1.0|paired-local-plasticity|7",
+      "dataset": "male-cns:v1.0",
+      "condition": "paired-local-plasticity",
+      "seedIndex": 7,
+      "targetCategory": "bar",
+      "streamSeeds": {
+        "training-layout": "10231138124631166074",
+        "heldout-layout": "9338772648859293776",
+        "retention-layout": "13121757011403533878",
+        "shuffle": "6968703581097430710",
+        "analysis": "508893868195880560"
+      },
+      "status": "not-run",
+      "executedSteps": 0
+    },
+    {
+      "runId": "male-cns:v1.0|frozen-neural-and-readout|0",
+      "dataset": "male-cns:v1.0",
+      "condition": "frozen-neural-and-readout",
+      "seedIndex": 0,
+      "targetCategory": "ring",
+      "streamSeeds": {
+        "training-layout": "6949453633298046696",
+        "heldout-layout": "5235083009957841081",
+        "retention-layout": "11454708984988240257",
+        "shuffle": "5006512614757872706",
+        "analysis": "3471051887863387296"
+      },
+      "status": "not-run",
+      "executedSteps": 0
+    },
+    {
+      "runId": "male-cns:v1.0|frozen-neural-and-readout|1",
+      "dataset": "male-cns:v1.0",
+      "condition": "frozen-neural-and-readout",
+      "seedIndex": 1,
+      "targetCategory": "bar",
+      "streamSeeds": {
+        "training-layout": "3713083238495312769",
+        "heldout-layout": "14078743761463166016",
+        "retention-layout": "14359829845209276410",
+        "shuffle": "6562290157242015127",
+        "analysis": "1716451213427033457"
+      },
+      "status": "not-run",
+      "executedSteps": 0
+    },
+    {
+      "runId": "male-cns:v1.0|frozen-neural-and-readout|2",
+      "dataset": "male-cns:v1.0",
+      "condition": "frozen-neural-and-readout",
+      "seedIndex": 2,
+      "targetCategory": "ring",
+      "streamSeeds": {
+        "training-layout": "17787787714362727822",
+        "heldout-layout": "2435732759628189515",
+        "retention-layout": "21431181096124388",
+        "shuffle": "6703133523353350755",
+        "analysis": "11691459626655007090"
+      },
+      "status": "not-run",
+      "executedSteps": 0
+    },
+    {
+      "runId": "male-cns:v1.0|frozen-neural-and-readout|3",
+      "dataset": "male-cns:v1.0",
+      "condition": "frozen-neural-and-readout",
+      "seedIndex": 3,
+      "targetCategory": "bar",
+      "streamSeeds": {
+        "training-layout": "13307024102516083027",
+        "heldout-layout": "10808446737571247102",
+        "retention-layout": "5775051235669113469",
+        "shuffle": "12006409984183706566",
+        "analysis": "3335348610299878168"
+      },
+      "status": "not-run",
+      "executedSteps": 0
+    },
+    {
+      "runId": "male-cns:v1.0|frozen-neural-and-readout|4",
+      "dataset": "male-cns:v1.0",
+      "condition": "frozen-neural-and-readout",
+      "seedIndex": 4,
+      "targetCategory": "ring",
+      "streamSeeds": {
+        "training-layout": "2803268386420383293",
+        "heldout-layout": "6962797538776264831",
+        "retention-layout": "8377340976203819437",
+        "shuffle": "3930104759151182653",
+        "analysis": "12774271130035064429"
+      },
+      "status": "not-run",
+      "executedSteps": 0
+    },
+    {
+      "runId": "male-cns:v1.0|frozen-neural-and-readout|5",
+      "dataset": "male-cns:v1.0",
+      "condition": "frozen-neural-and-readout",
+      "seedIndex": 5,
+      "targetCategory": "bar",
+      "streamSeeds": {
+        "training-layout": "9949676769786412898",
+        "heldout-layout": "7453604388723926064",
+        "retention-layout": "2283179876095502339",
+        "shuffle": "12357437463768747549",
+        "analysis": "1865170339429523354"
+      },
+      "status": "not-run",
+      "executedSteps": 0
+    },
+    {
+      "runId": "male-cns:v1.0|frozen-neural-and-readout|6",
+      "dataset": "male-cns:v1.0",
+      "condition": "frozen-neural-and-readout",
+      "seedIndex": 6,
+      "targetCategory": "ring",
+      "streamSeeds": {
+        "training-layout": "2538559386274393076",
+        "heldout-layout": "6932517433636365920",
+        "retention-layout": "2430736675272485808",
+        "shuffle": "15044298483227160060",
+        "analysis": "7007992938991107834"
+      },
+      "status": "not-run",
+      "executedSteps": 0
+    },
+    {
+      "runId": "male-cns:v1.0|frozen-neural-and-readout|7",
+      "dataset": "male-cns:v1.0",
+      "condition": "frozen-neural-and-readout",
+      "seedIndex": 7,
+      "targetCategory": "bar",
+      "streamSeeds": {
+        "training-layout": "10231138124631166074",
+        "heldout-layout": "9338772648859293776",
+        "retention-layout": "13121757011403533878",
+        "shuffle": "6968703581097430710",
+        "analysis": "508893868195880560"
+      },
+      "status": "not-run",
+      "executedSteps": 0
+    },
+    {
+      "runId": "male-cns:v1.0|balanced-shuffled-cue-plasticity|0",
+      "dataset": "male-cns:v1.0",
+      "condition": "balanced-shuffled-cue-plasticity",
+      "seedIndex": 0,
+      "targetCategory": "ring",
+      "streamSeeds": {
+        "training-layout": "6949453633298046696",
+        "heldout-layout": "5235083009957841081",
+        "retention-layout": "11454708984988240257",
+        "shuffle": "5006512614757872706",
+        "analysis": "3471051887863387296"
+      },
+      "status": "not-run",
+      "executedSteps": 0
+    },
+    {
+      "runId": "male-cns:v1.0|balanced-shuffled-cue-plasticity|1",
+      "dataset": "male-cns:v1.0",
+      "condition": "balanced-shuffled-cue-plasticity",
+      "seedIndex": 1,
+      "targetCategory": "bar",
+      "streamSeeds": {
+        "training-layout": "3713083238495312769",
+        "heldout-layout": "14078743761463166016",
+        "retention-layout": "14359829845209276410",
+        "shuffle": "6562290157242015127",
+        "analysis": "1716451213427033457"
+      },
+      "status": "not-run",
+      "executedSteps": 0
+    },
+    {
+      "runId": "male-cns:v1.0|balanced-shuffled-cue-plasticity|2",
+      "dataset": "male-cns:v1.0",
+      "condition": "balanced-shuffled-cue-plasticity",
+      "seedIndex": 2,
+      "targetCategory": "ring",
+      "streamSeeds": {
+        "training-layout": "17787787714362727822",
+        "heldout-layout": "2435732759628189515",
+        "retention-layout": "21431181096124388",
+        "shuffle": "6703133523353350755",
+        "analysis": "11691459626655007090"
+      },
+      "status": "not-run",
+      "executedSteps": 0
+    },
+    {
+      "runId": "male-cns:v1.0|balanced-shuffled-cue-plasticity|3",
+      "dataset": "male-cns:v1.0",
+      "condition": "balanced-shuffled-cue-plasticity",
+      "seedIndex": 3,
+      "targetCategory": "bar",
+      "streamSeeds": {
+        "training-layout": "13307024102516083027",
+        "heldout-layout": "10808446737571247102",
+        "retention-layout": "5775051235669113469",
+        "shuffle": "12006409984183706566",
+        "analysis": "3335348610299878168"
+      },
+      "status": "not-run",
+      "executedSteps": 0
+    },
+    {
+      "runId": "male-cns:v1.0|balanced-shuffled-cue-plasticity|4",
+      "dataset": "male-cns:v1.0",
+      "condition": "balanced-shuffled-cue-plasticity",
+      "seedIndex": 4,
+      "targetCategory": "ring",
+      "streamSeeds": {
+        "training-layout": "2803268386420383293",
+        "heldout-layout": "6962797538776264831",
+        "retention-layout": "8377340976203819437",
+        "shuffle": "3930104759151182653",
+        "analysis": "12774271130035064429"
+      },
+      "status": "not-run",
+      "executedSteps": 0
+    },
+    {
+      "runId": "male-cns:v1.0|balanced-shuffled-cue-plasticity|5",
+      "dataset": "male-cns:v1.0",
+      "condition": "balanced-shuffled-cue-plasticity",
+      "seedIndex": 5,
+      "targetCategory": "bar",
+      "streamSeeds": {
+        "training-layout": "9949676769786412898",
+        "heldout-layout": "7453604388723926064",
+        "retention-layout": "2283179876095502339",
+        "shuffle": "12357437463768747549",
+        "analysis": "1865170339429523354"
+      },
+      "status": "not-run",
+      "executedSteps": 0
+    },
+    {
+      "runId": "male-cns:v1.0|balanced-shuffled-cue-plasticity|6",
+      "dataset": "male-cns:v1.0",
+      "condition": "balanced-shuffled-cue-plasticity",
+      "seedIndex": 6,
+      "targetCategory": "ring",
+      "streamSeeds": {
+        "training-layout": "2538559386274393076",
+        "heldout-layout": "6932517433636365920",
+        "retention-layout": "2430736675272485808",
+        "shuffle": "15044298483227160060",
+        "analysis": "7007992938991107834"
+      },
+      "status": "not-run",
+      "executedSteps": 0
+    },
+    {
+      "runId": "male-cns:v1.0|balanced-shuffled-cue-plasticity|7",
+      "dataset": "male-cns:v1.0",
+      "condition": "balanced-shuffled-cue-plasticity",
+      "seedIndex": 7,
+      "targetCategory": "bar",
+      "streamSeeds": {
+        "training-layout": "10231138124631166074",
+        "heldout-layout": "9338772648859293776",
+        "retention-layout": "13121757011403533878",
+        "shuffle": "6968703581097430710",
+        "analysis": "508893868195880560"
+      },
+      "status": "not-run",
+      "executedSteps": 0
+    },
+    {
+      "runId": "male-cns:v1.0|external-readout-only|0",
+      "dataset": "male-cns:v1.0",
+      "condition": "external-readout-only",
+      "seedIndex": 0,
+      "targetCategory": "ring",
+      "streamSeeds": {
+        "training-layout": "6949453633298046696",
+        "heldout-layout": "5235083009957841081",
+        "retention-layout": "11454708984988240257",
+        "shuffle": "5006512614757872706",
+        "analysis": "3471051887863387296"
+      },
+      "status": "not-run",
+      "executedSteps": 0
+    },
+    {
+      "runId": "male-cns:v1.0|external-readout-only|1",
+      "dataset": "male-cns:v1.0",
+      "condition": "external-readout-only",
+      "seedIndex": 1,
+      "targetCategory": "bar",
+      "streamSeeds": {
+        "training-layout": "3713083238495312769",
+        "heldout-layout": "14078743761463166016",
+        "retention-layout": "14359829845209276410",
+        "shuffle": "6562290157242015127",
+        "analysis": "1716451213427033457"
+      },
+      "status": "not-run",
+      "executedSteps": 0
+    },
+    {
+      "runId": "male-cns:v1.0|external-readout-only|2",
+      "dataset": "male-cns:v1.0",
+      "condition": "external-readout-only",
+      "seedIndex": 2,
+      "targetCategory": "ring",
+      "streamSeeds": {
+        "training-layout": "17787787714362727822",
+        "heldout-layout": "2435732759628189515",
+        "retention-layout": "21431181096124388",
+        "shuffle": "6703133523353350755",
+        "analysis": "11691459626655007090"
+      },
+      "status": "not-run",
+      "executedSteps": 0
+    },
+    {
+      "runId": "male-cns:v1.0|external-readout-only|3",
+      "dataset": "male-cns:v1.0",
+      "condition": "external-readout-only",
+      "seedIndex": 3,
+      "targetCategory": "bar",
+      "streamSeeds": {
+        "training-layout": "13307024102516083027",
+        "heldout-layout": "10808446737571247102",
+        "retention-layout": "5775051235669113469",
+        "shuffle": "12006409984183706566",
+        "analysis": "3335348610299878168"
+      },
+      "status": "not-run",
+      "executedSteps": 0
+    },
+    {
+      "runId": "male-cns:v1.0|external-readout-only|4",
+      "dataset": "male-cns:v1.0",
+      "condition": "external-readout-only",
+      "seedIndex": 4,
+      "targetCategory": "ring",
+      "streamSeeds": {
+        "training-layout": "2803268386420383293",
+        "heldout-layout": "6962797538776264831",
+        "retention-layout": "8377340976203819437",
+        "shuffle": "3930104759151182653",
+        "analysis": "12774271130035064429"
+      },
+      "status": "not-run",
+      "executedSteps": 0
+    },
+    {
+      "runId": "male-cns:v1.0|external-readout-only|5",
+      "dataset": "male-cns:v1.0",
+      "condition": "external-readout-only",
+      "seedIndex": 5,
+      "targetCategory": "bar",
+      "streamSeeds": {
+        "training-layout": "9949676769786412898",
+        "heldout-layout": "7453604388723926064",
+        "retention-layout": "2283179876095502339",
+        "shuffle": "12357437463768747549",
+        "analysis": "1865170339429523354"
+      },
+      "status": "not-run",
+      "executedSteps": 0
+    },
+    {
+      "runId": "male-cns:v1.0|external-readout-only|6",
+      "dataset": "male-cns:v1.0",
+      "condition": "external-readout-only",
+      "seedIndex": 6,
+      "targetCategory": "ring",
+      "streamSeeds": {
+        "training-layout": "2538559386274393076",
+        "heldout-layout": "6932517433636365920",
+        "retention-layout": "2430736675272485808",
+        "shuffle": "15044298483227160060",
+        "analysis": "7007992938991107834"
+      },
+      "status": "not-run",
+      "executedSteps": 0
+    },
+    {
+      "runId": "male-cns:v1.0|external-readout-only|7",
+      "dataset": "male-cns:v1.0",
+      "condition": "external-readout-only",
+      "seedIndex": 7,
+      "targetCategory": "bar",
+      "streamSeeds": {
+        "training-layout": "10231138124631166074",
+        "heldout-layout": "9338772648859293776",
+        "retention-layout": "13121757011403533878",
+        "shuffle": "6968703581097430710",
+        "analysis": "508893868195880560"
+      },
+      "status": "not-run",
+      "executedSteps": 0
+    },
+    {
+      "runId": "banc:v888|paired-local-plasticity|0",
+      "dataset": "banc:v888",
+      "condition": "paired-local-plasticity",
+      "seedIndex": 0,
+      "targetCategory": "ring",
+      "streamSeeds": {
+        "training-layout": "11727844674838712390",
+        "heldout-layout": "1627188765033208072",
+        "retention-layout": "2422555228957610451",
+        "shuffle": "18202783100751665653",
+        "analysis": "12194887600433158313"
+      },
+      "status": "not-run",
+      "executedSteps": 0
+    },
+    {
+      "runId": "banc:v888|paired-local-plasticity|1",
+      "dataset": "banc:v888",
+      "condition": "paired-local-plasticity",
+      "seedIndex": 1,
+      "targetCategory": "bar",
+      "streamSeeds": {
+        "training-layout": "6514216240038980058",
+        "heldout-layout": "8905415991201678156",
+        "retention-layout": "3291118954830260703",
+        "shuffle": "16214268603033939028",
+        "analysis": "12163244811142432882"
+      },
+      "status": "not-run",
+      "executedSteps": 0
+    },
+    {
+      "runId": "banc:v888|paired-local-plasticity|2",
+      "dataset": "banc:v888",
+      "condition": "paired-local-plasticity",
+      "seedIndex": 2,
+      "targetCategory": "ring",
+      "streamSeeds": {
+        "training-layout": "9029906370154806270",
+        "heldout-layout": "15117620790999230972",
+        "retention-layout": "8386067999334376805",
+        "shuffle": "4404829642074782605",
+        "analysis": "2651069513462123535"
+      },
+      "status": "not-run",
+      "executedSteps": 0
+    },
+    {
+      "runId": "banc:v888|paired-local-plasticity|3",
+      "dataset": "banc:v888",
+      "condition": "paired-local-plasticity",
+      "seedIndex": 3,
+      "targetCategory": "bar",
+      "streamSeeds": {
+        "training-layout": "15076441924232475682",
+        "heldout-layout": "17082238229162233396",
+        "retention-layout": "12994167161416776225",
+        "shuffle": "5858249047813726317",
+        "analysis": "7818613451674626813"
+      },
+      "status": "not-run",
+      "executedSteps": 0
+    },
+    {
+      "runId": "banc:v888|paired-local-plasticity|4",
+      "dataset": "banc:v888",
+      "condition": "paired-local-plasticity",
+      "seedIndex": 4,
+      "targetCategory": "ring",
+      "streamSeeds": {
+        "training-layout": "3110475315011872366",
+        "heldout-layout": "16248139978041762672",
+        "retention-layout": "13503287148166201127",
+        "shuffle": "4821328032320473331",
+        "analysis": "16356717402276725870"
+      },
+      "status": "not-run",
+      "executedSteps": 0
+    },
+    {
+      "runId": "banc:v888|paired-local-plasticity|5",
+      "dataset": "banc:v888",
+      "condition": "paired-local-plasticity",
+      "seedIndex": 5,
+      "targetCategory": "bar",
+      "streamSeeds": {
+        "training-layout": "11950445738047548974",
+        "heldout-layout": "756954217619649960",
+        "retention-layout": "16145044333872218009",
+        "shuffle": "13005790341502241749",
+        "analysis": "17513943535838179451"
+      },
+      "status": "not-run",
+      "executedSteps": 0
+    },
+    {
+      "runId": "banc:v888|paired-local-plasticity|6",
+      "dataset": "banc:v888",
+      "condition": "paired-local-plasticity",
+      "seedIndex": 6,
+      "targetCategory": "ring",
+      "streamSeeds": {
+        "training-layout": "12462857636059518454",
+        "heldout-layout": "15387816791865006764",
+        "retention-layout": "12156523877872942228",
+        "shuffle": "14492699743125317045",
+        "analysis": "3249058612690598906"
+      },
+      "status": "not-run",
+      "executedSteps": 0
+    },
+    {
+      "runId": "banc:v888|paired-local-plasticity|7",
+      "dataset": "banc:v888",
+      "condition": "paired-local-plasticity",
+      "seedIndex": 7,
+      "targetCategory": "bar",
+      "streamSeeds": {
+        "training-layout": "16899694379243487837",
+        "heldout-layout": "10282648568657922566",
+        "retention-layout": "12601123878408370004",
+        "shuffle": "15236672822372598986",
+        "analysis": "7216182305652754512"
+      },
+      "status": "not-run",
+      "executedSteps": 0
+    },
+    {
+      "runId": "banc:v888|frozen-neural-and-readout|0",
+      "dataset": "banc:v888",
+      "condition": "frozen-neural-and-readout",
+      "seedIndex": 0,
+      "targetCategory": "ring",
+      "streamSeeds": {
+        "training-layout": "11727844674838712390",
+        "heldout-layout": "1627188765033208072",
+        "retention-layout": "2422555228957610451",
+        "shuffle": "18202783100751665653",
+        "analysis": "12194887600433158313"
+      },
+      "status": "not-run",
+      "executedSteps": 0
+    },
+    {
+      "runId": "banc:v888|frozen-neural-and-readout|1",
+      "dataset": "banc:v888",
+      "condition": "frozen-neural-and-readout",
+      "seedIndex": 1,
+      "targetCategory": "bar",
+      "streamSeeds": {
+        "training-layout": "6514216240038980058",
+        "heldout-layout": "8905415991201678156",
+        "retention-layout": "3291118954830260703",
+        "shuffle": "16214268603033939028",
+        "analysis": "12163244811142432882"
+      },
+      "status": "not-run",
+      "executedSteps": 0
+    },
+    {
+      "runId": "banc:v888|frozen-neural-and-readout|2",
+      "dataset": "banc:v888",
+      "condition": "frozen-neural-and-readout",
+      "seedIndex": 2,
+      "targetCategory": "ring",
+      "streamSeeds": {
+        "training-layout": "9029906370154806270",
+        "heldout-layout": "15117620790999230972",
+        "retention-layout": "8386067999334376805",
+        "shuffle": "4404829642074782605",
+        "analysis": "2651069513462123535"
+      },
+      "status": "not-run",
+      "executedSteps": 0
+    },
+    {
+      "runId": "banc:v888|frozen-neural-and-readout|3",
+      "dataset": "banc:v888",
+      "condition": "frozen-neural-and-readout",
+      "seedIndex": 3,
+      "targetCategory": "bar",
+      "streamSeeds": {
+        "training-layout": "15076441924232475682",
+        "heldout-layout": "17082238229162233396",
+        "retention-layout": "12994167161416776225",
+        "shuffle": "5858249047813726317",
+        "analysis": "7818613451674626813"
+      },
+      "status": "not-run",
+      "executedSteps": 0
+    },
+    {
+      "runId": "banc:v888|frozen-neural-and-readout|4",
+      "dataset": "banc:v888",
+      "condition": "frozen-neural-and-readout",
+      "seedIndex": 4,
+      "targetCategory": "ring",
+      "streamSeeds": {
+        "training-layout": "3110475315011872366",
+        "heldout-layout": "16248139978041762672",
+        "retention-layout": "13503287148166201127",
+        "shuffle": "4821328032320473331",
+        "analysis": "16356717402276725870"
+      },
+      "status": "not-run",
+      "executedSteps": 0
+    },
+    {
+      "runId": "banc:v888|frozen-neural-and-readout|5",
+      "dataset": "banc:v888",
+      "condition": "frozen-neural-and-readout",
+      "seedIndex": 5,
+      "targetCategory": "bar",
+      "streamSeeds": {
+        "training-layout": "11950445738047548974",
+        "heldout-layout": "756954217619649960",
+        "retention-layout": "16145044333872218009",
+        "shuffle": "13005790341502241749",
+        "analysis": "17513943535838179451"
+      },
+      "status": "not-run",
+      "executedSteps": 0
+    },
+    {
+      "runId": "banc:v888|frozen-neural-and-readout|6",
+      "dataset": "banc:v888",
+      "condition": "frozen-neural-and-readout",
+      "seedIndex": 6,
+      "targetCategory": "ring",
+      "streamSeeds": {
+        "training-layout": "12462857636059518454",
+        "heldout-layout": "15387816791865006764",
+        "retention-layout": "12156523877872942228",
+        "shuffle": "14492699743125317045",
+        "analysis": "3249058612690598906"
+      },
+      "status": "not-run",
+      "executedSteps": 0
+    },
+    {
+      "runId": "banc:v888|frozen-neural-and-readout|7",
+      "dataset": "banc:v888",
+      "condition": "frozen-neural-and-readout",
+      "seedIndex": 7,
+      "targetCategory": "bar",
+      "streamSeeds": {
+        "training-layout": "16899694379243487837",
+        "heldout-layout": "10282648568657922566",
+        "retention-layout": "12601123878408370004",
+        "shuffle": "15236672822372598986",
+        "analysis": "7216182305652754512"
+      },
+      "status": "not-run",
+      "executedSteps": 0
+    },
+    {
+      "runId": "banc:v888|balanced-shuffled-cue-plasticity|0",
+      "dataset": "banc:v888",
+      "condition": "balanced-shuffled-cue-plasticity",
+      "seedIndex": 0,
+      "targetCategory": "ring",
+      "streamSeeds": {
+        "training-layout": "11727844674838712390",
+        "heldout-layout": "1627188765033208072",
+        "retention-layout": "2422555228957610451",
+        "shuffle": "18202783100751665653",
+        "analysis": "12194887600433158313"
+      },
+      "status": "not-run",
+      "executedSteps": 0
+    },
+    {
+      "runId": "banc:v888|balanced-shuffled-cue-plasticity|1",
+      "dataset": "banc:v888",
+      "condition": "balanced-shuffled-cue-plasticity",
+      "seedIndex": 1,
+      "targetCategory": "bar",
+      "streamSeeds": {
+        "training-layout": "6514216240038980058",
+        "heldout-layout": "8905415991201678156",
+        "retention-layout": "3291118954830260703",
+        "shuffle": "16214268603033939028",
+        "analysis": "12163244811142432882"
+      },
+      "status": "not-run",
+      "executedSteps": 0
+    },
+    {
+      "runId": "banc:v888|balanced-shuffled-cue-plasticity|2",
+      "dataset": "banc:v888",
+      "condition": "balanced-shuffled-cue-plasticity",
+      "seedIndex": 2,
+      "targetCategory": "ring",
+      "streamSeeds": {
+        "training-layout": "9029906370154806270",
+        "heldout-layout": "15117620790999230972",
+        "retention-layout": "8386067999334376805",
+        "shuffle": "4404829642074782605",
+        "analysis": "2651069513462123535"
+      },
+      "status": "not-run",
+      "executedSteps": 0
+    },
+    {
+      "runId": "banc:v888|balanced-shuffled-cue-plasticity|3",
+      "dataset": "banc:v888",
+      "condition": "balanced-shuffled-cue-plasticity",
+      "seedIndex": 3,
+      "targetCategory": "bar",
+      "streamSeeds": {
+        "training-layout": "15076441924232475682",
+        "heldout-layout": "17082238229162233396",
+        "retention-layout": "12994167161416776225",
+        "shuffle": "5858249047813726317",
+        "analysis": "7818613451674626813"
+      },
+      "status": "not-run",
+      "executedSteps": 0
+    },
+    {
+      "runId": "banc:v888|balanced-shuffled-cue-plasticity|4",
+      "dataset": "banc:v888",
+      "condition": "balanced-shuffled-cue-plasticity",
+      "seedIndex": 4,
+      "targetCategory": "ring",
+      "streamSeeds": {
+        "training-layout": "3110475315011872366",
+        "heldout-layout": "16248139978041762672",
+        "retention-layout": "13503287148166201127",
+        "shuffle": "4821328032320473331",
+        "analysis": "16356717402276725870"
+      },
+      "status": "not-run",
+      "executedSteps": 0
+    },
+    {
+      "runId": "banc:v888|balanced-shuffled-cue-plasticity|5",
+      "dataset": "banc:v888",
+      "condition": "balanced-shuffled-cue-plasticity",
+      "seedIndex": 5,
+      "targetCategory": "bar",
+      "streamSeeds": {
+        "training-layout": "11950445738047548974",
+        "heldout-layout": "756954217619649960",
+        "retention-layout": "16145044333872218009",
+        "shuffle": "13005790341502241749",
+        "analysis": "17513943535838179451"
+      },
+      "status": "not-run",
+      "executedSteps": 0
+    },
+    {
+      "runId": "banc:v888|balanced-shuffled-cue-plasticity|6",
+      "dataset": "banc:v888",
+      "condition": "balanced-shuffled-cue-plasticity",
+      "seedIndex": 6,
+      "targetCategory": "ring",
+      "streamSeeds": {
+        "training-layout": "12462857636059518454",
+        "heldout-layout": "15387816791865006764",
+        "retention-layout": "12156523877872942228",
+        "shuffle": "14492699743125317045",
+        "analysis": "3249058612690598906"
+      },
+      "status": "not-run",
+      "executedSteps": 0
+    },
+    {
+      "runId": "banc:v888|balanced-shuffled-cue-plasticity|7",
+      "dataset": "banc:v888",
+      "condition": "balanced-shuffled-cue-plasticity",
+      "seedIndex": 7,
+      "targetCategory": "bar",
+      "streamSeeds": {
+        "training-layout": "16899694379243487837",
+        "heldout-layout": "10282648568657922566",
+        "retention-layout": "12601123878408370004",
+        "shuffle": "15236672822372598986",
+        "analysis": "7216182305652754512"
+      },
+      "status": "not-run",
+      "executedSteps": 0
+    },
+    {
+      "runId": "banc:v888|external-readout-only|0",
+      "dataset": "banc:v888",
+      "condition": "external-readout-only",
+      "seedIndex": 0,
+      "targetCategory": "ring",
+      "streamSeeds": {
+        "training-layout": "11727844674838712390",
+        "heldout-layout": "1627188765033208072",
+        "retention-layout": "2422555228957610451",
+        "shuffle": "18202783100751665653",
+        "analysis": "12194887600433158313"
+      },
+      "status": "not-run",
+      "executedSteps": 0
+    },
+    {
+      "runId": "banc:v888|external-readout-only|1",
+      "dataset": "banc:v888",
+      "condition": "external-readout-only",
+      "seedIndex": 1,
+      "targetCategory": "bar",
+      "streamSeeds": {
+        "training-layout": "6514216240038980058",
+        "heldout-layout": "8905415991201678156",
+        "retention-layout": "3291118954830260703",
+        "shuffle": "16214268603033939028",
+        "analysis": "12163244811142432882"
+      },
+      "status": "not-run",
+      "executedSteps": 0
+    },
+    {
+      "runId": "banc:v888|external-readout-only|2",
+      "dataset": "banc:v888",
+      "condition": "external-readout-only",
+      "seedIndex": 2,
+      "targetCategory": "ring",
+      "streamSeeds": {
+        "training-layout": "9029906370154806270",
+        "heldout-layout": "15117620790999230972",
+        "retention-layout": "8386067999334376805",
+        "shuffle": "4404829642074782605",
+        "analysis": "2651069513462123535"
+      },
+      "status": "not-run",
+      "executedSteps": 0
+    },
+    {
+      "runId": "banc:v888|external-readout-only|3",
+      "dataset": "banc:v888",
+      "condition": "external-readout-only",
+      "seedIndex": 3,
+      "targetCategory": "bar",
+      "streamSeeds": {
+        "training-layout": "15076441924232475682",
+        "heldout-layout": "17082238229162233396",
+        "retention-layout": "12994167161416776225",
+        "shuffle": "5858249047813726317",
+        "analysis": "7818613451674626813"
+      },
+      "status": "not-run",
+      "executedSteps": 0
+    },
+    {
+      "runId": "banc:v888|external-readout-only|4",
+      "dataset": "banc:v888",
+      "condition": "external-readout-only",
+      "seedIndex": 4,
+      "targetCategory": "ring",
+      "streamSeeds": {
+        "training-layout": "3110475315011872366",
+        "heldout-layout": "16248139978041762672",
+        "retention-layout": "13503287148166201127",
+        "shuffle": "4821328032320473331",
+        "analysis": "16356717402276725870"
+      },
+      "status": "not-run",
+      "executedSteps": 0
+    },
+    {
+      "runId": "banc:v888|external-readout-only|5",
+      "dataset": "banc:v888",
+      "condition": "external-readout-only",
+      "seedIndex": 5,
+      "targetCategory": "bar",
+      "streamSeeds": {
+        "training-layout": "11950445738047548974",
+        "heldout-layout": "756954217619649960",
+        "retention-layout": "16145044333872218009",
+        "shuffle": "13005790341502241749",
+        "analysis": "17513943535838179451"
+      },
+      "status": "not-run",
+      "executedSteps": 0
+    },
+    {
+      "runId": "banc:v888|external-readout-only|6",
+      "dataset": "banc:v888",
+      "condition": "external-readout-only",
+      "seedIndex": 6,
+      "targetCategory": "ring",
+      "streamSeeds": {
+        "training-layout": "12462857636059518454",
+        "heldout-layout": "15387816791865006764",
+        "retention-layout": "12156523877872942228",
+        "shuffle": "14492699743125317045",
+        "analysis": "3249058612690598906"
+      },
+      "status": "not-run",
+      "executedSteps": 0
+    },
+    {
+      "runId": "banc:v888|external-readout-only|7",
+      "dataset": "banc:v888",
+      "condition": "external-readout-only",
+      "seedIndex": 7,
+      "targetCategory": "bar",
+      "streamSeeds": {
+        "training-layout": "16899694379243487837",
+        "heldout-layout": "10282648568657922566",
+        "retention-layout": "12601123878408370004",
+        "shuffle": "15236672822372598986",
+        "analysis": "7216182305652754512"
+      },
+      "status": "not-run",
+      "executedSteps": 0
+    }
+  ],
+  "budget": {
+    "runs": 64,
+    "maxConcurrentWorkers": 1,
+    "maxStepsPerRunIncludingRestoreBranch": 116000,
+    "maxStepsTotal": 7424000,
+    "maxWallSecondsPerRun": 300,
+    "maxWallSecondsTotal": 21600,
+    "maxCheckpointsPerRun": 3,
+    "maxCheckpointBytesTotal": 1073741824,
+    "automaticRetries": 0
+  },
+  "disclosure": "Engineered evaluation of a stated plasticity assumption. Weight changes and appealing footage do not establish learning or subjective experience.",
+  "status": "gate-closed",
+  "executionPerformed": false,
+  "executedRuns": 0,
+  "executedSteps": 0,
+  "trialRecords": [],
+  "datasetResults": [],
+  "reason": "Required gates remain closed: fixed-causal-motor-readout, compartment-specific-plasticity-validation, reviewed-bound-manifest-and-explicit-start. The protocol forbids execution, tolerance widening or condition removal to open them.",
+  "runtime": "v26.0.0",
+  "platform": "darwin",
+  "architecture": "arm64"
+}

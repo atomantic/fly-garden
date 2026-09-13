@@ -1,0 +1,133 @@
+{
+  "derivation": "independent numpy recomputation from pinned CSR arrays and annotations",
+  "disclosure": "Engineered model measurements only. No neural advancement, plasticity update, body, reward or biological claim. Differences between the two specimen-derived models are not sex effects.",
+  "executionAllowed": false,
+  "gates": {
+    "compartment-specific-plasticity-validation": {
+      "basis": "Attempted to assign each existing KC->MBON edge in the pinned graph to a mushroom-body compartment using only pinned annotations.",
+      "profiles": [
+        {
+          "annotationSha256": "2177e246113e4cfbf1e7772ec37c6da1955ff22e8063d0b1f833101f99a9a3b2",
+          "compartmentMatchEstablished": false,
+          "dataset": "male-cns:v1.0",
+          "edgesLobeConsistentOnly": 57878,
+          "edgesWhereMbonCompartmentStringIsAvailable": 61209,
+          "existingKcToMbonEdgesInPinnedGraph": 61209,
+          "kenyonCellCount": 4064,
+          "kenyonCellsWithResolvedLobe": 4062,
+          "mbonCount": 97,
+          "mbonWithParsedCompartmentString": 97,
+          "perSynapseNeuropilAvailable": false,
+          "pinnedWeightsColumns": [
+            "body_pre",
+            "body_post",
+            "weight"
+          ],
+          "reason": "Male CNS instance strings identify each MBON lobe/compartment label, but Kenyon cells carry only a lobe-level subtype and the pinned weights table has no per-synapse neuropil column, so no individual KC->MBON edge can be assigned to a compartment. BANC annotations carry no mushroom-body compartment field at all. Lobe consistency is the strongest relation derivable here and is coarser than the compartment specificity the protocol requires."
+        },
+        {
+          "annotationSha256": "819bbcff476e52702d6f8d8604ce1f12d1d7b11942281df2f49df2a73a6f15a5",
+          "compartmentMatchEstablished": false,
+          "dataset": "banc:v888",
+          "edgesLobeConsistentOnly": 0,
+          "edgesWhereMbonCompartmentStringIsAvailable": 0,
+          "existingKcToMbonEdgesInPinnedGraph": 17598,
+          "kenyonCellCount": 4447,
+          "kenyonCellsWithResolvedLobe": 4088,
+          "mbonCount": 104,
+          "mbonWithParsedCompartmentString": 0,
+          "perSynapseNeuropilAvailable": false,
+          "pinnedWeightsColumns": [
+            "pre",
+            "post",
+            "count",
+            "norm",
+            "post_count",
+            "pre_count"
+          ],
+          "reason": "Male CNS instance strings identify each MBON lobe/compartment label, but Kenyon cells carry only a lobe-level subtype and the pinned weights table has no per-synapse neuropil column, so no individual KC->MBON edge can be assigned to a compartment. BANC annotations carry no mushroom-body compartment field at all. Lobe consistency is the strongest relation derivable here and is coarser than the compartment specificity the protocol requires."
+        }
+      ],
+      "status": "closed"
+    },
+    "fixed-causal-motor-readout": {
+      "basis": "Recomputed first-hop signed drive for the already-recorded left-half onset volley. A first threshold crossing from rest needs 1000 net positive contacts at the fixed contact gain 0.001. This reproduces the recorded 0/8 negative campaign outcome from the source arrays and is independent of the onset amplitude, which only sets how many input ports fire, not the sign of what they deliver.",
+      "profiles": [
+        {
+          "dataset": "male-cns:v1.0",
+          "directedEdgeCount": 25563197,
+          "firstHopCrossesThreshold": false,
+          "firstHopEligibleTargetVoltage": {
+            "maximum": 0.0,
+            "minimum": -0.127
+          },
+          "firstHopExtremeTargets": {
+            "maximumNeuronId": "male-cns:v1.0/10001",
+            "maximumSignedContacts": 0.0,
+            "minimumNeuronId": "male-cns:v1.0/52186",
+            "minimumSignedContacts": -127.0
+          },
+          "graphManifestSha256": "12759115c299175db5afa38b4a94a9a702f19a4e453c2bebb7dfaa85e5a3b915",
+          "mappingSha256": "53b304111f8731c5b1e6d34384cb5b76d7f7b1abfdb955e796cf8cf047232248",
+          "motorDirectSignedContacts": {
+            "left": 0.0,
+            "right": 0.0
+          },
+          "netPositiveContactsRequiredForFirstCrossing": 1000,
+          "neuronCount": 165122,
+          "onsetAggregateDeltaV": 1093.75,
+          "onsetDeltaVPerPort": 1.25,
+          "onsetPortCount": 875,
+          "onsetSourceSignCounts": {
+            "negative": 875,
+            "positive": 0,
+            "unknownZero": 0
+          },
+          "outgoingRowsFromOnsetPorts": 13333,
+          "positiveCrossingPossibleAtAnyPositiveGain": false,
+          "thresholdFractionReached": 0.0
+        },
+        {
+          "dataset": "banc:v888",
+          "directedEdgeCount": 13366670,
+          "firstHopCrossesThreshold": false,
+          "firstHopEligibleTargetVoltage": {
+            "maximum": 0.074,
+            "minimum": -0.121
+          },
+          "firstHopExtremeTargets": {
+            "maximumNeuronId": "banc:v888/720575941689813260",
+            "maximumSignedContacts": 74.0,
+            "minimumNeuronId": "banc:v888/720575941575662843",
+            "minimumSignedContacts": -121.0
+          },
+          "graphManifestSha256": "6d24b3d65b879c1d456fc48e2ac84e81ecae61fdf17749de0c58b3b9c1b5ac99",
+          "mappingSha256": "5fed4d875861922897750eb1d1e3330e02def08fd10a2ab646f40aa5325b93d4",
+          "motorDirectSignedContacts": {
+            "left": 0.0,
+            "right": 0.0
+          },
+          "netPositiveContactsRequiredForFirstCrossing": 1000,
+          "neuronCount": 155858,
+          "onsetAggregateDeltaV": 895.0,
+          "onsetDeltaVPerPort": 1.25,
+          "onsetPortCount": 716,
+          "onsetSourceSignCounts": {
+            "negative": 500,
+            "positive": 7,
+            "unknownZero": 209
+          },
+          "outgoingRowsFromOnsetPorts": 11614,
+          "positiveCrossingPossibleAtAnyPositiveGain": true,
+          "thresholdFractionReached": 0.074
+        }
+      ],
+      "status": "closed"
+    }
+  },
+  "kind": "benign-learning-gate-evidence",
+  "neuralStepsExecuted": 0,
+  "protocolId": "benign-landmark-association-v1",
+  "schemaVersion": 1,
+  "trainingPerformed": false
+}

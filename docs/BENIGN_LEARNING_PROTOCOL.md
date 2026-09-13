@@ -1,6 +1,6 @@
 # Benign landmark association: gated protocol v1
 
-This is a versioned pre-execution design for issue #6, not an executed experiment or a claim of retained learning. The machine-readable [protocol](../experiments/benign-learning-v1/protocol.json) intentionally has `executionAllowed: false`. No runner, stimulation, neural advancement or training is introduced here. Freeze a reviewed successor manifest binding all unresolved mappings before an explicit experiment start; changing a rule after observing results requires a new protocol version.
+This is a versioned pre-execution design for issue #6, not an executed experiment or a claim of retained learning. The evaluation against this design has since been carried out and closed negatively: see [BENIGN_LEARNING_RESULT.md](BENIGN_LEARNING_RESULT.md). Nothing in the preregistration below was rewritten after that outcome. The machine-readable [protocol](../experiments/benign-learning-v1/protocol.json) intentionally has `executionAllowed: false`. No runner, stimulation, neural advancement or training is introduced here. Freeze a reviewed successor manifest binding all unresolved mappings before an explicit experiment start; changing a rule after observing results requires a new protocol version.
 
 ## Question and conditions
 
