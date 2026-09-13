@@ -1,5 +1,6 @@
 import { useDeferredValue, useEffect, useMemo, useState, useRef, useId } from 'react';
 import './observatory-accessibility.css';
+import { selectAtlasCell } from './atlas-selection.js';
 import AtlasCanvas from './AtlasCanvas.jsx';
 import ConnectomeRecordings from './ConnectomeRecordings.jsx';
 import ConnectomeNeuronSample from './ConnectomeNeuronSample.jsx';
@@ -30,7 +31,8 @@ function validateEdges(result, data, limit) {
 
 
 export default function NervousSystem({ dataset = "male-cns:v1.0", individualId = null, onDatasetChange = () => {} }) {
-  const searchId = useId(), inspectorHeading = useRef(null), focusInspector = useRef(false);
+  const searchId = useId(), searchInput = useRef(null), inspectorHeading = useRef(null), focusInspector = useRef(false);
+  const [fitRevision, setFitRevision] = useState(0);
   const [connectionsEnabled, setConnectionsEnabled] = useState(false), [edgeLimit, setEdgeLimit] = useState(1000), [edgeOpacity, setEdgeOpacity] = useState(0.15);
   const [connectivity, setConnectivity] = useState(null), [connectivityError, setConnectivityError] = useState('');
   const [adjacency, setAdjacency] = useState(null), [adjacencyError, setAdjacencyError] = useState(''), [edgeOffset, setEdgeOffset] = useState(0);
@@ -69,7 +71,12 @@ export default function NervousSystem({ dataset = "male-cns:v1.0", individualId 
     load().catch(e => { if (current) setError(e.message); });
     return () => { current = false; controller.abort(); };
   }, [profile]);
-  function selectCell(index, focus = false) { focusInspector.current = focus; setSelectedIndex(index); setEdgeOffset(0); setAdjacency(null); setAdjacencyError(''); }
+  function selectCell(index, focus = false) {
+    selectAtlasCell(selectedIndex, index, focus, {
+      focusHeading: () => inspectorHeading.current?.focus(),
+      changeSelection: (next, moveFocus) => { focusInspector.current = moveFocus; setSelectedIndex(next); setEdgeOffset(0); setAdjacency(null); setAdjacencyError(''); },
+    });
+  }
   useEffect(() => {
     const controller = new AbortController(); let current = true;
     setConnectivity(null); setConnectivityError('');
@@ -119,6 +126,7 @@ export default function NervousSystem({ dataset = "male-cns:v1.0", individualId 
     return count;
   }, [data, visibleGroups]);
   function preset(kind) {
+    setFitRevision(value => value + 1);
     setVisibleGroups(data.manifest.groups.map((name, index) => ({ name, index })).filter(({ name }) => kind === 'whole'
       || kind === 'brain' && ['visual-system', 'central-brain'].includes(name)
       || kind === 'cord' && name === 'ventral-nerve-cord').map(({ index }) => index));
@@ -141,8 +149,8 @@ export default function NervousSystem({ dataset = "male-cns:v1.0", individualId 
         <button onClick={() => preset('whole')}>Whole retained nervous system</button><button onClick={() => preset('brain')}>Brain</button><button onClick={() => preset('cord')}>Nerve cord</button>
       </div>
       <p className="muted">Source X/Y/Z axes · {data.manifest.coordinates.units} · anatomical direction labels not independently established</p>
-      <p><a href={`#${searchId}`}>Skip spatial controls to searchable cells</a></p>
-      <AtlasCanvas edges={displayEdges} edgeOpacity={edgeOpacity} positions={data.positions} valid={data.valid} groups={data.groups} visibleGroups={visibleGroups} selectedIndex={selectedIndex} pointSize={pointSize} onSelect={selectCell} />
+      <p><a href={`#${searchId}`} onClick={event => { event.preventDefault(); searchInput.current?.focus(); }}>Skip spatial controls to searchable cells</a></p>
+      <AtlasCanvas fitRevision={fitRevision} edges={displayEdges} edgeOpacity={edgeOpacity} positions={data.positions} valid={data.valid} groups={data.groups} visibleGroups={visibleGroups} selectedIndex={selectedIndex} pointSize={pointSize} onSelect={selectCell} />
       <details className="atlas-display-settings"><summary>Display groups, point size and optional connections</summary>
       <fieldset style={{ margin: '12px 0' }}><legend>Display groups (classification from source annotations)</legend>
         {data.manifest.groups.map((name, index) => <label key={name} style={{ display: 'inline-flex', gap: 5, marginRight: 15 }}><input type="checkbox" checked={visibleGroups.includes(index)} onChange={e => setVisibleGroups(current => e.target.checked ? [...current, index] : current.filter(value => value !== index))} />{LABELS[name] || name}</label>)}
@@ -158,7 +166,7 @@ export default function NervousSystem({ dataset = "male-cns:v1.0", individualId 
       </fieldset>
       </details>
       <p>Cell locations and straight connection lines are not reconstructed neurites or full peripheral anatomy. No activity overlay is attached. Brain/cord presets use source annotation groups.</p>
-      <label>Search cells by exact ID, type or region <input id={searchId} value={filter} onChange={e => setFilter(e.target.value)} placeholder="Exact ID, type or annotation" /></label>
+      <label>Search cells by exact ID, type or region <input ref={searchInput} id={searchId} value={filter} onChange={e => setFilter(e.target.value)} placeholder="Exact ID, type or annotation" /></label>
       <p role="status" aria-atomic="true">{matches.count.toLocaleString()} matches; showing the first {matches.rows.length}. Search includes cells without coordinates.</p>
       <div tabIndex={0} role="region" aria-label="Searchable anatomical cells" style={{ overflowX: 'auto' }}><table><thead><tr><th>Cell</th><th>Type</th><th>Region</th><th>Display group</th><th>Position</th></tr></thead><tbody>
         {matches.rows.map(i => <tr key={data.nodes[i][0]}><td><button aria-pressed={i === selectedIndex} onClick={() => selectCell(i, true)}>{data.nodes[i][1]}{i === selectedIndex ? ' · selected' : ''}</button></td><td>{data.nodes[i][2] || 'Unclassified'}</td><td>{data.nodes[i][4] || 'Unclassified'}</td><td>{LABELS[data.manifest.groups[data.groups[i]]] || 'Unclassified'}</td><td>{data.nodes[i][5]}</td></tr>)}

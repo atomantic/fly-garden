@@ -19,3 +19,8 @@ export function moveAtlasCamera(camera, controls, action) {
   } else return false;
   controls.update(); return true;
 }
+
+/** Checkbox filters preserve the view; only a new explicit preset requests another fit. */
+export function shouldFitAtlas(fitted, previousRevision, fitRevision, count) {
+  return count > 0 && (!fitted || previousRevision !== fitRevision);
+}
