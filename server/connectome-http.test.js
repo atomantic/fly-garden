@@ -5,18 +5,18 @@ import{createConnectomeSession}from'./connectome-worker.js';import{createSparseL
 const datasets=['male-cns:v1.0','banc:v888'];
 const graph=dataset=>({ids:[`${dataset}/1`],offsets:new Uint32Array([0,0]),targets:new Uint32Array(),contacts:new Uint32Array(),signs:new Int8Array([1])});
 const deferred=()=>{let resolve;const promise=new Promise(r=>{resolve=r;});return{promise,resolve};};
-async function setup(t,{measurement=true,maxResidentFlies=3,openGate=null,closeGate=null}={}){
+async function setup(t,{measurement=true,maxResidentFlies=3,openGate=null,closeGate=null,sampleGate=null}={}){
  const directory=mkdtempSync(join(tmpdir(),'research-http-')),identities=openIdentityStore(join(directory,'fixtures'));
  const descriptors=Object.fromEntries(datasets.map(dataset=>[dataset,{directory:join(directory,dataset),graphSha256:createSparseLif(graph(dataset),{dataset}).graphSha256,manifestSha256:'ab'.repeat(32),neuronCount:1,edgeCount:0}]));
  const catalog=openConnectomeStore(join(directory,'catalog'),{profiles:descriptors}),profiles=Object.fromEntries(datasets.map(dataset=>[dataset,{descriptor:descriptors[dataset],measurement:{available:measurement,backend:'connectome',dataset,includesCheckpointSerialization:true,incrementalMemoryBytes:measurement?1000:null,reason:measurement?null:'Evidence unavailable.'}}]));
  const capacity=createCapacityPolicy({settings:{maxResidentFlies,maxAggregateMemoryBytes:100000,minFreeMemoryBytes:100}});let opened=0,resource={aggregateMemoryBytes:100,availableMemoryBytes:100000};
  const backend=async(_directory,options)=>{opened++;if(openGate){openGate.entered.resolve();await openGate.promise;}
-  const session=createConnectomeSession({...options,graph:graph(options.dataset)});let epoch=session.snapshot().sessionEpoch;
-  return{ready:session.snapshot(),close:async()=>{if(closeGate){closeGate.entered.resolve();await closeGate.promise;}},...Object.fromEntries(['snapshot','start','pause','advance','checkpoint','prepareRestore','commitRestore'].map(action=>[action,async value=>{const result=session.dispatch({action,value,sessionEpoch:epoch});if(result?.sessionEpoch)epoch=result.sessionEpoch;return result;}]))};};
+  const session=createConnectomeSession({...options,graph:graph(options.dataset),provenance:{manifestSha256:'ab'.repeat(32)}});let epoch=session.snapshot().sessionEpoch;
+  return{ready:session.snapshot(),close:async()=>{if(closeGate){closeGate.entered.resolve();await closeGate.promise;}},...Object.fromEntries(['snapshot','start','pause','advance','checkpoint','prepareRestore','commitRestore','sample'].map(action=>[action,async value=>{if(action==='sample'&&sampleGate){sampleGate.entered.resolve();await sampleGate.promise;}const result=session.dispatch({action,value,sessionEpoch:epoch});if(result?.sessionEpoch)epoch=result.sessionEpoch;return result;}]))};};
  const server=createServer({identities,autoTick:false,capacity,incrementalMemoryBytes:100,resourceUsage:()=>resource,
   connectomeCatalog:catalog,connectomeProfiles:profiles,connectomeBackend:backend});server.listen(0,'127.0.0.1');await once(server,'listening');
  const base=`http://127.0.0.1:${server.address().port}`;
- t.after(async()=>{openGate?.resolve();closeGate?.resolve();server.close();await once(server,'close');await new Promise(r=>setImmediate(r));catalog.close();identities.close();rmSync(directory,{recursive:true,force:true});});
+ t.after(async()=>{openGate?.resolve();closeGate?.resolve();sampleGate?.resolve();server.close();await once(server,'close');await new Promise(r=>setImmediate(r));catalog.close();identities.close();rmSync(directory,{recursive:true,force:true});});
  const list=async()=> (await fetch(`${base}/api/connectomes`)).json(),state=async id=>(await fetch(`${base}/api/connectomes/${id}`)).json();
  const post=(path,body,headers={})=>fetch(`${base}${path}`,{method:'POST',headers:{'content-type':'application/json',...headers},body:JSON.stringify(body)});
  const create=async dataset=>{const view=await list();const response=await post('/api/connectomes',{protocolVersion:1,catalogEpoch:view.catalogEpoch,commandSequence:view.commandSequence,dataset});assert.equal(response.status,200);return(await response.json()).state;};
@@ -89,4 +89,30 @@ test('health reports research availability separately from the fixture and disti
  const a=await s.create(datasets[0]);await s.command(a.individualId,'load');assert.equal((await health()).residentCount,1);assert.equal((await health()).runningCount,0);
  await s.command(a.individualId,'start');assert.equal((await health()).runningCount,1);assert.equal((await s.state(a.individualId)).neural.tick,0);
  const unknown=await setup(t,{measurement:false});assert((await(await fetch(`${unknown.base}/api/health`)).json()).connectome.profiles.every(p=>!p.measuredMemoryAvailable));
+});
+
+test('explicit neuron HTTP read is scoped, bounded and does not load or consume mutation sequence',async t=>{
+ const s=await setup(t),a=await s.create(datasets[0]);
+ const body=state=>({protocolVersion:1,individualId:state.individualId,dataset:state.dataset,sessionEpoch:state.sessionEpoch,graphSha256:state.graphSha256,neuronIds:[`${state.dataset}/1`]});
+ const endpoint=`/api/connectomes/${a.individualId}/samples`;
+ assert.equal((await s.post(endpoint,body(a))).status,409);assert.equal(s.opened(),0);
+ await s.command(a.individualId,'load');const before=await s.state(a.individualId),request=body(before);
+ assert.equal((await fetch(`${s.base}${endpoint}`)).status,405);
+ assert.equal((await s.post(endpoint,request,{origin:'https://foreign.test'})).status,403);
+ const response=await s.post(endpoint,request);assert.equal(response.status,200);const sampled=await response.json();
+ assert.equal(sampled.tick,0);assert.equal(sampled.sessionEpoch,before.sessionEpoch);assert.equal(sampled.commandSequence,before.commandSequence);
+ assert.deepEqual(sampled.samples,[{neuronId:`${datasets[0]}/1`,potential:0,firing:0,refractoryStepsRemaining:0}]);
+ assert(!JSON.stringify(sampled).includes(s.directory));assert.deepEqual(await s.state(a.individualId),before);
+ for(const change of [{dataset:datasets[1]},{sessionEpoch:'old'},{graphSha256:'00'.repeat(32)},{neuronIds:[`${datasets[0]}/999`]},{neuronIds:Array(257).fill(`${datasets[0]}/1`)},{neuronIds:[`${datasets[0]}/1`,`${datasets[0]}/1`]}])assert.equal((await s.post(endpoint,{...request,...change})).status,409);
+ assert.equal((await s.post(endpoint,{...request,neuronIds:['a'.repeat(37*1024)]})).status,413);
+ assert.deepEqual(await s.state(a.individualId),before);
+ await s.command(a.individualId,'save');const saved=(await s.state(a.individualId)).checkpointId;
+ await s.command(a.individualId,'restore',null,saved);assert.equal((await s.post(endpoint,request)).status,409);
+});
+test('HTTP allows only one outstanding sample per individual',async t=>{
+ const sampleGate={...deferred(),entered:deferred()},s=await setup(t,{sampleGate}),a=await s.create(datasets[0]);await s.command(a.individualId,'load');
+ const state=await s.state(a.individualId),body={protocolVersion:1,individualId:state.individualId,dataset:state.dataset,sessionEpoch:state.sessionEpoch,graphSha256:state.graphSha256,neuronIds:[`${state.dataset}/1`]};
+ const path=`/api/connectomes/${a.individualId}/samples`,first=s.post(path,body);await sampleGate.entered.promise;
+ assert.equal((await s.post(path,body)).status,409);sampleGate.resolve();assert.equal((await first).status,200);
+ assert.equal((await s.state(a.individualId)).neural.tick,0);
 });

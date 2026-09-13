@@ -27,13 +27,13 @@ function json(response, status, value) {
   response.end(JSON.stringify(value));
 }
 
-async function readBody(request) {
+async function readBody(request, maxBytes = 4096) {
   if (request.headers['content-type']?.split(';')[0].trim() !== 'application/json') throw new RuntimeError('Expected application/json.', 415);
   let body = '';
   let size = 0;
   for await (const chunk of request) {
     size += chunk.length;
-    if (size > 4096) throw new RuntimeError('Request body too large.', 413);
+    if (size > maxBytes) throw new RuntimeError('Request body too large.', 413);
     body += chunk;
   }
   let parsed;

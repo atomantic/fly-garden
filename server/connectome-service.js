@@ -8,7 +8,7 @@ const plainState=state=>({...state,reason:state.reason?(state.recoveryRequired?'
 /** Trusted application adapter. Browser callers can select IDs/profiles, never directories or neural payloads. */
 export function createConnectomeService({store=null,profiles={},reason=null,capacity,getResources,openBackend}={}) {
   const catalogEpoch=randomUUID();let catalogSequence=0,admissions=Promise.resolve(),pressureWork=null,storageFault=false;
-  const pending=new Set();
+  const pending=new Set(), pendingSamples=new Set();
   const registry=store?createConnectomeRegistry({identities:store.identities(),capacity,getResources:async({dataset})=>({...getResources(),measurement:profiles[dataset]?.measurement}),
     loadCheckpoint:({individualId,checkpointId})=>store.readCheckpoint(individualId,checkpointId),
     persistCheckpoint:request=>store.persistCheckpoint(request),...(openBackend?{openBackend}:{})}):null;
@@ -67,6 +67,13 @@ export function createConnectomeService({store=null,profiles={},reason=null,capa
       return{state:plainState(result),population:population()};
     });}finally{pending.delete(id);}
   }
+  async function sample(id,body) {
+    const current=required();record(id);
+    if(pendingSamples.has(id))fail('A neuron sample is already in progress for this individual.');
+    pendingSamples.add(id);
+    try {return await boundary(()=>current.sample(id,body));}
+    finally {pendingSamples.delete(id);}
+  }
   function history(id){record(id);return{individualId:id,checkpoints:store.checkpoints(id)};}
   function enforcePressure(){
     if(!registry||population().pressure==='within-budget')return Promise.resolve();
@@ -75,7 +82,7 @@ export function createConnectomeService({store=null,profiles={},reason=null,capa
       protocolVersion:1,individualId:state.individualId,sessionEpoch:state.sessionEpoch,commandSequence:state.commandSequence,action:'pause',steps:null,
     }))).finally(()=>{pressureWork=null;});return pressureWork;
   }
-  return{view,snapshot,create,command,history,list,withAdmission,enforcePressure,
+  return{view,snapshot,create,command,sample,history,list,withAdmission,enforcePressure,
     reservations:()=>registry?registry.list().filter(state=>state.resident).map(state=>({individualId:state.individualId,status:state.status})):[],
     close:async()=>{if(registry)await registry.close();store?.close();}};
 }
