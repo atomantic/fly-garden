@@ -1,0 +1,126 @@
+{
+  "schemaVersion": 1,
+  "kind": "static-visual-contact-ledger",
+  "neuralStepsExecuted": 0,
+  "campaignSha256": "18a02f84d6208f4c2b0fa80c0c56537338749d19faa4fe84d8f7538e810a41be",
+  "results": [
+    {
+      "dataset": "male-cns:v1.0",
+      "graphManifestSha256": "12759115c299175db5afa38b4a94a9a702f19a4e453c2bebb7dfaa85e5a3b915",
+      "graphSha256": "fa50e6e9add2a426f950cddc02b29b1c3dc267b98e1da33bf79cc1e5e1b3ce6a",
+      "annotationSha256": "2177e246113e4cfbf1e7772ec37c6da1955ff22e8063d0b1f833101f99a9a3b2",
+      "mappingSha256": "53b304111f8731c5b1e6d34384cb5b76d7f7b1abfdb955e796cf8cf047232248",
+      "model": {
+        "id": "malecns-traced-lif-v1",
+        "dtMs": 1,
+        "tauMs": 20,
+        "threshold": 1,
+        "reset": 0,
+        "refractorySteps": 2,
+        "delaySteps": 1,
+        "contactGain": 0.001,
+        "restingDrive": 0,
+        "precision": "float64",
+        "integration": "exact exponential leak, then delayed instantaneous synaptic jumps"
+      },
+      "ledger": {
+        "sourceCount": 875,
+        "sourceSigns": {
+          "-1": 875
+        },
+        "sourceEdgesBySign": {
+          "-1": 13333
+        },
+        "totalEdges": 13333,
+        "contacts": 272233,
+        "minimum": {
+          "signedContacts": -127,
+          "neuronId": "male-cns:v1.0/52186"
+        },
+        "maximum": {
+          "signedContacts": 0,
+          "neuronId": null
+        },
+        "motor": {
+          "right": {
+            "neuronId": "male-cns:v1.0/10360",
+            "signedContacts": 0,
+            "refractoryInput": false
+          },
+          "left": {
+            "neuronId": "male-cns:v1.0/523769",
+            "signedContacts": 0,
+            "refractoryInput": false
+          }
+        }
+      },
+      "recurrence": {
+        "arrivalTick": 22,
+        "checkedRows": 179,
+        "maximumAbsoluteError": 2.7755575615628914e-17,
+        "absoluteTolerance": 1e-12
+      }
+    },
+    {
+      "dataset": "banc:v888",
+      "graphManifestSha256": "6d24b3d65b879c1d456fc48e2ac84e81ecae61fdf17749de0c58b3b9c1b5ac99",
+      "graphSha256": "b8e648ec2585061b91fb07ad22b33d41939e0b2c8b56e7f7dbf7d6f172025e99",
+      "annotationSha256": "819bbcff476e52702d6f8d8604ce1f12d1d7b11942281df2f49df2a73a6f15a5",
+      "mappingSha256": "5fed4d875861922897750eb1d1e3330e02def08fd10a2ab646f40aa5325b93d4",
+      "model": {
+        "id": "banc-proofread-lif-v1",
+        "dtMs": 1,
+        "tauMs": 20,
+        "threshold": 1,
+        "reset": 0,
+        "refractorySteps": 2,
+        "delaySteps": 1,
+        "contactGain": 0.001,
+        "restingDrive": 0,
+        "precision": "float64",
+        "integration": "exact exponential leak, then delayed instantaneous synaptic jumps"
+      },
+      "ledger": {
+        "sourceCount": 716,
+        "sourceSigns": {
+          "0": 209,
+          "1": 7,
+          "-1": 500
+        },
+        "sourceEdgesBySign": {
+          "0": 3278,
+          "1": 240,
+          "-1": 8096
+        },
+        "totalEdges": 11614,
+        "contacts": 134906,
+        "minimum": {
+          "signedContacts": -121,
+          "neuronId": "banc:v888/720575941575662843"
+        },
+        "maximum": {
+          "signedContacts": 74,
+          "neuronId": "banc:v888/720575941689813260"
+        },
+        "motor": {
+          "left": {
+            "neuronId": "banc:v888/720575941510475536",
+            "signedContacts": 0,
+            "refractoryInput": false
+          },
+          "right": {
+            "neuronId": "banc:v888/720575941456897005",
+            "signedContacts": 0,
+            "refractoryInput": false
+          }
+        }
+      },
+      "recurrence": {
+        "arrivalTick": 22,
+        "checkedRows": 179,
+        "maximumAbsoluteError": 2.7755575615628914e-17,
+        "absoluteTolerance": 1e-12
+      }
+    }
+  ]
+}
