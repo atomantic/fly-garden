@@ -87,7 +87,10 @@ test('health reports research availability separately from the fixture and disti
  const initial=await health(); assert.equal(initial.available,true);assert.equal(initial.residentCount,0);assert.equal(initial.runningCount,0);assert.equal(initial.embodiment,false);
  assert.deepEqual(initial.profiles.map(p=>p.dataset),datasets);assert(initial.profiles.every(p=>p.measuredMemoryAvailable));
  const a=await s.create(datasets[0]);await s.command(a.individualId,'load');assert.equal((await health()).residentCount,1);assert.equal((await health()).runningCount,0);
+ assert.deepEqual((await health()).individuals,[{individualId:a.individualId,dataset:datasets[0],resident:true,status:'paused',checkpointId:null,recoveryRequired:false,tick:0,simulationTimeMs:0}]);
  await s.command(a.individualId,'start');assert.equal((await health()).runningCount,1);assert.equal((await s.state(a.individualId)).neural.tick,0);
+ await s.command(a.individualId,'advance',3);assert.equal((await health()).individuals[0].tick,3);
+ await s.command(a.individualId,'unload');assert.equal((await health()).individuals[0].tick,null);assert.equal((await health()).individuals[0].status,'saved-unloaded');
  const unknown=await setup(t,{measurement:false});assert((await(await fetch(`${unknown.base}/api/health`)).json()).connectome.profiles.every(p=>!p.measuredMemoryAvailable));
 });
 

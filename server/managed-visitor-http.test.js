@@ -43,6 +43,9 @@ async function setup(t, { autoTick = false, enabled = true, ...serverOptions } =
 }
 test('visitor HTTP is local-only by default, requires exact same-origin envelopes, and admits paused', async t => {
   const s = await setup(t); const path = `${s.base}/api/individuals/${s.id}/visitor`;
+  const health = async () => (await (await fetch(`${s.base}/api/health`)).json()).eidoverse;
+  assert.equal((await health()).configured, true); assert.equal((await health()).available, false);
+  assert.equal(s.wire.counts().discoveries, 0);
   assert.equal((await (await fetch(path)).json()).visitor.phase, 'home'); assert.equal(s.wire.counts().discoveries, 0);
   const capability = await (await fetch(`${path}?capabilities=1`)).json(); assert.equal(capability.capabilities.available, true); assert.equal(s.wire.counts().discoveries, 1);
   assert.equal((await fetch(`${path}?capabilities=0`)).status, 400);
@@ -52,6 +55,8 @@ test('visitor HTTP is local-only by default, requires exact same-origin envelope
   assert.equal(s.store.snapshot().externalOwner, null);
   const admitted = await (await s.command('admit', { worldId: 'garden-world' })).json();
   assert.equal(admitted.state.status, 'paused'); assert.equal(admitted.visitor.phase, 'visiting'); assert.equal(admitted.state.externalOwner.kind, 'managed-visitor');
+  assert.equal((await health()).available, true);
+  assert.deepEqual((await health()).individuals, [{ individualId: s.id, phase: 'visiting', owned: true, running: false }]);
   assert.equal(admitted.state.environmentAdapter.attached, false); assert.equal(s.wire.counts().observations, 0);
   const current = await s.state(); const forbidden = await fetch(`${s.base}/api/individuals/${s.id}/control`, { method: 'POST', headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ protocolVersion: 1, individualId: s.id, sessionId: current.sessionId, sequence: current.commandSequence + 1, action: 'start' }) });
@@ -59,6 +64,7 @@ test('visitor HTTP is local-only by default, requires exact same-origin envelope
   assert.equal((await (await s.command('start')).json()).state.status, 'running');
   assert.equal((await (await s.command('rest')).json()).state.status, 'resting');
   const home = await (await s.command('home')).json(); assert.equal(home.state.externalOwner, null); assert.equal(home.visitor.phase, 'home'); assert.equal(home.state.status, 'paused');
+  assert.equal((await health()).available, false);
 });
 test('disabled transport cannot acquire local ownership or query broker', async t => {
   const s = await setup(t, { enabled: false }); assert.equal((await s.command('admit', { worldId: 'garden-world' })).status, 409);

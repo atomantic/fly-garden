@@ -33,6 +33,10 @@ test('HTTP lifecycle starts paused, shares one clock, rests without reset, and n
   assert.equal(health.service, 'online');
   assert.equal(health.simulation, 'paused');
   assert.equal(health.connectome.available, false);
+  assert.equal(health.ui.available, true);
+  assert.equal(health.runtime.node, process.version);
+  assert.equal(health.eidoverse.configured, false);
+  assert.equal(health.eidoverse.available, false);
   for (const capability of Object.values(initial.capabilities)) {
     assert.equal(capability.available, false);
     assert.ok(capability.reason.length > 10);
@@ -55,6 +59,15 @@ test('HTTP lifecycle starts paused, shares one clock, rests without reset, and n
   assert.deepEqual((await get()).neural, first.neural);
   assert.equal(createRuntime().snapshot().tick, 0);
   assert.equal(createRuntime().snapshot().status, 'paused');
+});
+
+test('missing built UI is distinct from healthy paused API service', async t => {
+  const { base, get } = await fixture(t, { distDir: join(tmpdir(), 'missing-fly-ui', 'not-built') });
+  const health = await fetch(`${base}/api/health`).then(r => r.json());
+  assert.equal(health.service, 'online');
+  assert.equal(health.ui.available, false);
+  assert.equal(health.simulation, 'paused');
+  assert.equal((await get()).tick, 0);
 });
 
 test('bounded encounters change model inputs, expire, enforce global and individual cooldown, and cannot be strengthened', async t => {
