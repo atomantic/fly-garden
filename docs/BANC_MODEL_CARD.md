@@ -1,5 +1,7 @@
 # BANC v888 sparse research profile
 
+`banc:v888` is a separate female brain-and-nerve-cord reconstruction with independent state and dataset-qualified neuron identities. Differences from MaleCNS are not controlled biological sex comparisons.
+
 The observatory explicitly creates and loads local research individuals for this profile, separately from its synthetic fixture. Loading and checkpoint recovery are paused; start and bounded advance are separate explicit actions. Missing or changed data is unavailable, with no synthetic substitution or automatic catch-up simulation.
 
 Durable individual catalogs, exact checkpoint lineage and bounded sampled telemetry are implemented. Engineered visual mapping and onset/readout foundations have a [completed negative causal trial](VISUAL_CAUSAL_VALIDATION.md): input spikes were observed, but no DNa02 activity or yaw. A working visual body controller, retained learning, physiological validation, full-connectome language and travel are not established. Inactivity remains acceptable. See the [static propagation diagnosis](VISUAL_PROPAGATION.md).
