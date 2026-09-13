@@ -45,7 +45,7 @@ export default function SharedControls({ individuals = [], shared = null, contro
     finally { clearTimeout(timeout); onCommandEnd(context); if (generation === epoch.current) setBusy(false); }
   }
   const resident = individuals.filter(item => item.resident);
-  return <section className="card" aria-label="Shared fixture population">
+  return <section className="card info-panel" id="panel-shared" aria-label="Shared fixture population">
     <h3>Shared fixture garden</h3>
     <p>Explicit admitted population. All original bodies share one committed world; each camera supplies only its own 8×4 retinal pixels. This does not run the anatomical connectomes or establish learning, biological sensing or a sex comparison.</p>
     {!shared || shared.status === 'separated' ? <>

@@ -198,6 +198,36 @@ function App() {
       if (!visitorCommand || commandGeneration === requestEpoch.current) { requestEpoch.current++; setBusy(false); }
     }
   }
+  function handleEnvironmentMutation(next) {
+    if (next.individualId !== selectedIndividualRef.current) return;
+    const { controllerToken, ...safeState } = next;
+    setVisualLease(previous => controllerToken
+      ? { individualId: next.individualId, sessionId: next.sessionId, token: controllerToken }
+      : next.environmentAdapter?.attached && previous && previous.individualId === next.individualId && previous.sessionId === next.sessionId
+        ? previous : null);
+    requestEpoch.current++;
+    setState(previous => {
+      if (!previous || previous.individualId !== safeState.individualId || previous.sessionId !== safeState.sessionId
+        || previous.commandSequence > safeState.commandSequence) return previous;
+      if (previous.tick <= safeState.tick) return safeState;
+      return { ...previous, commandSequence: safeState.commandSequence,
+        ...(safeState.commandSequence > previous.commandSequence ? {
+          status: safeState.status, environmentAdapter: safeState.environmentAdapter,
+          encounterDynamics: safeState.encounterDynamics,
+        } : {}) };
+    });
+  }
+  function handleCreativeMutation(next) {
+    if (next.individualId !== selectedIndividualRef.current) return;
+    requestEpoch.current++; setState(next);
+  }
+  const scrollToPanel = (id) => {
+    const el = document.getElementById(id);
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "start" });
+      if (el.tagName.toLowerCase() === "details" && !el.open) el.open = true;
+    }
+  };
   const nodes = state?.neural.neurons || [],
     node = nodes.find((n) => String(n.id) === selected),
     available = !!state && !busy && !connectionError,
@@ -273,21 +303,23 @@ function App() {
                       : "A doorway to Eidoverse."}
             </h1>
           </div>
-          <span className="pill">
-            {connectionError
-              ? "DISCONNECTED"
-              : state
-                ? "LOCAL · CONNECTED"
-                : "CONNECTING"}
-          </span>
+          <div className="topbar-status">
+            <span className="notice">
+              <span className="notice-dot" /> FOUNDATION PREVIEW{" "}
+              <span>
+                {fixtureView ? "Synthetic 32-neuron circuit · no learning claims"
+                  : "Complete pinned datasets · explicit controls"}
+              </span>
+            </span>
+            <span className="pill">
+              {connectionError
+                ? "DISCONNECTED"
+                : state
+                  ? "LOCAL · CONNECTED"
+                  : "CONNECTING"}
+            </span>
+          </div>
         </header>
-        <div className="notice">
-          <span className="notice-dot" /> FOUNDATION PREVIEW{" "}
-          <span>
-            {fixtureView ? "Synthetic 32-neuron test circuit · engineered body controller · no learning claims"
-              : "Complete pinned datasets · explicit paused simulation controls · no learning claims"}
-          </span>
-        </div>
         {(fixtureView || state?.externalOwner) && (connectionError || error) && (
           <div role="alert" className="error">
             {connectionError || error}
@@ -296,51 +328,40 @@ function App() {
             )}
           </div>
         )}
-        {state?.persistence && tab === "Observatory" && <details className="card operations-panel"><summary>Population, recording and replay</summary>
-          <Population />
-          <Recordings state={state} disabled={!available || Boolean(state?.sharedSession || state?.externalOwner)} onMutation={async () => {
-            if (selectedIndividualRef.current !== state.individualId) return;
-            const epoch = ++requestEpoch.current;
-            const selectedId = state.individualId;
-            const response = await fetch(`/api/individuals/${selectedId}`);
-            if (!response.ok) throw new Error("Refresh individual before another command.");
-            const next = await response.json();
-            if (next.individualId === selectedIndividualRef.current && epoch === requestEpoch.current) setState(next);
-          }} />
-        </details>}
-        {fixtureView && individuals.length > 0 && <section className="card" aria-label="Individual selection">
-          <label>Individual <select disabled={busy} value={individualId || state?.individualId || ""} onChange={event => {
-            requestEpoch.current++;
-            const member = selectedSharedMember(sharedLive.current, event.target.value);
-            setVisualLease(null);
-            if (!member) { sharedLive.current = null; setSharedBundle(null); setSharedLease(null); }
-            selectedIndividualRef.current = event.target.value;
-            // Keep the same shared renderer mounted while inspecting its other recipient.
-            setIndividualId(event.target.value); setState(member); setSelected(""); setHistory([]); setConnectionError("");
-          }}>{individuals.map(individual => <option key={individual.individualId} value={individual.individualId}>
-            {individual.individualId} · {individual.resident ? "resident" : "saved unloaded"}
-          </option>)}</select></label>
-          <p>Each synthetic individual has separate state and exposure reservations. Selection does not start a simulation.</p>
-          {podRoster.length > 0 && <>
-            <p>Teleport pod status for every individual. Read-only; selecting a different fly does not move a pod.</p>
-            <ul className="pod-roster" aria-label="Teleport pod status by individual">
-              {podRoster.map(entry => <li key={entry.individualId} className={`pod-${entry.tone}`}>
-                ◎ {entry.individualId} · {entry.label} · {entry.owned ? "owned by the bridge" : "home controller available"} · {entry.running ? "stepping" : "paused"}
-              </li>)}
-            </ul>
-          </>}
-        </section>}
         {(fixtureView || state?.externalOwner) && <div className="toolbar">
           <div className="identity">
             <span className="tiny-fly">✧</span>
             <div>
-              Synthetic fixture{" "}
+              <strong>Synthetic fixture</strong>{" "}
+              <span className={`status-pill status-${state?.status || "waiting"}`}>
+                {state?.status || "Waiting"}
+              </span>
               <small>
-                {state?.status || "Waiting for runtime"} ·{" "}
                 {((state?.simTimeMs || 0) / 1000).toFixed(1)} s simulated
               </small>
             </div>
           </div>
+          {fixtureView && individuals.length > 0 && (
+            <div className="toolbar-individual">
+              <label>
+                <span className="muted">Fly: </span>
+                <select disabled={busy} value={individualId || state?.individualId || ""} onChange={event => {
+                  requestEpoch.current++;
+                  const member = selectedSharedMember(sharedLive.current, event.target.value);
+                  setVisualLease(null);
+                  if (!member) { sharedLive.current = null; setSharedBundle(null); setSharedLease(null); }
+                  selectedIndividualRef.current = event.target.value;
+                  setIndividualId(event.target.value); setState(member); setSelected(""); setHistory([]); setConnectionError("");
+                }}>
+                  {individuals.map(individual => (
+                    <option key={individual.individualId} value={individual.individualId}>
+                      {individual.individualId.slice(0, 8)}… · {individual.resident ? "resident" : "unloaded"}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          )}
           <div className="actions">
             <button
               disabled={state?.externalOwner ? !canQuiet || state.status !== "running" : !residentAvailable || (state?.sharedSession && state?.status !== "running")}
@@ -368,30 +389,20 @@ function App() {
               ⌂ Home
             </button>
           </div>
-        </div>}
-        {fixtureView && state?.persistence && (
-          <section className="card" aria-label="Fixture checkpoints">
-            <p>Individual <code>{state.individualId}</code></p>
-            <p>Saved at {(state.persistence.savedSimTimeMs / 1000).toFixed(3)} s · {state.persistence.checkpointCount} checkpoints.
-              Optional encounters also save their reservation before delivery. Restart restores the latest saved state paused. Restore cancels optional input and retains spent reservations.</p>
-            <div className="actions">
-              <button disabled={!available || Boolean(state.sharedSession || state.externalOwner)} onClick={() => command(`/api/individuals/${state.individualId}/${state.persistence.resident ? "unload" : "load"}`, {})}>{state.persistence.resident ? "Save and unload" : "Load paused"}</button>
-              <button disabled={!available || Boolean(state.externalOwner)} onClick={() => command(`/api/individuals/${state.individualId}/replicas`, { checkpointId: state.persistence.checkpointId })}>Create saved research replica</button>
-              <button disabled={!residentAvailable || Boolean(state.sharedSession)} onClick={() => command(`/api/individuals/${state.individualId}/checkpoints`, {})}>Save checkpoint</button>
-              <button disabled={!residentAvailable || Boolean(state.sharedSession)} onClick={() => command(`/api/individuals/${state.individualId}/restore`, { checkpointId: state.persistence.checkpointId })}>Restore saved state (paused)</button>
+          {tab === "Observatory" && (
+            <div className="toolbar-quicknav" role="toolbar" aria-label="Observatory panel shortcuts">
+              <button type="button" className="quicknav-btn" onClick={() => scrollToPanel("panel-checkpoints")}>
+                ⚙ Checkpoints & Camera
+              </button>
+              <button type="button" className="quicknav-btn" onClick={() => scrollToPanel("panel-shared")}>
+                👥 Shared Garden
+              </button>
+              <button type="button" className="quicknav-btn" onClick={() => scrollToPanel("panel-population")}>
+                📊 Population
+              </button>
             </div>
-            {(state.faultReason || state.persistence.error) && <p role="alert">{state.faultReason || state.persistence.error}</p>}
-          </section>
-        )}
-        {state?.persistence && tab === "Observatory" && <SharedControls individuals={individuals}
-          shared={sharedBundle?.shared ?? null} controllerToken={sharedLease?.sharedId === sharedBundle?.shared.sharedId ? sharedLease?.token : null}
-          disabled={!available || Boolean(state?.externalOwner)} onCommandStart={beginSharedCommand} onCommandEnd={endSharedCommand} onMutation={(value, context) => receiveShared(value, 'mutation', context)} />}
-        {(tab === "Eidoverse" || state?.externalOwner) && <ManagedVisitorControls key={`${state?.individualId}/${state?.sessionId}`}
-          state={state} disabled={!available} onBusyChange={setBusy} onMutation={next => {
-            if (next.individualId !== selectedIndividualRef.current) return;
-            requestEpoch.current++; if (next.externalOwner) setVisualLease(null);
-            setState(previous => mergeRuntimeSnapshot(previous, next));
-          }} />}
+          )}
+        </div>}
         {(tab === "Observatory" || tab === "Eidoverse") && (
           <div className="view-grid">
             <section className={`card habitat${state?.sharedSession ? " habitat-shared" : ""}${state?.externalOwner ? " habitat-away" : ""}`}>
@@ -399,40 +410,13 @@ function App() {
                 <span className="eyebrow">{state?.externalOwner ? "01 / VISITOR STATUS" : "01 / HOME GARDEN"}</span>
                 <span className="muted">ILLUSTRATED HABITAT</span>
               </div>
-              {!state?.sharedSession && !state?.externalOwner && <>
-              <EnvironmentControls key={state?.individualId} state={state} disabled={!available || Boolean(state?.sharedSession || state?.externalOwner)} onMutation={next => {
-                if (next.individualId !== selectedIndividualRef.current) return;
-                const { controllerToken, ...safeState } = next;
-                setVisualLease(previous => controllerToken
-                  ? { individualId: next.individualId, sessionId: next.sessionId, token: controllerToken }
-                  : next.environmentAdapter?.attached && previous && previous.individualId === next.individualId && previous.sessionId === next.sessionId
-                    ? previous : null);
-                requestEpoch.current++;
-                setState(previous => {
-                  if (!previous || previous.individualId !== safeState.individualId || previous.sessionId !== safeState.sessionId
-                    || previous.commandSequence > safeState.commandSequence) return previous;
-                  if (previous.tick <= safeState.tick) return safeState;
-                  // Frames may finish while this command response is in transit. Keep their trajectory,
-                  // while a newer lifecycle command still owns paused/attached/enablement status.
-                  return { ...previous, commandSequence: safeState.commandSequence,
-                    ...(safeState.commandSequence > previous.commandSequence ? {
-                      status: safeState.status, environmentAdapter: safeState.environmentAdapter,
-                      encounterDynamics: safeState.encounterDynamics,
-                    } : {}) };
-                });
-              }} />
-              <details className="creative-panel"><summary>Music and pollen capture</summary>
-              <CreativeControls key={state?.individualId} state={state} disabled={!available || Boolean(state?.sharedSession || state?.externalOwner)} onMutation={next => {
-                if (next.individualId !== selectedIndividualRef.current) return;
-                requestEpoch.current++; setState(next);
-              }} />
-              </details>
-              <Scene state={state} visitor={state?.visitor} controllerToken={visualLease && state && visualLease.individualId === state.individualId && visualLease?.sessionId === state?.sessionId ? visualLease.token : null} onEnvironmentFrame={next => {
-                if (next.individualId !== selectedIndividualRef.current || next.sessionId !== state?.sessionId
-                  || next.environmentAdapter?.environmentEpoch !== state?.environmentAdapter?.environmentEpoch) return;
-                setState(previous => mergeRuntimeSnapshot(previous, next));
-              }} />
-              </>}
+              {!state?.sharedSession && !state?.externalOwner && (
+                <Scene state={state} visitor={state?.visitor} controllerToken={visualLease && state && visualLease.individualId === state.individualId && visualLease?.sessionId === state?.sessionId ? visualLease.token : null} onEnvironmentFrame={next => {
+                  if (next.individualId !== selectedIndividualRef.current || next.sessionId !== state?.sessionId
+                    || next.environmentAdapter?.environmentEpoch !== state?.environmentAdapter?.environmentEpoch) return;
+                  setState(previous => mergeRuntimeSnapshot(previous, next));
+                }} />
+              )}
               {state?.externalOwner && <p className="visitor-home-placeholder">An external visit is pending or active. The home controller remains unavailable until confirmed return or trusted expiry. Neural state and identity stay local.</p>}
               {state?.sharedSession && (sharedBundle?.shared.sharedId === state.sharedSession.sharedId
                 ? <SharedScene shared={sharedBundle.shared} controllerToken={sharedLease?.sharedId === sharedBundle.shared.sharedId ? sharedLease.token : null} onFrame={value => receiveShared(value)} />
@@ -499,6 +483,132 @@ function App() {
             </section>
           </div>
         )}
+        {fixtureView && <div className="bottom-grid">
+          <section className="card signal">
+            <div className="card-heading">
+              <span className="eyebrow">SIGNAL / POPULATION MEAN</span>
+              <span>{state?.neural.meanRateHz?.toFixed(1) ?? "Unavailable"} {state ? "Hz" : ""}</span>
+            </div>
+            <svg
+              viewBox="0 0 600 90"
+              role="img"
+              aria-label="Recent synthetic population mean firing rate, fixed zero to 100 Hz scale"
+            >
+              <path
+                d="M0 75H600 M0 40H600 M0 5H600"
+                stroke="#263b35"
+                fill="none"
+              />
+              <polyline
+                points={ratePoints(visibleHistory)}
+                fill="none"
+                stroke="#d9c48e"
+                strokeWidth="2"
+              />
+            </svg>
+            <div className="chart-scale">
+              <span>SIMULATION {visibleHistory[0]?.timeMs ?? "Unavailable"}–{visibleHistory.at(-1)?.timeMs ?? "Unavailable"} ms</span>
+              <span>FIXED SCALE · 0–100 Hz</span>
+            </div>
+            <p className="chart-footnote">Mean across 32 fixture neurons in Hz; each value uses a trailing 1000 ms simulation window, with the initial partial window zero-padded. At most 50 distinct simulation times are retained. Paused polls add no points; horizontal distance represents simulation time. Missing telemetry is not plotted as zero.</p>
+          </section>
+          <section className="card event-card">
+            <EventDetails state={state} />
+          </section>
+        </div>}
+        {tab === "Observatory" && (
+          <section className="observatory-operations">
+            <div className="section-header">
+              <h2>Observatory Operations & Configuration</h2>
+              <span className="muted">Checkpoints, visual camera loop, shared habitat & population</span>
+            </div>
+            {state?.persistence && (
+              <section className="card info-panel" id="panel-checkpoints" aria-label="Fixture checkpoints">
+                <div className="card-heading" style={{ padding: 0, marginBottom: 12 }}>
+                  <span className="eyebrow">FIXTURE PERSISTENCE</span>
+                  <span className="muted">LOCAL CHECKPOINTS</span>
+                </div>
+                <h3>Individual <code>{state.individualId}</code></h3>
+                <div className="badge-row">
+                  <span className="badge">Saved: {(state.persistence.savedSimTimeMs / 1000).toFixed(3)} s</span>
+                  <span className="badge">{state.persistence.checkpointCount} checkpoints</span>
+                  <span className="badge">{state.persistence.resident ? "Resident" : "Unloaded"}</span>
+                </div>
+                <div className="actions">
+                  <button disabled={!available || Boolean(state.sharedSession || state.externalOwner)} onClick={() => command(`/api/individuals/${state.individualId}/${state.persistence.resident ? "unload" : "load"}`, {})}>{state.persistence.resident ? "Save and unload" : "Load paused"}</button>
+                  <button disabled={!available || Boolean(state.externalOwner)} onClick={() => command(`/api/individuals/${state.individualId}/replicas`, { checkpointId: state.persistence.checkpointId })}>Create saved research replica</button>
+                  <button disabled={!residentAvailable || Boolean(state.sharedSession)} onClick={() => command(`/api/individuals/${state.individualId}/checkpoints`, {})}>Save checkpoint</button>
+                  <button disabled={!residentAvailable || Boolean(state.sharedSession)} onClick={() => command(`/api/individuals/${state.individualId}/restore`, { checkpointId: state.persistence.checkpointId })}>Restore saved state (paused)</button>
+                </div>
+                <details className="info-disclosure">
+                  <summary>Checkpoint lineage & reservation policy</summary>
+                  <p>Saved at {(state.persistence.savedSimTimeMs / 1000).toFixed(3)} s · {state.persistence.checkpointCount} checkpoints.
+                    Optional encounters also save their reservation before delivery. Restart restores the latest saved state paused. Restore cancels optional input and retains spent reservations.</p>
+                </details>
+                {(state.faultReason || state.persistence.error) && <p role="alert">{state.faultReason || state.persistence.error}</p>}
+                <div className="panel-divider" />
+                <EnvironmentControls key={state.individualId} state={state} disabled={!available || Boolean(state.sharedSession || state.externalOwner)} onMutation={handleEnvironmentMutation} />
+                <details className="creative-panel info-disclosure">
+                  <summary>Music and pollen capture</summary>
+                  <CreativeControls key={state.individualId} state={state} disabled={!available || Boolean(state.sharedSession || state.externalOwner)} onMutation={handleCreativeMutation} />
+                </details>
+              </section>
+            )}
+            {state?.persistence && (
+              <SharedControls individuals={individuals}
+                shared={sharedBundle?.shared ?? null} controllerToken={sharedLease?.sharedId === sharedBundle?.shared.sharedId ? sharedLease?.token : null}
+                disabled={!available || Boolean(state?.externalOwner)} onCommandStart={beginSharedCommand} onCommandEnd={endSharedCommand} onMutation={(value, context) => receiveShared(value, 'mutation', context)} />
+            )}
+            {state?.persistence && (
+              <details className="card info-panel operations-panel" id="panel-population">
+                <summary>Population, recording and replay</summary>
+                <Population />
+                <Recordings state={state} disabled={!available || Boolean(state?.sharedSession || state?.externalOwner)} onMutation={async () => {
+                  if (selectedIndividualRef.current !== state.individualId) return;
+                  const epoch = ++requestEpoch.current;
+                  const selectedId = state.individualId;
+                  const response = await fetch(`/api/individuals/${selectedId}`);
+                  if (!response.ok) throw new Error("Refresh individual before another command.");
+                  const next = await response.json();
+                  if (next.individualId === selectedIndividualRef.current && epoch === requestEpoch.current) setState(next);
+                }} />
+              </details>
+            )}
+            {individuals.length > 0 && (
+              <section className="card info-panel" id="panel-individual" aria-label="Individual selection">
+                <div className="card-heading" style={{ padding: 0, marginBottom: 12 }}>
+                  <span className="eyebrow">INDIVIDUAL ROSTER</span>
+                  <span className="muted">ISOLATED RESIDENTS</span>
+                </div>
+                <label>Individual <select disabled={busy} value={individualId || state?.individualId || ""} onChange={event => {
+                  requestEpoch.current++;
+                  const member = selectedSharedMember(sharedLive.current, event.target.value);
+                  setVisualLease(null);
+                  if (!member) { sharedLive.current = null; setSharedBundle(null); setSharedLease(null); }
+                  selectedIndividualRef.current = event.target.value;
+                  setIndividualId(event.target.value); setState(member); setSelected(""); setHistory([]); setConnectionError("");
+                }}>{individuals.map(individual => <option key={individual.individualId} value={individual.individualId}>
+                  {individual.individualId} · {individual.resident ? "resident" : "saved unloaded"}
+                </option>)}</select></label>
+                <p>Each synthetic individual has separate state and exposure reservations. Selection does not start a simulation.</p>
+                {podRoster.length > 0 && <>
+                  <p>Teleport pod status for every individual. Read-only; selecting a different fly does not move a pod.</p>
+                  <ul className="pod-roster" aria-label="Teleport pod status by individual">
+                    {podRoster.map(entry => <li key={entry.individualId} className={`pod-${entry.tone}`}>
+                      ◎ {entry.individualId} · {entry.label} · {entry.owned ? "owned by the bridge" : "home controller available"} · {entry.running ? "stepping" : "paused"}
+                    </li>)}
+                  </ul>
+                </>}
+              </section>
+            )}
+          </section>
+        )}
+        {(tab === "Eidoverse" || state?.externalOwner) && <ManagedVisitorControls key={`${state?.individualId}/${state?.sessionId}`}
+          state={state} disabled={!available} onBusyChange={setBusy} onMutation={next => {
+            if (next.individualId !== selectedIndividualRef.current) return;
+            requestEpoch.current++; if (next.externalOwner) setVisualLease(null);
+            setState(previous => mergeRuntimeSnapshot(previous, next));
+          }} />}
         {tab === "Connectome lab" && <details className="card operations-panel"><summary>Shared population and memory limits</summary><Population /></details>}
         {tab === "Connectome lab" && <Suspense fallback={<p role="status">Reading full-connectome individuals…</p>}><ConnectomeLab selectedIndividualId={connectomeId} onSelectIndividual={(id,dataset) => setConnectomeSelection(current => selectConnectomePair(current,id,dataset))} onSelection={value => setConnectomeSelection(current => mergeConnectomeSelection(current,value))} /></Suspense>}
         {tab === "Nervous system" && <Suspense fallback={<p role="status">Loading anatomical viewer…</p>}><NervousSystem dataset={connectomeDataset} individualId={connectomeId || null} onDatasetChange={dataset => setConnectomeSelection(current => selectConnectomePair(current,"",dataset))} /></Suspense>}
@@ -645,39 +755,7 @@ function App() {
             }} />
           </section>
         )}
-        {fixtureView && <div className="bottom-grid">
-          <section className="card signal">
-            <div className="card-heading">
-              <span className="eyebrow">SIGNAL / POPULATION MEAN</span>
-              <span>{state?.neural.meanRateHz?.toFixed(1) ?? "Unavailable"} {state ? "Hz" : ""}</span>
-            </div>
-            <svg
-              viewBox="0 0 600 90"
-              role="img"
-              aria-label="Recent synthetic population mean firing rate, fixed zero to 100 Hz scale"
-            >
-              <path
-                d="M0 75H600 M0 40H600 M0 5H600"
-                stroke="#263b35"
-                fill="none"
-              />
-              <polyline
-                points={ratePoints(visibleHistory)}
-                fill="none"
-                stroke="#d9c48e"
-                strokeWidth="2"
-              />
-            </svg>
-            <div className="chart-scale">
-              <span>SIMULATION {visibleHistory[0]?.timeMs ?? "Unavailable"}–{visibleHistory.at(-1)?.timeMs ?? "Unavailable"} ms</span>
-              <span>FIXED SCALE · 0–100 Hz</span>
-            </div>
-            <p>Mean across 32 fixture neurons in Hz; each value uses a trailing 1000 ms simulation window, with the initial partial window zero-padded. At most 50 distinct simulation times are retained. Paused polls add no points; horizontal distance represents simulation time. Missing telemetry is not plotted as zero.</p>
-          </section>
-          <section className="card event-card">
-            <EventDetails state={state} />
-          </section>
-        </div>}
+
         <footer>
           <a href="/third-party-notices.html">Third-party notices</a>
           Care is a design requirement.{" "}
