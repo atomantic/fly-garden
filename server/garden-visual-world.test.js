@@ -33,6 +33,25 @@ test('the extracted garden world builds the production landmark scene and return
   assert.equal(body.rotation.y, GARDEN_DEFAULT_BODY.rotationY);
 });
 
+test('every flower is returned as its own cluster of meshes covering the whole flower population', () => {
+  const scene = new Scene();
+  const { flowerClusters } = createGardenVisualWorld(scene);
+  // Eleven of the thirteen candidate positions survive the arrival-pod exclusion, each a stem,
+  // a leaf, five petals and a centre.
+  assert.equal(flowerClusters.length, 11);
+  const meshes = flowerClusters.flatMap(cluster => cluster.meshes);
+  assert.equal(meshes.length, 88);
+  assert.equal(new Set(meshes).size, 88);
+  for (const { x, z, meshes: cluster } of flowerClusters) {
+    assert.equal(cluster.length, 8);
+    assert.ok(cluster.every(mesh => mesh.isMesh && mesh.parent === scene && mesh.visible));
+    // The cluster is grouped around its own stem position, not scattered across the garden.
+    assert.ok(cluster.every(mesh => Math.hypot(mesh.position.x - x, mesh.position.z - z) < 0.3));
+    // Excluded from the arrival-pod sanctuary corner, as the builder's own filter requires.
+    assert.equal(x > 1 && z < -0.6, false);
+  }
+});
+
 test('the pod rings keep their resting heights and opposed bob directions', () => {
   const { podRings } = createGardenVisualWorld(new Scene());
   assert.equal(podRings.length, 2);

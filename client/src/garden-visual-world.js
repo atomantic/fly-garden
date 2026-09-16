@@ -79,6 +79,11 @@ export function createGardenVisualWorld(scene) {
   const stem = material(0x567143),
     petal = material(0xf4d78f),
     center = material(0xc28e46);
+  // Each flower's own meshes are kept together so an evidence harness can change one
+  // landmark's appearance and record what that scene change does downstream. This is
+  // presentation bookkeeping only; nothing here reads or writes runtime or policy state,
+  // and the optional appetitive encounter policy is a separate server-side channel.
+  const flowerClusters = [];
   for (let i = 0; i < 13; i++) {
     const a = i * 2.4,
       r = 2.4 + (i % 3) * 0.5,
@@ -86,16 +91,20 @@ export function createGardenVisualWorld(scene) {
       z = Math.sin(a) * r;
     if (x > 1 && z < -0.6) continue;
     const h = 0.6 + (i % 4) * 0.13;
-    line([x, 0, z], [x, h, z], stem, scene, 0.025);
-    sphere(stem, scene, [x + 0.13, h * 0.4, z], [0.27, 0.035, 0.11]);
-    for (let j = 0; j < 5; j++)
-      sphere(
-        petal,
-        scene,
-        [x + 0.18 * Math.cos(j * 1.256), h, z + 0.18 * Math.sin(j * 1.256)],
-        [0.18, 0.06, 0.12],
-      );
-    sphere(center, scene, [x, h + 0.03, z], [0.11, 0.07, 0.11]);
+    const meshes = [
+      line([x, 0, z], [x, h, z], stem, scene, 0.025),
+      sphere(stem, scene, [x + 0.13, h * 0.4, z], [0.27, 0.035, 0.11]),
+      ...Array.from({ length: 5 }, (_, j) =>
+        sphere(
+          petal,
+          scene,
+          [x + 0.18 * Math.cos(j * 1.256), h, z + 0.18 * Math.sin(j * 1.256)],
+          [0.18, 0.06, 0.12],
+        ),
+      ),
+      sphere(center, scene, [x, h + 0.03, z], [0.11, 0.07, 0.11]),
+    ];
+    flowerClusters.push({ x, z, meshes });
   }
   const fly = new THREE.Group();
   fly.position.set(-0.55, 0.67, 0.65);
@@ -131,7 +140,7 @@ export function createGardenVisualWorld(scene) {
     line([side * 0.1, 0.23, -0.76], [side * 0.23, 0.4, -1], dark, fly, 0.017);
     sphere(dark, fly, [side * 0.23, 0.4, -1], [0.045, 0.045, 0.045]);
   }
-  return { body: fly, podRings };
+  return { body: fly, podRings, flowerClusters };
 }
 
 /** The illustrated body's resting placement while no authoritative controller pose applies. */
