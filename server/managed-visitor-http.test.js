@@ -7,6 +7,7 @@ import { once } from 'node:events';
 import { openIdentityStore } from './identity-store.js';
 import { createServer } from './index.js';
 import { createCreativeSessions } from './creative-session.js';
+import { createManagedVisitorTransport } from './managed-visitor-transport.js';
 import { randomUUID } from 'node:crypto';
 function transport() {
   const sessions = new Map(), ids = new Set(); let discoveries = 0, observations = 0;
@@ -177,4 +178,24 @@ test('a paired two-fly visit preserves chemical and stimulus-policy state and ch
       { rng: null, plasticity: null, refractory: null, delayBuffers: null, embodiment: null });
   }
   assert.match(s.store.snapshot(s.id).model.limitations, /No biological anatomy, RNG dynamics, plasticity/);
+});
+
+test('an unconfigured bridge reports the specific unmet setting through health and individual state', async t => {
+  // A real transport with only the separately provisioned PortOS credential missing (NFR-5).
+  const visitorTransport = createManagedVisitorTransport({ baseUrl: 'http://127.0.0.1:5555', appId: 'garden',
+    fetchImpl: () => assert.fail('an unconfigured bridge must never reach the network') });
+  const s = await setup(t, { visitorTransport });
+  const { eidoverse } = await (await fetch(`${s.base}/api/health`)).json();
+  assert.equal(eidoverse.available, false); assert.equal(eidoverse.configured, false);
+  assert.equal(eidoverse.configurationCode, 'credential-unset');
+  assert.deepEqual(eidoverse.unresolvedSettings, ['FLY_GARDEN_VISITOR_CREDENTIAL']);
+  assert.match(eidoverse.reason, /optional password unset/);
+  const { visitor } = await (await fetch(`${s.base}/api/individuals/${s.id}/visitor?capabilities=1`)).json();
+  assert.equal(visitor.available, false); assert.equal(visitor.configurationCode, 'credential-unset');
+  assert.equal(visitor.reason, eidoverse.reason);
+  assert.equal((await s.command('admit', { worldId: 'garden-world' })).status, 409);
+  assert.equal(s.store.snapshot().externalOwner, null);
+  // The unmet-setting explanation never carries a value the owner configured.
+  const published = JSON.stringify({ eidoverse, visitor });
+  assert(!published.includes('127.0.0.1:5555') && !published.includes('mv1_a'));
 });
