@@ -112,6 +112,33 @@ host acknowledgment. Animation during `admission`, `departing` or `blocked` woul
 admission succeeded, so the pod is held still and no phase label uses arrival wording.
 `/api/health`'s `eidoverse.individuals[]` carries phase, ownership, running state and world for every
 individual, so both flies' pod states are readable without changing the browser selection.
+
+#### Rendered pod evidence, and what it does not establish
+
+`tests/browser/teleport-pod-phases.spec.js` (Playwright projects `pod-phases` and
+`pod-phases-reduce`, run by `npm run test:browser`) renders all nine phases in Chromium and records,
+per phase, the pod's tone class and computed colour, its label and destination text, the habitat's
+`aria-label`, and the emissive colour, intensity and ring displacement read back out of the three.js
+material after the renderer wrote them. `Scene.jsx` publishes that readback as `data-pod-emissive`,
+`data-pod-intensity` and `data-pod-offset`, alongside the existing `data-motion-*` disclosures;
+nothing in the application reads those attributes.
+
+Two results are asserted in both motion modes: the four tones are four distinct rendered colours,
+and the pod rings leave their resting height **only** in `visiting` under the default motion
+preference, never in any phase under `prefers-reduced-motion: reduce`. Phase tone is therefore
+state, not motion.
+
+**This is client-rendering evidence only.** The spec reaches those phases by intercepting the
+browser's own loopback `GET /api/state` and replacing exactly one field, `visitor`. No PortOS host
+is contacted, no `mv1_` credential is read, no admission is requested, no individual is created and
+the simulation stays paused. It establishes that a given `state.visitor.phase` renders correctly; it
+is **not** evidence that any visit occurred and may not be cited as host, transport or admission
+evidence. Those remain `server/managed-visitor-*.test.js` and
+[live visitor fixture evidence](LIVE_VISITOR_FIXTURE_EVIDENCE.md).
+
+Because `tests/browser/` is not part of `npm test` or CI, `server/managed-visitor-ui.test.js` guards
+the readback contract the spec depends on, so the browser evidence cannot silently degrade into
+measuring nothing.
 - `capabilities(id, worldId?)` reads negotiated allowed worlds without acquiring a body.
 - `admit(id, {worldId})` acquires exclusive local ownership, then requests a scoped paused body. Selection changes cannot retarget it.
 - `control(id, 'start' | 'pause' | 'rest' | 'home' | 'interact')` is explicit. `interact` only toggles a local

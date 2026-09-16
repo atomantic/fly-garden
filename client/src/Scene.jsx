@@ -16,6 +16,8 @@ export default function Scene({ neural, brain = false, state = null, visitor = n
   const pod = podPresentation(visitor);
   // The render loop reads the latest phase without rebuilding the scene graph.
   const podState = useRef(pod);
+  // Last pod tone/displacement published to the DOM, so the readback below writes only on change.
+  const podDrawn = useRef(null);
   useEffect(() => { podState.current = podPresentation(visitor); }, [visitor?.phase, visitor?.worldId, visitor?.running]);
   const live = useRef(neural);
   const source = useRef({ state, controllerToken, onEnvironmentFrame, observedAt: performance.now() });
@@ -178,6 +180,22 @@ export default function Scene({ neural, brain = false, state = null, visitor = n
         ring.material.emissive.setHex(tone.emissive);
         ring.material.emissiveIntensity = tone.intensity;
         ring.position.y = baseY + offset * direction;
+      }
+      // Disclosed verification readback, in the same spirit as the data-motion-* attributes above.
+      // These values are read back OUT of the pod ring material and transform AFTER they are
+      // written, so a browser check can confirm that the phase tone and the stillness rule reached
+      // the rendered geometry rather than only the text label. Nothing in the app reads them, and
+      // they carry no welfare, experience or admission claim — only which tone was drawn.
+      // Displacement is published as a magnitude rather than a moved/still boolean: the bob passes
+      // through its resting height twice a cycle, so a boolean would read "still" for single frames
+      // in the middle of an acknowledged visit. A checker takes the maximum over a window instead.
+      // Written only on change, so a phase that holds the rings still writes nothing per frame.
+      const [{ ring, baseY }] = podRings;
+      const drawn = `${ring.material.emissive.getHexString()} ${ring.material.emissiveIntensity} ${Math.abs(ring.position.y - baseY).toFixed(4)}`;
+      if (host.current && drawn !== podDrawn.current) {
+        podDrawn.current = drawn;
+        const [emissive, intensity, offset] = drawn.split(" ");
+        Object.assign(host.current.dataset, { podEmissive: emissive, podIntensity: intensity, podOffset: offset });
       }
     };
     // No controls.update() here: OrbitControls dispatches its own change event from update(),
