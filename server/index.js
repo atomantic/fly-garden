@@ -14,6 +14,7 @@ import { createCreativeSessions } from './creative-session.js';
 import { createLanguageService } from './language-service.js';
 import { createOllamaLanguageProvider } from './ollama-language-provider.js';
 import { createManagedVisitorBridge } from './managed-visitor-bridge.js';
+import { visitorConfigurationOf } from './managed-visitor-transport.js';
 import { createSharedHttp } from './shared-http.js';
 import { createSharedCreativeSessions } from './shared-creative-session.js';
 import { createSharedCreativeHttp } from './shared-creative-http.js';
@@ -153,7 +154,9 @@ export function createServer({ runtime = createRuntime(), identities = null, dis
           const state = snapshot();
           const research = connectomes.view();
           const visitorStates = visitors ? identities.list().map(({ individualId }) => visitors.snapshot(individualId)) : [];
-          const visitorConfigured = visitorStates.some(value => value.available);
+          // One source for all three fields, so a configured bridge with no identities cannot read as an unnamed fault.
+          const visitorConfiguration = visitors?.configuration() ?? visitorConfigurationOf(null);
+          const visitorConfigured = visitorConfiguration.enabled;
           const visitorAdmitted = visitorStates.some(value => value.phase === 'visiting' && value.owned && value.expiresAt > Date.now());
           const uiAvailable = await stat(resolve(distDir, 'index.html')).then(value => value.isFile(), () => false);
           return json(response, 200, { service: 'online', mode: state.source,
@@ -176,7 +179,10 @@ export function createServer({ runtime = createRuntime(), identities = null, dis
                   ? 'A scoped fixture visit was acknowledged; this health read does not probe remote liveness.'
                   : visitorConfigured
                     ? 'Local bridge configured; explicit admission is required. Host readiness is not probed by health.'
-                    : 'Local managed visitor bridge is disabled; no host connection is claimed.',
+                    // Name the specific unmet setting rather than one generic "disabled" for every cause.
+                    : visitorConfiguration.reason,
+                configurationCode: visitorConfiguration.code,
+                unresolvedSettings: visitorConfiguration.unresolved,
                 capacity: visitorStates[0]?.hostCapacity ?? null,
                 individuals: visitorStates.map(({ individualId, phase, owned, running, worldId }) => ({ individualId, phase, owned, running, worldId })),
               },

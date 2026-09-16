@@ -87,7 +87,7 @@ test('expiry and backwards clocks pause before another neural step', async () =>
 });
 test('transport is disabled without exact loopback configuration and never exposes its credential', async () => {
   let calls = 0; const disabled = createManagedVisitorTransport({ baseUrl: 'https://example.com', credential: `mv1_${'a'.repeat(64)}`, appId: 'garden', fetchImpl: () => { calls++; } });
-  await assert.rejects(disabled.capabilities, /not configured/); assert.equal(calls, 0);
+  await assert.rejects(disabled.capabilities, /approved local loopback addresses/); assert.equal(calls, 0);
   const token = `mv1_${'b'.repeat(64)}`;
   const enabled = createManagedVisitorTransport({ baseUrl: 'http://127.0.0.1:5555', credential: token, appId: 'garden', fetchImpl: async (url, init) => {
     assert.equal(url, 'http://127.0.0.1:5555/api/managed-visitors/v1/capabilities'); assert.equal(init.redirect, 'error'); assert.equal(init.headers.Authorization, `Bearer ${token}`); return Response.json({ available: false }); } });
@@ -486,4 +486,85 @@ test('a legacy five-action host without the optional interaction fields admits, 
   assert.equal(s.runtimes.get('a').snapshot().status, 'paused');
   assert.equal(s.runtimes.get('a').snapshot().tick, 12);
   assert.equal(s.leases.size, 0);
+});
+
+test('each unmet visitor setting disables the bridge for its own stated reason and echoes no configured value', async () => {
+  const configured = { baseUrl: 'http://127.0.0.1:5555', credential: `mv1_${'a'.repeat(64)}`, appId: 'garden' };
+  const unmet = [
+    ['host-unset', 'FLY_GARDEN_PORTOS_URL', { baseUrl: undefined }],
+    ['host-unsupported', 'FLY_GARDEN_PORTOS_URL', { baseUrl: 'https://portos.example.com' }],
+    ['app-unset', 'FLY_GARDEN_MANAGED_APP_ID', { appId: '' }],
+    ['app-invalid', 'FLY_GARDEN_MANAGED_APP_ID', { appId: 'not a valid app id' }],
+    // NFR-5: PortOS's instance password is optional, and an instance without one provisions no
+    // mv1_ credential at all. That case must read differently from an unset or unapproved host.
+    ['credential-unset', 'FLY_GARDEN_VISITOR_CREDENTIAL', { credential: undefined }],
+    ['credential-invalid', 'FLY_GARDEN_VISITOR_CREDENTIAL', { credential: 'mv1_short' }],
+  ];
+  const reasons = new Set();
+  for (const [code, setting, override] of unmet) {
+    let calls = 0;
+    const transport = createManagedVisitorTransport({ ...configured, ...override, fetchImpl: () => { calls++; } });
+    assert.equal(transport.enabled, false); assert.equal(transport.appId, null);
+    assert.equal(transport.configuration.code, code);
+    assert.deepEqual(transport.configuration.unresolved, [setting]);
+    reasons.add(transport.configuration.reason);
+    await assert.rejects(transport.capabilities, error => error.code === 'disabled' && error.message === transport.configuration.reason);
+    assert.equal(calls, 0);
+    const published = JSON.stringify(transport.configuration);
+    assert(!published.includes('a'.repeat(64)) && !published.includes('mv1_short') && !published.includes('portos.example.com'));
+  }
+  // Six causes, six wordings: no owner ever has to guess which setting is unmet.
+  assert.equal(reasons.size, unmet.length);
+  const all = createManagedVisitorTransport({ fetchImpl: () => assert.fail('no request') });
+  assert.deepEqual(all.configuration.unresolved, ['FLY_GARDEN_PORTOS_URL', 'FLY_GARDEN_MANAGED_APP_ID', 'FLY_GARDEN_VISITOR_CREDENTIAL']);
+  const ready = createManagedVisitorTransport({ ...configured, fetchImpl: () => assert.fail('no request') });
+  assert.equal(ready.enabled, true); assert.equal(ready.configuration.code, 'ready');
+});
+test('a disabled bridge names its unmet setting and stays distinct from an unsupported or unauthorized host', async () => {
+  const transport = createManagedVisitorTransport({ baseUrl: 'http://127.0.0.1:5555', appId: 'garden', fetchImpl: () => assert.fail('no request') });
+  const bridge = createManagedVisitorBridge({ authority: { claim: () => assert.fail('no claim') }, transport });
+  const state = bridge.snapshot('a');
+  assert.equal(state.available, false); assert.equal(state.configurationCode, 'credential-unset');
+  assert.match(state.reason, /optional password unset/);
+  assert.deepEqual(bridge.configuration().unresolved, ['FLY_GARDEN_VISITOR_CREDENTIAL']);
+  for (const rejected of [bridge.admit('a', { worldId: 'world' }), bridge.capabilities('a')]) {
+    await assert.rejects(() => rejected, error => error.code === 'disabled' && error.message === state.reason);
+  }
+  for (const available of [false, true]) {
+    const s = setup(), original = s.transport.capabilities;
+    s.transport.capabilities = async () => ({ ...await original(), available, worldIds: ['other-world'] });
+    const blocked = await s.bridge.admit('a', { worldId: 'world' });
+    assert.equal(blocked.phase, 'blocked'); assert.equal(s.owners.has('a'), false);
+    assert.match(blocked.reason, available ? /owner-approved visitor scope/ : /nonhumanoid visitor protocol/);
+    assert.notEqual(blocked.reason, state.reason);
+  }
+});
+test('a returned fly needs a new grant: nothing outward resumes and re-admission revalidates the allowlist', async () => {
+  const s = setup();
+  await s.bridge.admit('a', { worldId: 'world' }); await s.bridge.control('a', 'start');
+  for (let i = 0; i < 3; i++) await s.bridge.tick('a');
+  const visited = s.bridge.snapshot('a'), calls = s.calls.length, tick = s.runtimes.get('a').snapshot().tick;
+  assert(tick >= 3);
+  await s.bridge.control('a', 'home');
+  assert.equal(s.owners.has('a'), false); assert.equal(s.leases.size, 0);
+  const home = s.bridge.snapshot('a');
+  assert.equal(home.phase, 'home'); assert.equal(home.owned, false); assert.equal(home.visitEpoch, null);
+  // Local state the visit accumulated stays put: same runtime session, same tick, no restore.
+  assert.equal(s.runtimes.get('a').snapshot().tick, tick); assert.equal(s.runtimes.get('a').snapshot().sessionId, 'runtime-a');
+  // Without a fresh grant no control is accepted and no scheduler tick reaches the host.
+  for (const action of ['start', 'pause', 'rest', 'home', 'interact']) {
+    await assert.rejects(() => s.bridge.control('a', action), error => error.code === 'unavailable');
+  }
+  assert.equal(await s.bridge.tick('a'), null); assert.equal(s.calls.length, calls);
+  // Re-entry re-runs discovery, so an allowlist the owner narrowed since the last visit is enforced.
+  const original = s.transport.capabilities;
+  s.transport.capabilities = async () => ({ ...await original(), worldIds: ['other-world'] });
+  const refused = await s.bridge.admit('a', { worldId: 'world' });
+  assert.equal(refused.phase, 'blocked'); assert.match(refused.reason, /owner-approved visitor scope/);
+  assert.equal(s.owners.has('a'), false); assert.equal(s.leases.size, 0); assert.equal(s.calls.length, calls);
+  s.transport.capabilities = original;
+  const again = await s.bridge.admit('a', { worldId: 'world' });
+  assert.equal(again.phase, 'visiting'); assert.equal(again.running, false);
+  assert.notEqual(again.visitEpoch, visited.visitEpoch);
+  assert.equal(s.runtimes.get('a').snapshot().tick, tick);
 });

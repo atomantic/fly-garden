@@ -12,6 +12,31 @@ The server transport is enabled only with all three environment values:
 - `FLY_GARDEN_MANAGED_APP_ID`: the owner-approved managed app ID.
 - `FLY_GARDEN_VISITOR_CREDENTIAL`: the separately provisioned `mv1_` app credential. Keep this in the server process environment; never send it to the browser, checkpoint, recording, log or world payload.
 
+### Why the bridge is off
+
+A disabled bridge names the setting it is waiting on instead of reporting one generic "disabled"
+line, so `unsupported`, `unauthorized` and each unmet local setting are all distinguishable
+(FR-30, NFR-6). `transport.configuration`, surfaced as `bridge.configuration()`, reports a stable `code`, a
+plain-language `reason` and `unresolved`, the list of every setting still to fix. The reason and the code appear in
+`snapshot(id)` (as `reason` and `configurationCode`) and in `/api/health`'s `eidoverse` block
+(plus `unresolvedSettings`). The visitor panel shows the reason; the code is API-only.
+
+| Code | Meaning |
+| --- | --- |
+| `ready` | All three settings are valid. Explicit owner admission is still required for every visit. |
+| `host-unset` | `FLY_GARDEN_PORTOS_URL` is unset, so no managed visitor host is claimed. |
+| `host-unsupported` | The configured address is not one of the four approved loopback addresses. Remote hosts are refused and no request is attempted. |
+| `app-unset` / `app-invalid` | `FLY_GARDEN_MANAGED_APP_ID` is missing or is not a valid managed app identifier. |
+| `credential-unset` | No `mv1_` credential is provisioned. |
+| `credential-invalid` | The configured credential is not a well-formed `mv1_` app credential. |
+| `disabled` | There are no settings to inspect: no identity store, or a transport that publishes no diagnostic. |
+
+`credential-unset` is the **NFR-5** case. PortOS's own instance password is optional, and an
+instance running without one issues no scoped `mv1_` app credential. The bridge then stays off and
+says so, rather than attempting an unauthenticated visit: admission always requires its own
+separately provisioned grant. No configured value — and above all never the credential — is echoed
+into a reason, a log or the browser; only setting names are.
+
 The PortOS owner explicitly provisions individual/world allowlists. PortOS separately negotiates the host's `managedVisitors` version 1 capability, `fly-v1`, 8×4 RGB projection, expiry enforcement and `admissionDeadline:true`. Missing host support refuses admission. Existing Mind and peer travel are independent protocols.
 
 ### Negotiated contract fields
@@ -126,6 +151,16 @@ A missing admission response may still correspond to a live body. The bridge can
 ## Validation and limits
 
 `node --test server/managed-visitor-bridge.test.js` uses real fixture runtimes with fake transports. It covers paired identity isolation, explicit paused admission/start, scope/replay/invalid input, pending movement revocation, uncertain admission, late cleanup, expiry, backwards time, runtime replacement and transport bounds/privacy. It additionally covers the negative admission paths (`available:false` → `unsupported`; individual or world outside the allowlist → `unauthorized`; nine separate contract mismatches → refusal without a remote body), mid-visit 401/403 revocation from both `action` and `observe`, an explicit stale-epoch replay after re-admission, negotiated capacity including the absent-field default of one, paired faults that leave the other visitor's tick count and lease untouched, `disconnectAll()` with two owned visitors, the interaction negatives (out-of-patch pose, unallowlisted effect, wrong object, smuggled extra fields, interaction after expiry or revocation, and an inbound-command attempt), and an explicit backward-compatibility case: a legacy five-action host with none of the optional interaction fields admits, visits, takes twelve move-only steps and returns cleanly, with interaction reported unavailable and unarmable.
+
+It also covers the six unmet-setting codes above: all six produce different wordings, none echoes a
+configured address or credential, none reaches the network, and a disabled reason stays distinct
+from the `unsupported` and `unauthorized` host refusals. A further test covers re-entry — after a
+confirmed return the fly keeps its runtime session and tick, every control and scheduler tick is
+refused for want of a fresh grant, a re-admission re-runs discovery so an allowlist narrowed since
+the last visit is enforced, and a granted re-entry arrives paused under a new visit epoch with the
+retained local state intact. `server/managed-visitor-http.test.js` drives the same unmet-setting
+case through the real transport and asserts the specific reason, code and unresolved setting in
+both `/api/health` and individual visitor state.
 
 `node --test server/managed-visitor-ui.test.js` checks the pod presentation contract: every bridge phase has a distinct label, the away habitat keeps the pod visible, the pod label reads live visitor state, no motion or arrival wording appears before host acknowledgment, and the roster exposes each fly's pod state. An additional temporary in-process check connected the real Fly Garden bridge, PortOS broker/transport and Eidoverse host factories: negotiated admission, 20 geometric observation/motor steps and confirmed return passed without starting a network server. That check is integration evidence, not a live deployment or browser journey.
 
