@@ -16,7 +16,12 @@ import { createRuntime } from './runtime.js';
  * The rasterizer is the deterministic CPU stand-in in `projection-renderer.js`, because
  * `node --test` has no WebGL context; its absolute bytes are not a GPU's. Every number recorded
  * here is a property of that stand-in plus the real garden geometry and the real fixture, and is
- * recorded in docs/ENVIRONMENT_ADAPTER.md. They are pinned exactly, as the neighbouring
+ * recorded in docs/ENVIRONMENT_ADAPTER.md. They are emphatically not predictions about real
+ * hardware: the GPU counterpart recorded by `scripts/gpu-scene-change-causality.mjs` and guarded by
+ * `scene-change-causality-gpu.test.js` finds that this cluster changes zero bytes on a real
+ * rasterizer, because one flower head is smaller than one of the 32 retinal pixel footprints while
+ * this stand-in splats every mesh origin into a whole pixel. What this file establishes is the
+ * wiring — that a change to the scene graph, and nothing else, reaches motor output and the pose. They are pinned exactly, as the neighbouring
  * observer-isolation numbers are, so that a change in the art, the fixture or the stand-in has to
  * be noticed rather than absorbed. Editing any of those three legitimately changes these figures:
  * re-record them together with the table in that document, in the same commit, rather than
