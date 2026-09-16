@@ -46,6 +46,28 @@ test('the away habitat keeps the pod visible and the pod label reads live visito
   assert.match(main, /podPresentation\(/);
 });
 
+/** `tests/browser/teleport-pod-phases.spec.js` reads the pod tone back out of the rendered three.js
+ * material through these attributes. That suite is not part of `npm test` or CI, so the contract it
+ * depends on is guarded here: if the readback is dropped, the browser evidence silently stops
+ * measuring the renderer and starts measuring nothing. */
+test('the renderer publishes the pod tone it actually drew, read back from the ring material', () => {
+  const scene = source('../client/src/Scene.jsx');
+  const apply = scene.slice(scene.indexOf('const applyPod'), scene.indexOf('const draw ='));
+  for (const attribute of ['podEmissive', 'podIntensity', 'podOffset']) {
+    assert.match(apply, new RegExp(`${attribute}:`), `Scene no longer publishes ${attribute}`);
+  }
+  // Each value is read back off the material or the transform, never restated from the React prop
+  // that set it — otherwise the browser spec would assert the input against itself.
+  assert.match(apply, /ring\.material\.emissive\.getHexString\(\)/);
+  assert.match(apply, /ring\.material\.emissiveIntensity/);
+  assert.match(apply, /Math\.abs\(ring\.position\.y - baseY\)/);
+  assert.doesNotMatch(apply, /podEmissive: current\.tone|podEmissive: tone\./, 'readback must not restate the prop');
+  // The tone write must stay outside the movement branch, so it still applies with motion off, and
+  // the readback must follow it rather than sampling a stale material.
+  assert(apply.indexOf('emissive.setHex') < apply.indexOf('getHexString'), 'readback must follow the write');
+  assert.match(apply, /const moving = animate && current\.motion === true && current\.phase === "visiting"/);
+});
+
 test('roster entries expose each fly pod state without a selection change', () => {
   const roster = [{ individualId: 'a', phase: 'visiting', owned: true, running: true },
     { individualId: 'b', phase: 'admission', owned: true, running: false }].map(podRosterEntry);

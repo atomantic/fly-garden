@@ -33,6 +33,25 @@ export default defineConfig({
     { name: 'motion-reduce', testMatch: 'reduced-motion.spec.js', use: { ...devices['Desktop Chrome'], reducedMotion: 'reduce' } },
     { name: 'forced-colors', testMatch: 'forced-colors.spec.js', use: { ...devices['Desktop Chrome'], forcedColors: 'active' } },
     {
+      // Renders every teleport-pod phase by overriding only the `visitor` block of the server's own
+      // /api/state read. No host, credential, admission or individual is involved; see the spec
+      // header. Run in both motion modes: the reduce pass asserts the phase tone still reaches the
+      // pod rings while they never move, and the default pass asserts that only an acknowledged
+      // `visiting` phase moves them.
+      name: 'pod-phases',
+      testMatch: 'teleport-pod-phases.spec.js',
+      // Nine phases are each driven through the 500 ms state poll and then sampled, twice per spec,
+      // so these walk well past the default per-test budget on a loaded machine.
+      timeout: 120_000,
+      use: { ...devices['Desktop Chrome'], reducedMotion: 'no-preference' },
+    },
+    {
+      name: 'pod-phases-reduce',
+      testMatch: 'teleport-pod-phases.spec.js',
+      timeout: 120_000,
+      use: { ...devices['Desktop Chrome'], reducedMotion: 'reduce' },
+    },
+    {
       name: 'panels',
       testMatch: 'panel-keyboard.spec.js',
       use: { ...devices['Desktop Chrome'] },
