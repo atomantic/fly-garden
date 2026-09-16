@@ -16,7 +16,7 @@ Create one adapter per resident and its current runtime session. A recipient att
 
 Call `checkFreshness()` on the supervisor timer while waiting for frames. Explicit start permits up to 250 ms to receive the first frame without advancing neural time. A missing/stale observation pauses the runtime and rotates its epoch; explicit resume and fresh observations are required. Observer disconnect must likewise invalidate the adapter. `snapshot()` exposes current epoch, latest frame and motor trace, with the engineered disclosure.
 
-Fixture tests record dark versus left-bright rasters and verify changes in actual neural state and bounded motor output after 200 accepted steps. They also cover invalid pixels, hidden fields, observer camera rejection, recipient/session/epoch isolation, duplicate timestamps, stale rendering, rest, optional ledger preservation, and checkpoint nonretention. These are causal fixture tests; a rendered scene-change recording and camera-isolation browser test remain integration acceptance evidence.
+Fixture tests record dark versus left-bright rasters and verify changes in actual neural state and bounded motor output after 200 accepted steps. They also cover invalid pixels, hidden fields, observer camera rejection, recipient/session/epoch isolation, duplicate timestamps, stale rendering, rest, optional ledger preservation, and checkpoint nonretention. Those rasters are hand-written pixel arrays rather than rendered ones; the recording of an actual change to the rendered garden travelling the same path is below, and the camera-isolation browser measurement is recorded further down.
 
 ## Integrated local API
 
@@ -42,10 +42,69 @@ Controller ownership is a per-recipient private lease. Every successful explicit
 
 On September 12, 2026, an isolated local browser session explicitly attached and ran the controller camera. Accepted 8×4 renders advanced fixture time and exposed nonzero bounded motor output. A 717-action movement capture exported all four formats, with 717 marks and zero notes; the original flower regions were not entered during that interval. A second observer visibly reported no controller lease. Navigating the controller tab away from the garden stopped rendering, and the server paused at tick 2620 while the other observer remained open. These are synthetic-fixture integration results, not real-connectome validation. The automated dark/left-bright comparison provides the causal numerical control; the dedicated observer and controller cameras are separate Three.js objects.
 
+## Recorded garden scene change through the whole loop
+
+The tests above start from hand-written pixel arrays, which proves the adapter but not that anything
+in the rendered garden reaches it. `server/scene-change-causality.test.js` closes that gap by running
+the whole chain from a real change to the production scene graph: the same
+`client/src/garden-visual-world.js` the observatory builds, rastered by the production
+`deriveControllerRaster`, encoded by the production `encodeRetinalRgb`, stepped through the actual
+synthetic fixture, and read back through the declared `readFixtureMotor` into the authoritative pose.
+Nothing is mocked between the scene graph and the pose.
+
+**The recorded change.** One flower cluster — the eight meshes of the flower whose stem stands at
+`x ≈ −2.14, z ≈ 1.96` — is made invisible. At the baseline pose `(x=0, z=-1, yaw=0)` the controller
+camera looks along `+z`, so that flower sits in raster columns 5 and 6: the half `readFixtureMotor`
+reads as the right one, which is why the recorded yaw falls. The builder now returns `flowerClusters` so a harness
+can name one flower instead of matching material colours. The cluster is fixed in the test, not
+searched for or re-picked against an outcome, and the change is reversible presentation only: it
+reserves, spends and refunds nothing in the optional appetitive encounter policy, which is a separate
+server-side channel. Two hundred frames are then accepted, each aimed by the authoritative pose the
+previous frame produced, so this is the closed loop and not a replayed fixed viewpoint.
+
+| Stage | Unchanged garden | One flower cluster occluded | Difference |
+| --- | ---: | ---: | :--- |
+| Controller raster (8×4 RGB) | baseline | — | **6 of 96 channels**, absolute difference **772** |
+| Engineered luminance currents | baseline | — | **2 of 32** currents |
+| Membrane potentials after 200 frames | baseline | — | **15 of 32** differ |
+| Trailing 1 s rates after 200 frames | baseline | — | **3 of 32** differ |
+| Mean fixture rate | 10.500 Hz | 10.375 Hz | −0.125 Hz |
+| Motor forward | 0.0020 units/s | 0.0015 units/s | −25% |
+| Motor yaw | 0.0150 rad/s | 0.0050 rad/s | −67% |
+| Authoritative yaw after 1 s simulated | 0.011525 rad | 0.005438 rad | −0.006087 rad |
+
+A third loop with no scene change at all is byte-identical to the unchanged one — same raster, same
+checkpointed dynamics, same motor, same pose — so this loop is deterministic and every number in the
+table is attributable to the recorded scene change and to nothing else. Both loops stay far inside
+the declared bounds: forward never leaves `[0, 0.12]` units/s, yaw never leaves `±0.8` rad/s, and one
+second of simulated time translates the body by less than `1e-4` garden units. Nothing escalates,
+because the readout is a fixed function of trailing rates with no accumulating drive.
+
+The same file records three controls on the same closed loop. Orbiting an independent observer camera
+through four positions and fields of view between every accepted frame leaves the dynamics, motor and
+pose bit-identical to an unobserved run, and no observer render ever writes to the offscreen target.
+That repeats the four manipulations of the isolation measurement below, which compares rasters only;
+what is new is that the fixture's neural state, motor readout and pose are also unchanged by them.
+Resting mid-loop zeroes motor output, refuses every further frame and freezes tick, dynamics and pose
+— and restoring the occluded flower while resting does not restart anything, so inactivity through a
+scene change stays a valid outcome with no escalation. Letting frames cease past the 250 ms bound
+pauses the runtime, rotates the epoch, zeroes motor output and refuses the last raster on the retired
+epoch, so no movement is produced from a stale frame.
+
+**Limits.** `node --test` has no WebGL context, so the rasterizer here is the deterministic CPU
+projection stand-in in `server/projection-renderer.js`, shared with the observer-isolation test below.
+Its absolute bytes are not a GPU's, and the channel and potential counts in the table are properties
+of that stand-in plus the real garden geometry and the real fixture, recorded as observations rather
+than as golden values another rasterizer must reproduce. One scene, one cluster, one pose, one
+32-neuron engineered fixture. This is a traceable engineered control path, not biological vision,
+natural locomotion, learning or an inferred mental state, and it says nothing about the separate
+full-connectome result recorded in [VISUAL_CAUSAL_VALIDATION.md](VISUAL_CAUSAL_VALIDATION.md).
+
 ## Single-fly observer-isolation measurement
 
-`server/controller-retina.test.js` exercises the extracted derivation with a deterministic CPU
-projection stand-in, because `node --test` has no WebGL context. That stand-in is not the
+`server/controller-retina.test.js` exercises the extracted derivation with the deterministic CPU
+projection stand-in in `server/projection-renderer.js`, because `node --test` has no WebGL context.
+That stand-in is not the
 production rasterizer and its absolute bytes would differ from a GPU's; what it reproduces
 exactly is the property under test, that pixels are a function of the camera passed to
 `render`, of object visibility, and of nothing else. A fixed scene of fifteen original landmark

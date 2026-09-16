@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { encodeRetinalRgb, readFixtureMotor } from './environment-adapter.js';
-import { createManagedVisitorTransport, visitorFailure } from './managed-visitor-transport.js';
+import { createManagedVisitorTransport, visitorConfigurationOf, visitorFailure } from './managed-visitor-transport.js';
 
 const exact = (value, keys) => value && typeof value === 'object' && !Array.isArray(value)
   && Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value, key));
@@ -24,6 +24,8 @@ const DISCLOSURE = 'Engineered gentle-patch spatial projection → bounded fixtu
  * never supplies runtime authority. No durable checkpoint is used for transient stepping. */
 export function createManagedVisitorBridge({ authority, transport = createManagedVisitorTransport(), now = Date.now } = {}) {
   if (typeof authority?.claim !== 'function') throw visitorFailure('configuration', 'Visitor ownership adapter is required.');
+  const configuration = () => visitorConfigurationOf(transport);
+  const disabled = () => visitorFailure('disabled', configuration().reason);
   const visits = new Map();
   let pendingCapabilities = null;
   /** Last successfully negotiated host contract limits. Absent capacity means exactly one visitor. */
@@ -47,10 +49,10 @@ export function createManagedVisitorBridge({ authority, transport = createManage
   const current = r => r.owned && r.handle.isCurrent() && r.handle.snapshot().individualId === r.id && r.handle.snapshot().sessionId === r.runtimeSession;
   function snapshot(id) {
     if (!validId(id)) throw visitorFailure('invalid-request', 'Invalid visitor individual ID.');
-    const r = visits.get(id);
-    return structuredClone({ version: 1, individualId: id, available: transport.enabled === true, phase: r?.phase ?? 'home',
+    const r = visits.get(id), config = configuration();
+    return structuredClone({ version: 1, individualId: id, available: config.enabled, phase: r?.phase ?? 'home',
       owned: r?.owned ?? false, running: r?.running ?? false, pending: r?.pending ?? null,
-      reason: r?.reason ?? (transport.enabled ? 'Explicit visitor admission required.' : 'Local managed visitor bridge is disabled.'),
+      reason: r?.reason ?? config.reason, configurationCode: config.code,
       worldId: r?.worldId ?? null, visitEpoch: r?.lease?.epoch ?? null, expiresAt: r?.lease?.expiresAt ?? r?.cleanupBound ?? null,
       individualSessionId: r?.runtimeSession ?? null, lastTrace: r?.lastTrace ?? null,
       interactArmed: r?.interactArmed ?? false, lastInteraction: r?.lastInteraction ?? null,
@@ -98,7 +100,7 @@ export function createManagedVisitorBridge({ authority, transport = createManage
     return value;
   }
   async function capabilities(id, worldId) {
-    if (!transport.enabled) throw visitorFailure('disabled', 'Local managed visitor bridge is disabled.');
+    if (!transport.enabled) throw disabled();
     if (!pendingCapabilities) {
       pendingCapabilities = Promise.resolve().then(() => transport.capabilities()).finally(() => { pendingCapabilities = null; });
     }
@@ -161,7 +163,7 @@ export function createManagedVisitorBridge({ authority, transport = createManage
   async function admit(id, input) {
     if (!validId(id) || !exact(input, ['worldId']) || !validId(input.worldId)) throw visitorFailure('invalid-request', 'Invalid visitor admission request.');
     if (visits.get(id)?.owned) throw visitorFailure('already-owned', 'An admission or visitor return already owns this individual.');
-    if (!transport.enabled) throw visitorFailure('disabled', 'Local managed visitor bridge is disabled.');
+    if (!transport.enabled) throw disabled();
     // Refuse before any claim so an existing visit is never paused or disturbed by a rejected second admission.
     if (ownedCount() >= hostCapacity()) throw visitorFailure('host-capacity',
       `Host negotiated ${hostCapacity()} concurrent managed visitor${hostCapacity() === 1 ? '' : 's'}; the existing visit was left undisturbed.`);
@@ -276,6 +278,6 @@ export function createManagedVisitorBridge({ authority, transport = createManage
     return reconcile(r);
   }
   async function lifecycle(id) { const r = visits.get(id); if (!r?.owned) return snapshot(id); r.cancelRequested = true; return reconcile(r); }
-  return { snapshot, capabilities, admit, control, tick, lifecycle,
+  return { snapshot, capabilities, admit, control, tick, lifecycle, configuration,
     disconnectAll: () => Promise.allSettled([...visits.values()].filter(r => r.owned).map(r => lifecycle(r.id))) };
 }

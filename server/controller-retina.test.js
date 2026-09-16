@@ -1,57 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { BoxGeometry, Matrix4, Mesh, MeshStandardMaterial, PerspectiveCamera, Scene, Vector3 } from 'three';
+import { BoxGeometry, Mesh, MeshStandardMaterial, PerspectiveCamera, Scene, Vector3 } from 'three';
 import { CONTROLLER_RETINA, aimControllerCamera, compareControllerRasters, createControllerCamera,
   deriveControllerRaster, readControllerRaster } from '../client/src/controller-retina.js';
+import { createProjectionRenderer } from './projection-renderer.js';
 
 const { width, height } = CONTROLLER_RETINA;
-
-/**
- * Deterministic CPU projection stand-in for the WebGL path. It is NOT the production
- * rasterizer and produces different bytes than a GPU would: it splats each mesh origin
- * through the supplied camera's own matrices, nearest-depth wins. It is used only because
- * `node --test` has no WebGL context. What it does reproduce exactly is the contract under
- * test: pixels are a function of the camera handed to `render`, of object visibility, and
- * of nothing else. Rows are written bottom-origin, matching `readRenderTargetPixels`.
- */
-function projectionRenderer(background = [17, 36, 35]) {
-  const pixels = new Uint8Array(width * height * 4);
-  const calls = [];
-  let bound = null, fault = null;
-  const visible = object => { for (let o = object; o; o = o.parent) if (!o.visible) return false; return true; };
-  return {
-    calls, failNextRender(error) { fault = error; },
-    boundTarget: () => bound,
-    setRenderTarget(target) { bound = target; },
-    render(scene, camera) {
-      calls.push({ camera, target: bound });
-      if (fault) { const error = fault; fault = null; throw error; }
-      const depth = new Float64Array(width * height).fill(Infinity);
-      for (let i = 0; i < width * height; i++) pixels.set([...background, 255], i * 4);
-      scene.updateMatrixWorld(true); camera.updateMatrixWorld(true); camera.updateProjectionMatrix();
-      const viewProjection = new Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
-      scene.traverse(object => {
-        if (!object.isMesh || !visible(object)) return;
-        const world = new Vector3().setFromMatrixPosition(object.matrixWorld);
-        const distance = world.distanceTo(camera.position);
-        if (distance <= camera.near || distance >= camera.far) return;
-        const ndc = world.clone().applyMatrix4(viewProjection);
-        if (![ndc.x, ndc.y, ndc.z].every(v => Number.isFinite(v) && Math.abs(v) <= 1)) return;
-        const x = Math.min(width - 1, Math.floor((ndc.x * 0.5 + 0.5) * width));
-        const y = Math.min(height - 1, Math.floor((ndc.y * 0.5 + 0.5) * height));
-        const index = y * width + x;
-        if (distance >= depth[index]) return;
-        depth[index] = distance;
-        const { r, g, b } = object.material.color;
-        pixels.set([Math.round(r * 255), Math.round(g * 255), Math.round(b * 255), 255], index * 4);
-      });
-    },
-    readRenderTargetPixels(target, x, y, w, h, out) {
-      assert.equal(target, bound); assert.deepEqual([x, y, w, h], [0, 0, width, height]);
-      out.set(pixels);
-    },
-  };
-}
 
 /** Original neutral landmarks plus the illustrated body; no hidden goal markers. */
 function gardenFixture() {
@@ -71,7 +25,7 @@ function gardenFixture() {
 
 function harness() {
   const { scene, body } = gardenFixture();
-  const renderer = projectionRenderer();
+  const renderer = createProjectionRenderer();
   const camera = createControllerCamera();
   const target = { isRenderTarget: true };
   const rgba = new Uint8Array(width * height * 4);
