@@ -53,8 +53,9 @@ synthetic fixture, and read back through the declared `readFixtureMotor` into th
 Nothing is mocked between the scene graph and the pose.
 
 **The recorded change.** One flower cluster — the eight meshes of the flower whose stem stands at
-`x ≈ −2.14, z ≈ 1.96`, inside the controller camera's field of view and on its left at the baseline
-pose `(x=0, z=-1, yaw=0)` — is made invisible. The builder now returns `flowerClusters` so a harness
+`x ≈ −2.14, z ≈ 1.96` — is made invisible. At the baseline pose `(x=0, z=-1, yaw=0)` the controller
+camera looks along `+z`, so that flower sits in raster columns 5 and 6: the half `readFixtureMotor`
+reads as the right one, which is why the recorded yaw falls. The builder now returns `flowerClusters` so a harness
 can name one flower instead of matching material colours. The cluster is fixed in the test, not
 searched for or re-picked against an outcome, and the change is reversible presentation only: it
 reserves, spends and refunds nothing in the optional appetitive encounter policy, which is a separate
@@ -82,6 +83,8 @@ because the readout is a fixed function of trailing rates with no accumulating d
 The same file records three controls on the same closed loop. Orbiting an independent observer camera
 through four positions and fields of view between every accepted frame leaves the dynamics, motor and
 pose bit-identical to an unobserved run, and no observer render ever writes to the offscreen target.
+That repeats the four manipulations of the isolation measurement below, which compares rasters only;
+what is new is that the fixture's neural state, motor readout and pose are also unchanged by them.
 Resting mid-loop zeroes motor output, refuses every further frame and freezes tick, dynamics and pose
 — and restoring the occluded flower while resting does not restart anything, so inactivity through a
 scene change stays a valid outcome with no escalation. Letting frames cease past the 250 ms bound

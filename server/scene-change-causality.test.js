@@ -16,7 +16,11 @@ import { createRuntime } from './runtime.js';
  * The rasterizer is the deterministic CPU stand-in in `projection-renderer.js`, because
  * `node --test` has no WebGL context; its absolute bytes are not a GPU's. Every number recorded
  * here is a property of that stand-in plus the real garden geometry and the real fixture, and is
- * recorded in docs/ENVIRONMENT_ADAPTER.md.
+ * recorded in docs/ENVIRONMENT_ADAPTER.md. They are pinned exactly, as the neighbouring
+ * observer-isolation numbers are, so that a change in the art, the fixture or the stand-in has to
+ * be noticed rather than absorbed. Editing any of those three legitimately changes these figures:
+ * re-record them together with the table in that document, in the same commit, rather than
+ * loosening an assertion until it passes.
  *
  * None of this is biological vision, natural locomotion, learning or an inferred mental state.
  * The scene change is a bounded, reversible change to one landmark's appearance. It withholds
@@ -27,8 +31,10 @@ import { createRuntime } from './runtime.js';
 const { width, height } = CONTROLLER_RETINA;
 const BASELINE_POSE = Object.freeze({ x: 0, z: -1, yaw: 0 });
 const FRAMES = 200;
-// The flower cluster inside the controller camera's field of view at the baseline pose, on its
-// left. Chosen once and fixed; it is not searched for, tuned against an outcome or re-picked.
+// The flower cluster inside the controller camera's field of view at the baseline pose. At yaw
+// zero the camera looks along +z, so this cluster at negative x falls in raster columns 5 and 6 —
+// the half `readFixtureMotor` reads as the right one. Chosen once and fixed; it is not searched
+// for, tuned against an outcome or re-picked.
 const OCCLUDED_CLUSTER = 1;
 const round = value => Number(value.toFixed(6));
 
@@ -37,8 +43,8 @@ function closedLoop({ occludeCluster = null } = {}) {
   let clock = 1000;
   const scene = new Scene();
   const { body, flowerClusters } = createGardenVisualWorld(scene);
-  const occluded = occludeCluster === null ? [] : flowerClusters[occludeCluster].meshes;
-  for (const mesh of occluded) mesh.visible = false;
+  const occludedMeshes = occludeCluster === null ? [] : flowerClusters[occludeCluster].meshes;
+  for (const mesh of occludedMeshes) mesh.visible = false;
   const runtime = createRuntime({ individualId: 'a', sessionId: 's' });
   const adapter = createEnvironmentAdapter(runtime, { now: () => clock, initialPose: BASELINE_POSE });
   const renderer = createProjectionRenderer();
@@ -48,10 +54,10 @@ function closedLoop({ occludeCluster = null } = {}) {
   // Aimed by the authoritative pose alone; no observer camera, orbit state or target coordinate.
   const raster = () => deriveControllerRaster({ pose: adapter.snapshot().pose, camera, renderer, scene, target, rgba, body });
   let frameId = 0;
-  function deliver(rgb = raster()) {
+  function deliver(rgb = raster(), environmentEpoch = adapter.snapshot().environmentEpoch) {
     const state = runtime.snapshot();
     const trace = adapter.accept({ version: 1, individualId: 'a', sessionId: 's',
-      environmentEpoch: adapter.snapshot().environmentEpoch, frameId: frameId++,
+      environmentEpoch, frameId: frameId++,
       simTimeMs: state.simTimeMs, capturedAtMs: clock, camera: 'controller', width: 8, height: 4, rgb });
     return { rgb, trace };
   }
@@ -60,7 +66,7 @@ function closedLoop({ occludeCluster = null } = {}) {
     for (let i = 0; i < frames; i++) last = deliver();
     return last;
   }
-  return { scene, occluded, runtime, adapter, renderer, camera, deliver, run,
+  return { scene, occludedMeshes, runtime, adapter, renderer, camera, deliver, run,
     elapse(ms) { clock += ms; },
     dynamics: () => runtime.checkpoint().dynamics,
     rates: () => runtime.snapshot().neural.neurons.map(neuron => neuron.rateHz) };
@@ -74,8 +80,9 @@ test('a recorded change to the production garden reaches sensory, neural and mot
   const control = closedLoop();
   for (const loop of [unchanged, occluded, control]) loop.runtime.control('start');
 
-  // Sensory: the first accepted frame already differs, and only because the scene differs —
-  // both loops start from the identical authoritative pose.
+  // Sensory: the first accepted frame already differs, and only because the scene differs. Both
+  // loops raster from the same initial authoritative pose, and that first frame leaves the pose
+  // identical in both, so nothing downstream is yet confounded by a difference in viewpoint.
   const first = { unchanged: unchanged.deliver(), occluded: occluded.deliver(), control: control.deliver() };
   assert.deepEqual(unchanged.adapter.snapshot().pose, occluded.adapter.snapshot().pose);
   const sensory = compareControllerRasters(first.unchanged.rgb, first.occluded.rgb);
@@ -111,7 +118,7 @@ test('a recorded change to the production garden reaches sensory, neural and mot
     assert.ok(Math.abs(pose.x) <= 2 && Math.abs(pose.z) <= 2);
     // One second of simulated time moves the fly far less than one body length. No escalation,
     // no accumulating drive: the readout is a fixed function of trailing rates.
-    assert.ok(Math.hypot(pose.x - BASELINE_POSE.x, pose.z - BASELINE_POSE.z) < 0.12);
+    assert.ok(Math.hypot(pose.x - BASELINE_POSE.x, pose.z - BASELINE_POSE.z) < 1e-4);
     assert.deepEqual(loop.runtime.snapshot().stimulusPolicy.entries, []);
   }
 });
@@ -156,7 +163,7 @@ test('resting through the same scene change advances nothing and holds motor out
   assert.deepEqual(loop.adapter.snapshot().motor, { forward: 0, yaw: 0 });
   // Restoring the occluded landmark is a second scene change. Neither it nor continued frames
   // restart the fixture, raise input or move the body; the pose is simply retained.
-  for (const mesh of loop.occluded) mesh.visible = true;
+  for (const mesh of loop.occludedMeshes) mesh.visible = true;
   for (let i = 0; i < 20; i++) {
     assert.throws(() => loop.deliver(), /Explicitly run the fixture/);
     loop.elapse(5);
@@ -188,7 +195,8 @@ test('frames ceasing after a scene change pauses the loop instead of steering fr
 
   // The stale raster cannot be re-delivered on the retired epoch, and even a frame rebuilt on the
   // rotated epoch is refused until the fixture is explicitly resumed.
-  assert.throws(() => loop.deliver(last.rgb), /epoch mismatch|Explicitly run the fixture/);
+  assert.throws(() => loop.deliver(last.rgb, epoch), /environment epoch mismatch/);
+  assert.throws(() => loop.deliver(last.rgb), /Explicitly run the fixture/);
   loop.runtime.control('start');
   loop.elapse(1);
   const resumed = loop.deliver();
