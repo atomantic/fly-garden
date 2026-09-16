@@ -6,7 +6,8 @@
 <p>This measures whether observer-camera motion changes the controller raster bytes, and whether the authoritative pose does. A zero byte change on the pose changes is a real negative result; record it as one.</p>
 <p id="status" role="status">Not run.</p><p id="device"></p><canvas id="view"></canvas><pre id="result"></pre>
 <script type="module">
-import { measureControllerRetinaGpuEvidence, describeRenderer } from '/client/src/controller-retina-evidence.js';
+import { measureControllerRetinaGpuEvidence } from '/client/src/controller-retina-evidence.js';
+import { describeRenderer } from '/client/src/garden-raster-source.js';
 document.querySelector('#run').addEventListener('click', event => {
  event.target.disabled = true;
  try {

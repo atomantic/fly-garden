@@ -34,7 +34,7 @@ A separate perspective camera has a 90-degree vertical field of view and 2:1 asp
 
 Only one frame request is in flight. Returned individual/session/environment identity must still match the selected source before updating the body or preview. A changed epoch aborts pending work; errors, stale live snapshots and unmount stop frame delivery. Server freshness checks pause attached simulation when frames cease. The visible preview shows the last accepted raster, its simulation window, mapped currents and bounded motor output. Closing a view does not attempt a hidden detach or resume command.
 
-The row-orientation, response-identity and controller-raster helpers have automated tests, and the production build compiles the renderer. `client/src/controller-retina.js` holds the extracted single-fly derivation: `aimControllerCamera` reads the authoritative pose and nothing else, and `readControllerRaster` receives only that camera, the scene and the offscreen target. `client/src/garden-visual-world.js` holds the scene graph those cameras render, extracted out of `Scene.jsx` so the same production geometry can be built outside React; `server/garden-visual-world.test.js` guards its composition and the illustrated body's resting placement. The GPU-rendered scene-change measurement those checks could not supply is recorded below.
+The row-orientation, response-identity and controller-raster helpers have automated tests, and the production build compiles the renderer. `client/src/controller-retina.js` holds the extracted single-fly derivation: `aimControllerCamera` reads the authoritative pose and nothing else, and `readControllerRaster` receives only that camera, the scene and the offscreen target. `client/src/garden-visual-world.js` holds the scene graph those cameras render, extracted out of `Scene.jsx` so the same production geometry can be built outside React; `server/garden-visual-world.test.js` guards its composition and the illustrated body's resting placement. `client/src/garden-raster-source.js` assembles that scene graph, the production `WebGLRenderer`, the controller camera and the 8×4 offscreen target into the one configuration every GPU evidence harness uses, so two harnesses cannot drift apart and publish incomparable bytes. The GPU-rendered scene-change measurement those checks could not supply is recorded below.
 
 Controller ownership is a per-recipient private lease. Every successful explicit attach returns a fresh top-level `controllerToken` only in that command response and pauses with a new environment epoch. Attaching an already attached individual deliberately transfers control while preserving its current pose. The controlling tab keeps the token locally and includes it with every frame; the registry validates and removes it before sensory processing. Ordinary state/environment reads, traces, checkpoints, health, recordings and artifact hooks never include the token. Read-only observers therefore cannot become frame producers simply by opening a tab. Pause/start/rest rotate observation epochs but retain the lease; detach/home/restore/unload revoke it. A closed or reloaded controlling tab requires explicit attachment to regain control.
 
@@ -95,10 +95,111 @@ epoch, so no movement is produced from a stale frame.
 projection stand-in in `server/projection-renderer.js`, shared with the observer-isolation test below.
 Its absolute bytes are not a GPU's, and the channel and potential counts in the table are properties
 of that stand-in plus the real garden geometry and the real fixture, recorded as observations rather
-than as golden values another rasterizer must reproduce. One scene, one cluster, one pose, one
-32-neuron engineered fixture. This is a traceable engineered control path, not biological vision,
+than as golden values another rasterizer must reproduce. **They are not predictions about real
+hardware, and the section immediately below shows that this table's specific cluster does not
+reproduce on one**: on a real GPU, hiding that flower changes zero bytes. One scene, one cluster, one
+pose, one 32-neuron engineered fixture. This is a traceable engineered control path, not biological
+vision, natural locomotion, learning or an inferred mental state, and it says nothing about the
+separate full-connectome result recorded in
+[VISUAL_CAUSAL_VALIDATION.md](VISUAL_CAUSAL_VALIDATION.md).
+
+### The same loop on a real graphics device
+
+`research/scene-change-causality.html` builds the same production scene graph on the real graphics
+device and rasters the same production controller camera, while
+`node scripts/gpu-scene-change-causality.mjs` holds the production runtime, the production
+environment adapter, the engineered luminance encoding and the declared motor readout, and aims
+every frame with the pose the previous frame produced. The loop is therefore closed through real
+pixels rather than replayed from recorded ones. The result is
+[the GPU record](../research/results/scene-change-causality-gpu.json), and
+`server/scene-change-causality-gpu.test.js` re-derives every claim in it from the recorded rasters
+through the production comparison and the production encoding, so a stale or hand-edited record
+cannot pass.
+
+**Provenance.** September 16, 2026, Darwin arm64, Three.js revision 186, Chrome 153.0.8010.48
+driven over CDP, renderer `ANGLE (Apple, ANGLE Metal Renderer: Apple M5 Max, Unspecified Version)`,
+`WebGL 2.0 (OpenGL ES 3.0 Chromium)` — a real hardware Metal rasterizer, not a software device and
+not the CPU projection stand-in. Baseline pose `(x=0, z=-1, yaw=0)`, 200 accepted frames per loop.
+
+**The landmark census comes first, and every entry of it is published.** The CPU stand-in splats
+each mesh origin into a whole pixel, so any landmark in view moves bytes there. A real rasterizer
+point-samples the 32 retinal pixels, so a landmark smaller than a pixel footprint may move nothing
+at all. The script therefore does not choose a flower. It hides each of the eleven flower clusters
+once at the baseline pose, records all eleven results, and only then runs the closed loop.
+
+| Hidden flower cluster | Stem at | GPU changed channels | GPU absolute difference |
+| --- | --- | ---: | ---: |
+| 0 | `x=2.40, z=0.00` | 0 of 96 | 0 |
+| **1** (the cluster pinned above) | `x=−2.14, z=1.96` | **0 of 96** | **0** |
+| 2 | `x=0.30, z=−3.39` | 0 of 96 | 0 |
+| **3** | `x=1.46, z=1.90` | **3 of 96** | **61** |
+| 4 | `x=−2.86, z=−0.51` | 0 of 96 | 0 |
+| 5 | `x=−0.62, z=2.32` | 0 of 96 | 0 |
+| 6 | `x=−1.34, z=−2.57` | 0 of 96 | 0 |
+| 7 | `x=3.19, z=1.17` | 0 of 96 | 0 |
+| **8** | `x=−2.22, z=0.92` | **3 of 96** | **156** |
+| 9 | `x=1.02, z=3.24` | 0 of 96 | 0 |
+| 10 | `x=−2.08, z=−1.20` | 0 of 96 | 0 |
+| All eleven hidden at once | — | **6 of 96** | **217** |
+
+Re-rastering the unchanged scene, and restoring every hidden cluster afterwards, each return the
+exact baseline bytes, so this device is deterministic and the change is fully reversible.
+
+**Three conditions, fixed in code before any of them ran.** The closed loop is then run on the
+cluster the CPU table pins whatever the census says about it, on the lowest-indexed cluster the
+census resolved, and on every flower cluster at once — a condition defined by the scene rather than
+by any outcome. All three are published. The unchanged loop reads motor forward 0.00175 units/s,
+yaw 0.0100 rad/s, authoritative yaw 0.008263 rad and mean fixture rate 10.4375 Hz.
+
+| Condition | Raster | Currents | Potentials | Rates | Motor forward | Authoritative yaw |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| No scene change at all (control) | 0 of 96 (0) | 0 of 32 | 0 of 32 | 0 of 32 | 0.00175 | 0.008263 |
+| Cluster 1, the CPU-pinned one | **0 of 96 (0)** | 0 of 32 | 0 of 32 | 0 of 32 | 0.00175 | 0.008263 |
+| Cluster 3, lowest the census resolved | 3 of 96 (61) | 1 of 32 | **4 of 32** | 0 of 32 | 0.00175 | **0.008450** |
+| Every flower cluster hidden | 6 of 96 (217) | 2 of 32 | **10 of 32** | **2 of 32** | **0.00150** | **0.006788** |
+
+The matched no-change control is byte-identical to the unchanged loop at every stage — same raster,
+same checkpointed dynamics, same motor, same pose — so every difference in the table is attributable
+to the recorded scene change and to nothing else. Mean fixture rate falls 10.4375 → 10.375 Hz under
+the every-flower condition. Two independent runs, each starting a fresh development
+server and a fresh page load, produced every figure in both tables identically.
+
+**What this establishes, and what it withdraws.** A recorded change to the rendered garden does
+reach sensory, neural and motor output on real hardware: hiding every flower moves 6 of 96 raster
+channels, 2 of 32 engineered luminance currents, 10 of 32 membrane potentials and 2 of 32 trailing
+rates, and drops the declared motor readout from 0.00175 to 0.00150 units/s and the authoritative
+yaw from 0.008263 to 0.006788 rad after one second of simulated time. It also withdraws a reading of
+the CPU table. Cluster 1's "6 of 96 channels" is a property of the origin-splatting stand-in, not of
+this garden on a GPU, where that flower changes nothing; nine of the eleven clusters change nothing
+individually. A single flower head spans roughly 0.36 × 0.12 garden units at about 2.9 units of
+range, far less than one of the 32 retinal pixel footprints, so whether it moves a byte depends on
+where a pixel-centre sample lands. Cluster 3 is an intermediate case worth naming: it moves the
+raster, the currents, the membrane potentials and the integrated authoritative pose, but the
+trailing-rate motor readout at frame 200 is identical to the unchanged loop's. Only the every-flower
+condition moves the final motor sample as well.
+
+**The same controls, re-run on this loop.** Orbiting an independent observer camera through the four
+fixed positions and fields of view between every accepted frame leaves the dynamics, motor and pose
+bit-identical to an unobserved run of the same condition. That isolation is measured rather than
+assumed: across those 200 frames the observed garden recorded 200 controller renders into the
+offscreen sensory target, 0 controller renders to the canvas, 0 observer renders into the offscreen
+target and 200 observer renders to the canvas. Resting mid-loop zeroes motor output, refuses all 20
+further frames with "Explicitly run the fixture before sending controller observations." and freezes
+tick, dynamics and pose — and restoring the hidden flower while resting restarts nothing, so
+inactivity through a scene change stays a valid outcome with no escalation. Letting frames cease
+past the 250 ms bound pauses the runtime, rotates the epoch, zeroes motor output, retains the pose,
+refuses the last raster on the retired epoch and refuses it again while paused; the explicit resume
+continues from the same simulated time, so the stale frames bought no neural time.
+
+**Limits.** One graphics device, one scene, one baseline pose, one 32-neuron engineered fixture, and
+a headless Chrome rather than a windowed one. Absolute bytes are hardware and driver specific and
+are recorded as observations, never as golden values another machine must reproduce; re-record the
+artifact and this table together in one commit rather than loosening the test. The census speaks
+only for the baseline pose — a landmark unresolvable from there may well be resolvable from another
+pose, and none was tried. This remains a traceable engineered control path, not biological vision,
 natural locomotion, learning or an inferred mental state, and it says nothing about the separate
-full-connectome result recorded in [VISUAL_CAUSAL_VALIDATION.md](VISUAL_CAUSAL_VALIDATION.md).
+full-connectome result recorded in
+[VISUAL_CAUSAL_VALIDATION.md](VISUAL_CAUSAL_VALIDATION.md).
 
 ## Single-fly observer-isolation measurement
 
