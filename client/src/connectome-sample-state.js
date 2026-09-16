@@ -11,8 +11,11 @@ export function matchingSampleResident(value,scope) {
     throw new Error('A resident worker from this exact anatomical graph is required. Load the selected connectome paused in Connectome lab first.');
   return state;
 }
-export function readNeuronSample(value,state,scope) {
+/** One validator for every sample size: the single-cell inspector and the bounded atlas overlay
+ * both require the exact requested IDs, in the requested order, from this exact worker session. */
+export function readNeuronSamples(value,state,scope,neuronIds) {
   const window=value?.timeWindow;
+  if(!Array.isArray(neuronIds)||!neuronIds.length)throw new Error('A neuron sample requires at least one exact ID.');
   if(!value||value.protocolVersion!==1||value.kind!=='connectome-neuron-sample'||value.source!=='connectome'
     ||value.individualId!==scope.individualId||value.dataset!==scope.dataset||value.graphSha256!==state.graphSha256
     ||value.sessionEpoch!==state.sessionEpoch||value.modelId!==state.model?.id
@@ -21,13 +24,15 @@ export function readNeuronSample(value,state,scope) {
     ||!uint(value.commandSequence)||!['paused','running','resting'].includes(value.status)
     ||!window||window.kind!=='instantaneous'||window.startTick!==value.tick||window.endTick!==value.tick
     ||window.startSimTimeMs!==value.simTimeMs||window.endSimTimeMs!==value.simTimeMs
-    ||!Array.isArray(value.samples)||value.samples.length!==1)throw new Error('Neuron sample source or time window does not match this selection.');
-  const entry=value.samples[0];
-  if(!entry||entry.neuronId!==scope.neuronId||!Number.isFinite(entry.potential)||![0,1].includes(entry.firing)
-    ||!uint(entry.refractoryStepsRemaining)||entry.refractoryStepsRemaining>state.model.refractorySteps)
-    throw new Error('Neuron sample values are invalid; no activity is substituted.');
+    ||!Array.isArray(value.samples)||value.samples.length!==neuronIds.length)throw new Error('Neuron sample source or time window does not match this selection.');
+  value.samples.forEach((entry,at)=>{
+    if(!entry||entry.neuronId!==neuronIds[at]||!Number.isFinite(entry.potential)||![0,1].includes(entry.firing)
+      ||!uint(entry.refractoryStepsRemaining)||entry.refractoryStepsRemaining>state.model.refractorySteps)
+      throw new Error('Neuron sample values are invalid; no activity is substituted.');
+  });
   return value;
 }
+export const readNeuronSample=(value,state,scope)=>readNeuronSamples(value,state,scope,[scope.neuronId]);
 export function confirmNeuronSample(sample,latest,scope) {
   matchingSampleResident(latest,scope);
   if(latest.sessionEpoch!==sample.sessionEpoch||latest.graphSha256!==sample.graphSha256

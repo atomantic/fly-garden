@@ -11,6 +11,11 @@ export function readRecordedSession(s){
   throw new Error('Recording metadata is incompatible.');
  return s;
 }
+/** The bounded recording list, validated once for every panel that reads it. */
+export function readRecordedListing(value){
+ if(!value||!Array.isArray(value.sessions)||value.sessions.length>100)throw new Error('Recording list is incompatible.');
+ value.sessions.forEach(readRecordedSession);return value;
+}
 export function readRecordedReplay(value){
  const s=readRecordedSession(value?.session);
  if(value.schemaVersion!==1||value.kind!=='connectome-sample-recording-export'||value.mode!=='read-only'||value.canResume!==false

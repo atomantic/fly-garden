@@ -1,8 +1,11 @@
 import { useDeferredValue, useEffect, useMemo, useState, useRef, useId } from 'react';
 import './observatory-accessibility.css';
+import { apiJson } from './api-json.js';
 import { atlasLoadMetrics, matchingAtlasLoadMetrics } from './atlas-load-metrics.js';
 import { selectAtlasCell } from './atlas-selection.js';
 import AtlasCanvas from './AtlasCanvas.jsx';
+import AtlasActivity from './AtlasActivity.jsx';
+import { atlasActivityScope, atlasActivityMode, atlasActivityByIndex, atlasActivityCellText, drawableAtlasActivity, overlayForScope } from './atlas-activity.js';
 import ConnectomeRecordings from './ConnectomeRecordings.jsx';
 import ConnectomeNeuronSample from './ConnectomeNeuronSample.jsx';
 import ConnectomeWeightBaseline from './ConnectomeWeightBaseline.jsx';
@@ -10,11 +13,7 @@ import { WEIGHT_LAYERS } from './weight-baseline.js';
 
 const PROFILES = [['male-cns-v1', 'MaleCNS v1.0'], ['banc-v888', 'BANC v888']];
 const LABELS = { 'visual-system': 'Visual system', 'central-brain': 'Central brain', 'ventral-nerve-cord': 'Ventral nerve cord', interregional: 'Interregional', unknown: 'Unclassified' };
-async function json(url, signal) {
-  const response = await fetch(url, { signal }), result = await response.json();
-  if (!response.ok) throw new Error(typeof result.reason === 'string' ? result.reason : typeof result.error === 'string' ? result.error : 'Anatomical data could not be read.');
-  return result;
-}
+const json = apiJson('Anatomical data could not be read.');
 const count = value => Number.isSafeInteger(value) && value >= 0;
 function validateEdges(result, data, limit) {
   const n = data.nodes.length;
@@ -42,9 +41,10 @@ export default function NervousSystem({ dataset = "male-cns:v1.0", individualId 
   const profile = dataset === 'banc:v888' ? 'banc-v888' : 'male-cns-v1';
   const [data, setData] = useState(null), [error, setError] = useState('');
   const [visibleGroups, setVisibleGroups] = useState([]), [filter, setFilter] = useState(''), [selectedIndex, setSelectedIndex] = useState(null), [pointSize, setPointSize] = useState(2);
+  const [overlay, setOverlay] = useState(null);
   useEffect(() => {
     const controller = new AbortController(); let current = true;
-    setData(null); setError(''); setConnectionsEnabled(false); setConnectivity(null); setConnectivityError(''); setAdjacency(null); setAdjacencyError(''); setEdgeOffset(0); setFilter(''); setSelectedIndex(null); setVisibleGroups([]);
+    setData(null); setError(''); setConnectionsEnabled(false); setConnectivity(null); setConnectivityError(''); setAdjacency(null); setAdjacencyError(''); setEdgeOffset(0); setFilter(''); setSelectedIndex(null); setVisibleGroups([]); setOverlay(null);
     async function load() {
       const startedAt = performance.now();
       const status = await json(`/api/atlas/${profile}`, controller.signal);
@@ -153,16 +153,25 @@ export default function NervousSystem({ dataset = "male-cns:v1.0", individualId 
     && visibleGroups.includes(data.groups[edge.sourceIndex]) && visibleGroups.includes(data.groups[edge.targetIndex])) ?? [], [connectivity, data, visibleGroups]);
   const loadMetrics = matchingAtlasLoadMetrics(data, profile);
   const selected = data && selectedIndex !== null ? data.nodes[selectedIndex] : null;
+  // An overlay is valid only for the exact profile, dataset, individual and graph manifest it
+  // was read under, so a changed selection can never leave old activity on new anatomy.
+  const activityScope = data ? atlasActivityScope({ profile, dataset, graphManifestSha256: data.manifest.graphManifestSha256 }) : null;
+  const currentOverlay = overlayForScope(overlay, activityScope, individualId);
+  const activityMode = atlasActivityMode(currentOverlay);
+  // Stable identities: a re-render must not rebuild the marked-point buffer or the row lookup.
+  const activityByIndex = useMemo(() => atlasActivityByIndex(currentOverlay), [currentOverlay]);
+  const activityMarks = useMemo(() => drawableAtlasActivity(currentOverlay), [currentOverlay]);
   return <section className="card content-panel observatory-accessible" aria-label="Full nervous-system atlas">
-    <span className="eyebrow">ANATOMY ONLY / PINNED DATASET</span>
+    <span className="eyebrow">{activityMode.eyebrow}</span>
     <h2>Brain and nerve cord</h2>
-    <p>Measured cell locations across the brain and nerve cord. Anatomy only; no activity or learning is inferred from this view.</p>
+    <p>Measured cell locations across the brain and nerve cord. Anatomical coordinates and modeled activity are separate layers with separate counts, and neither is evidence for the other.</p>
+    <p role="status">Current mode: <strong>{activityMode.label}</strong>. {activityMode.claim}</p>
     <label>Atlas dataset <select value={profile} onChange={e => {
       if (e.target.value === profile) return;
-      setData(null); setConnectionsEnabled(false); setConnectivity(null); selectCell(null);
+      setData(null); setConnectionsEnabled(false); setConnectivity(null); setOverlay(null); selectCell(null);
       onDatasetChange(e.target.value === 'banc-v888' ? 'banc:v888' : 'male-cns:v1.0');
     }}>{PROFILES.map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></label>
-    {individualId && <p>Selected connectome individual: <code>{individualId}</code>. This anatomy view has no live activity overlay. Viewing does not load or start its simulation.</p>}
+    {individualId && <p>Selected connectome individual: <code>{individualId}</code>. Viewing, camera movement, layer changes and reading a bounded sample never load, start, advance or stimulate its simulation.</p>}
     <p><a href="#Connectome%20lab">Open full-connectome individuals and paused controls →</a></p>
     {error && <p role="alert">{error} Generate the pinned atlas with the documented local importer, then reload this view.</p>}
     {!data && !error && <p role="status">Loading and validating pinned anatomical data…</p>}
@@ -180,7 +189,8 @@ export default function NervousSystem({ dataset = "male-cns:v1.0", individualId 
       </div>
       <p className="muted">Source X/Y/Z axes · {data.manifest.coordinates.units} · anatomical direction labels not independently established</p>
       <p><a href={`#${searchId}`} onClick={event => { event.preventDefault(); searchInput.current?.focus(); }}>Skip spatial controls to searchable cells</a></p>
-      <AtlasCanvas fitRevision={fitRevision} edges={displayEdges} edgeOpacity={edgeOpacity} positions={data.positions} valid={data.valid} groups={data.groups} visibleGroups={visibleGroups} selectedIndex={selectedIndex} pointSize={pointSize} onSelect={selectCell} />
+      <AtlasCanvas fitRevision={fitRevision} edges={displayEdges} edgeOpacity={edgeOpacity} activity={activityMarks} positions={data.positions} valid={data.valid} groups={data.groups} visibleGroups={visibleGroups} selectedIndex={selectedIndex} pointSize={pointSize} onSelect={selectCell} />
+      <AtlasActivity data={data} dataset={dataset} individualId={individualId} scope={activityScope} visibleGroups={visibleGroups} selectedIndex={selectedIndex} overlay={currentOverlay} onOverlay={setOverlay} />
       <details className="atlas-display-settings"><summary>Display groups, point size and optional connections</summary>
       <fieldset style={{ margin: '12px 0' }}><legend>Display groups (classification from source annotations)</legend>
         {data.manifest.groups.map((name, index) => <label key={name} style={{ display: 'inline-flex', gap: 5, marginRight: 15 }}><input type="checkbox" checked={visibleGroups.includes(index)} onChange={e => setVisibleGroups(current => e.target.checked ? [...current, index] : current.filter(value => value !== index))} />{LABELS[name] || name}</label>)}
@@ -196,11 +206,12 @@ export default function NervousSystem({ dataset = "male-cns:v1.0", individualId 
       </fieldset>
       </details>
       </>}
-      <p>Cell locations and straight connection lines are not reconstructed neurites or full peripheral anatomy. No activity overlay is attached. Brain/cord presets use source annotation groups.</p>
+      <p>Cell locations and straight connection lines are not reconstructed neurites or full peripheral anatomy. Brain/cord presets use source annotation groups. A cell with no sampled value is reported as not sampled, which is not a measurement of zero firing.</p>
       <label>Search cells by exact ID, type or region <input ref={searchInput} id={searchId} value={filter} onChange={e => setFilter(e.target.value)} placeholder="Exact ID, type or annotation" /></label>
       <p role="status" aria-atomic="true">{matches.count.toLocaleString()} matches; showing the first {matches.rows.length}. Search includes cells without coordinates.</p>
-      <div tabIndex={0} role="region" aria-label="Searchable anatomical cells" style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: 420, border: '1px solid #2c4033', borderRadius: 8 }}><table><thead><tr><th>Cell</th><th>Type</th><th>Region</th><th>Display group</th><th>Position</th></tr></thead><tbody>
-        {matches.rows.map(i => <tr key={data.nodes[i][0]}><td><button aria-pressed={i === selectedIndex} onClick={() => selectCell(i, true)}>{data.nodes[i][1]}{i === selectedIndex ? ' · selected' : ''}</button></td><td>{data.nodes[i][2] || 'Unclassified'}</td><td>{data.nodes[i][4] || 'Unclassified'}</td><td>{data.groups ? LABELS[data.manifest.groups[data.groups[i]]] || 'Unclassified' : 'Unavailable'}</td><td>{data.nodes[i][5]}</td></tr>)}
+      <div tabIndex={0} role="region" aria-label="Searchable anatomical cells" style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: 420, border: '1px solid #2c4033', borderRadius: 8 }}><table><thead><tr><th>Cell</th><th>Type</th><th>Region</th><th>Display group</th><th>Position</th><th>Sampled activity</th></tr></thead><tbody>
+        {matches.rows.map(i => <tr key={data.nodes[i][0]}><td><button aria-pressed={i === selectedIndex} onClick={() => selectCell(i, true)}>{data.nodes[i][1]}{i === selectedIndex ? ' · selected' : ''}</button></td><td>{data.nodes[i][2] || 'Unclassified'}</td><td>{data.nodes[i][4] || 'Unclassified'}</td><td>{data.groups ? LABELS[data.manifest.groups[data.groups[i]]] || 'Unclassified' : 'Unavailable'}</td><td>{data.nodes[i][5]}</td>
+          <td>{atlasActivityCellText(currentOverlay, activityByIndex.get(i))}</td></tr>)}
       </tbody></table></div>
       <section aria-label="Anatomical cell inspector"><h3 ref={inspectorHeading} tabIndex={-1} style={{overflowWrap: "anywhere"}}>{selected ? selected[0] : 'Select an anatomical cell'}</h3>
         {selected && <><p>Type: {selected[2] || 'Unclassified'} · class: {selected[3] || 'Unclassified'} · region: {selected[4] || 'Unclassified'}.</p><p>{selected[5]} {!data.geometryAvailable ? 'Coordinates unavailable; no position is drawn or inferred.' : data.valid[selectedIndex] ? `Coordinates (${data.manifest.coordinates.units}): ${Array.from(data.positions.subarray(selectedIndex * 3, selectedIndex * 3 + 3)).map(v => v.toFixed(3)).join(', ')}. ${visibleGroups.includes(data.groups[selectedIndex]) ? '' : 'Its display group is currently hidden.'}` : 'No point is drawn; coordinates are never invented.'}</p></>}

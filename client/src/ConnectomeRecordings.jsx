@@ -1,13 +1,14 @@
 import { useEffect,useRef,useState } from 'react';
 import { matchingSampleResident,neuronSampleScope } from './connectome-sample-state.js';
-import { readRecordedSession,readRecordedReplay,sameRecordingRequest } from './connectome-recording-state.js';
-async function json(path,signal,body){const response=await fetch(path,{signal,...(body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{})});const value=await response.json();if(!response.ok)throw new Error(typeof value.error==='string'?value.error:'Recording operation failed.');return value;}
+import { readRecordedListing,readRecordedReplay,sameRecordingRequest } from './connectome-recording-state.js';
+import { apiJson } from './api-json.js';
+const json=apiJson('Recording operation failed.');
 const mib=n=>Number.isFinite(n)?`${(n/1024**2).toFixed(1)} MiB`:'unavailable';
 export default function ConnectomeRecordings({individualId=null,dataset=null,neuronId=null,graphManifestSha256=null}) {
  const scope={individualId,dataset,neuronId,graphManifestSha256},key=neuronSampleScope(scope);
  const live=useRef({key,generation:0,mounted:false}),active=useRef(null),listEpoch=useRef(0);live.current.key=key;
  const [listing,setListing]=useState(null),[error,setError]=useState(''),[listError,setListError]=useState(''),[busy,setBusy]=useState(false),[replay,setReplay]=useState(null),[index,setIndex]=useState(0);
- async function refresh(signal){const epoch=++listEpoch.current;try{const value=await json('/api/connectome-recordings',signal);if(!Array.isArray(value.sessions)||value.sessions.length>100)throw new Error('Recording list is incompatible.');value.sessions.forEach(readRecordedSession);if(live.current.mounted&&epoch===listEpoch.current){setListing(value);setListError('');}}catch(e){if(live.current.mounted&&epoch===listEpoch.current)setListError(e.message);}}
+ async function refresh(signal){const epoch=++listEpoch.current;try{const value=readRecordedListing(await json('/api/connectome-recordings',signal));if(live.current.mounted&&epoch===listEpoch.current){setListing(value);setListError('');}}catch(e){if(live.current.mounted&&epoch===listEpoch.current)setListError(e.message);}}
  useEffect(()=>{live.current.mounted=true;let timer,stopped=false;const controller=new AbortController();const poll=async()=>{await refresh(controller.signal);if(!stopped)timer=setTimeout(poll,2000);};poll();return()=>{stopped=true;live.current.mounted=false;live.current.generation++;listEpoch.current++;clearTimeout(timer);controller.abort();active.current?.abort();};},[]);
  useEffect(()=>{live.current.generation++;active.current?.abort();active.current=null;setBusy(false);setError('');},[key]);
  async function action(work){if(active.current)return;const request={key,generation:++live.current.generation},controller=new AbortController();active.current=controller;setBusy(true);setError('');const timer=setTimeout(()=>controller.abort(),20000);

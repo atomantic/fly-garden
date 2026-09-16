@@ -1,11 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { neuronSampleScope, matchingSampleResident, readNeuronSample, confirmNeuronSample, currentNeuronSampleRequest } from './connectome-sample-state.js';
-async function json(url,signal,body) {
-  const response=await fetch(url,{signal,...(body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{})});
-  const value=await response.json();
-  if(!response.ok)throw new Error(typeof value.error==='string'?value.error:'Neuron sample unavailable. Refresh the selected connectome before retrying.');
-  return value;
-}
+import { apiJson } from './api-json.js';
+const json=apiJson('Neuron sample unavailable. Refresh the selected connectome before retrying.');
 export default function ConnectomeNeuronSample({individualId,dataset,neuronId,graphManifestSha256}) {
   const scope={individualId,dataset,neuronId,graphManifestSha256},key=neuronSampleScope(scope);
   const live=useRef({key,generation:0}),active=useRef(null);

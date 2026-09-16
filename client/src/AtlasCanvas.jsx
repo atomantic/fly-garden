@@ -5,9 +5,14 @@ import { createAtlasContextGuard } from './webgl-context-loss.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
 const COLORS = [0x84d7bd, 0xe8be75, 0x9eacf5, 0xe8a7c8, 0xa8d779, 0x76c8e4, 0xd6cfe7];
+// Sampled activity uses both colour and point size, so a mark is never a colour-only channel,
+// and every marked value is also printed as text beside the canvas.
+const ACTIVITY_LAYERS = [{ color: 0x7fa9c4, size: 5 }, { color: 0xffd166, size: 11 }];
+const BASE_CANVAS_LABEL = 'Read-only anatomical point cloud. Use the camera buttons or searchable cell table for keyboard access.';
+const ACTIVITY_CANVAS_LABEL = 'Read-only anatomical point cloud with bounded sampled activity marks. Every marked value is also listed as text. Use the camera buttons or searchable cell table for keyboard access.';
 
 /** Read-only measured point positions. This renderer owns no runtime/control API or animation loop. */
-export default function AtlasCanvas({ positions, valid, groups, visibleGroups, selectedIndex, pointSize = 2, fitRevision = 0, edges = [], edgeOpacity = 0.15, onSelect }) {
+export default function AtlasCanvas({ positions, valid, groups, visibleGroups, selectedIndex, pointSize = 2, fitRevision = 0, edges = [], edgeOpacity = 0.15, activity = null, onSelect }) {
   const host = useRef(null), view = useRef(null), select = useRef(onSelect);
   const [failure, setFailure] = useState(''), [measurement, setMeasurement] = useState(null), [measuring, setMeasuring] = useState(false);
   const benchmark = useRef(null);
@@ -22,7 +27,7 @@ export default function AtlasCanvas({ positions, valid, groups, visibleGroups, s
     renderer.setClearColor(0x091817);
     container.appendChild(renderer.domElement);
     renderer.domElement.setAttribute('role', 'img');
-    renderer.domElement.setAttribute('aria-label', 'Read-only anatomical point cloud. Use the camera buttons or searchable cell table for keyboard access.');
+    renderer.domElement.setAttribute('aria-label', BASE_CANVAS_LABEL);
     const scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera(45, 1, 0.01, 1000);
     const controls = new OrbitControls(camera, renderer.domElement);
     // This view already repaints only on demand and never holds an animation-frame loop open, so it
@@ -56,6 +61,15 @@ export default function AtlasCanvas({ positions, valid, groups, visibleGroups, s
     selectionGeometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(3), 3));
     const selectionMaterial = new THREE.PointsMaterial({ color: 0xffffff, size: 9, sizeAttenuation: false, depthTest: false });
     const marker = new THREE.Points(selectionGeometry, selectionMaterial); marker.visible = false; marker.frustumCulled = false; marker.renderOrder = 2; scene.add(marker);
+    // Two bounded overlay layers, allocated once and refilled in place, so changing activity
+    // mode never leaves a replaced GPU buffer behind.
+    const activityLayers = ACTIVITY_LAYERS.map(({ color: hex, size }) => {
+      const activityGeometry = new THREE.BufferGeometry();
+      const activityMaterial = new THREE.PointsMaterial({ color: hex, size, sizeAttenuation: false, depthTest: false });
+      const activityPoints = new THREE.Points(activityGeometry, activityMaterial);
+      activityPoints.visible = false; activityPoints.frustumCulled = false; activityPoints.renderOrder = 1; scene.add(activityPoints);
+      return { geometry: activityGeometry, material: activityMaterial, points: activityPoints };
+    });
     const context = createAtlasContextGuard({
       cancelBenchmark: () => benchmark.current?.(), setMeasuring, setFailure,
     });
@@ -95,13 +109,14 @@ export default function AtlasCanvas({ positions, valid, groups, visibleGroups, s
     renderer.domElement.addEventListener('pointerup', click);
     renderer.domElement.addEventListener('pointercancel', cancel);
     renderer.domElement.addEventListener('webglcontextlost', contextLost);
-    view.current = { edgeGeometry, edgeMaterial, geometry, material, marker, selectionGeometry, normalized, fit, render, camera, controls, indices: [], fitted: false, fitRevision };
+    view.current = { canvas: renderer.domElement, edgeGeometry, edgeMaterial, geometry, material, marker, selectionGeometry, activityLayers, normalized, fit, render, camera, controls, indices: [], fitted: false, fitRevision };
     resize();
     return () => {
       benchmark.current?.(); view.current = null; observer.disconnect(); controls.dispose();
       renderer.domElement.removeEventListener('pointerdown', down); renderer.domElement.removeEventListener('pointerup', click);
       renderer.domElement.removeEventListener('pointercancel', cancel);
       renderer.domElement.removeEventListener('webglcontextlost', contextLost);
+      for (const layer of activityLayers) { layer.geometry.dispose(); layer.material.dispose(); }
       edgeGeometry.dispose(); edgeMaterial.dispose(); geometry.dispose(); material.dispose(); selectionGeometry.dispose(); selectionMaterial.dispose(); renderer.dispose(); renderer.domElement.remove();
     };
   }, [positions, valid, groups]);
@@ -137,10 +152,28 @@ export default function AtlasCanvas({ positions, valid, groups, visibleGroups, s
     current.edgeGeometry.setAttribute('position', new THREE.Float32BufferAttribute(values, 3));
     current.edgeGeometry.computeBoundingSphere(); current.render();
   }, [edges, visibleGroups, positions, valid, groups]);
+  useEffect(() => {
+    const current = view.current; if (!current) return;
+    // A hidden display group hides its activity mark too, and an unsampled cell gets no mark
+    // at all: an absent mark is absent data, never a reported zero.
+    const layerValues = ACTIVITY_LAYERS.map(() => []);
+    for (const cell of activity ?? []) {
+      const i = cell.index;
+      if (!Number.isSafeInteger(i) || i < 0 || i >= valid.length || !valid[i] || !visibleGroups.includes(groups[i])) continue;
+      layerValues[cell.firing === 1 ? 1 : 0].push(...current.normalized.subarray(i * 3, i * 3 + 3));
+    }
+    current.activityLayers.forEach((layer, index) => {
+      layer.geometry.dispose();
+      layer.geometry.setAttribute('position', new THREE.Float32BufferAttribute(layerValues[index], 3));
+      layer.points.visible = layerValues[index].length > 0;
+    });
+    current.canvas.setAttribute('aria-label', layerValues.some(values => values.length) ? ACTIVITY_CANVAS_LABEL : BASE_CANVAS_LABEL);
+    current.render();
+  }, [activity, visibleGroups, positions, valid, groups]);
   useEffect(() => { const current = view.current; if (current) { current.edgeMaterial.opacity = edgeOpacity; current.render(); } }, [edgeOpacity]);
   useEffect(() => {
     if (benchmark.current) { benchmark.current(); setMeasuring(false); setMeasurement({ error: 'View changed; measurement cancelled. Run again for the current geometry.' }); }
-  }, [positions, visibleGroups, edges, pointSize, edgeOpacity, selectedIndex]);
+  }, [positions, visibleGroups, edges, pointSize, edgeOpacity, selectedIndex, activity]);
   function measureRedraws() {
     const current = view.current;
     if (!current || failure || benchmark.current) return;
@@ -181,6 +214,7 @@ export default function AtlasCanvas({ positions, valid, groups, visibleGroups, s
     <p className="muted">Manual browser redraw throughput includes requestAnimationFrame scheduling and display refresh limits; it is not GPU timing or neural performance. Measurement does not move the camera or run a simulation.</p>
     {failure && <p role="alert">{failure}</p>}
     <div ref={host} style={{ height: 'min(60vh, 560px)', minHeight: 280, width: '100%' }} />
+    {Boolean(activity?.length) && <p>Activity marks: a larger amber point is a sampled cell whose pending one-step firing flag is set; a smaller blue point is a sampled cell whose flag is clear. Every other point was not sampled and carries no activity claim. Each marked value is also listed in the sample report.</p>}
     <p className="muted">Static anatomical points in the source coordinate frame; no motion, neural activity, body silhouette or full morphology is inferred. Camera controls never start or steer an individual.</p>
   </div>;
 }
