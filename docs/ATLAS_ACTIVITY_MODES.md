@@ -87,8 +87,10 @@ or input, so keyboard access needs no custom key handling.
 
 ## Not yet measured
 
-Interaction latency and browser peak memory with the overlay enabled, and edge-enabled redraw throughput,
-have not been measured on real GPU hardware; `docs/ATLAS_DISPLAY_EVIDENCE.md` records what has. Sampled
+Edge-enabled redraw throughput at every ceiling the UI offers, camera and selection interaction latency,
+and the renderer JavaScript heap are now measured, but only **with the overlay off** and only on a software
+rasterizer; see [display evidence](ATLAS_DISPLAY_EVIDENCE.md). The same figures **with sampled activity marks
+drawn**, and any of them on real GPU hardware, remain unmeasured. Sampled
 activity has not been exercised against a loaded full-connectome worker in a browser, because that
 requires an explicitly created and loaded individual. The contracts above are unit-tested, which is not
 the same as an integrated run, and this document does not claim that gate passed.
