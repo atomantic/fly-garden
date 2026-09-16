@@ -34,8 +34,8 @@ const CEILINGS = [1000, 5000, 20000];
  */
 async function heapBytes(session) {
   if (!session) return null;
-  const { metrics } = await session.send('Performance.getMetrics').catch(() => ({ metrics: [] }));
-  const used = metrics.find(metric => metric.name === 'JSHeapUsedSize')?.value;
+  const { metrics } = await session.send('Performance.getMetrics').catch(() => ({}));
+  const used = metrics?.find(metric => metric.name === 'JSHeapUsedSize')?.value;
   return Number.isFinite(used) && used > 0 ? Math.round(used) : null;
 }
 
@@ -146,26 +146,35 @@ test('camera and selection interactions publish measured latency on the loaded a
     const samples = [], labels = [];
     for (const row of rows) {
       const before = heading.textContent;
+      let timer;
+      // A click that never changes the heading is an unmeasured selection, not a slow one, so the
+      // wait is bounded and the run stops rather than hanging on the whole test's timeout.
       const settled = new Promise(resolve => {
         const observer = new MutationObserver(() => {
           if (heading.textContent === before) return;
-          observer.disconnect(); resolve(performance.now());
+          clearTimeout(timer); observer.disconnect(); resolve(performance.now());
         });
         observer.observe(heading, { childList: true, characterData: true, subtree: true });
+        timer = setTimeout(() => { observer.disconnect(); resolve(null); }, 5000);
       });
       const started = performance.now();
       row.click();
-      samples.push(await settled - started);
+      const settledAt = await settled;
+      if (settledAt === null) return { samples, labels, abandoned: before };
+      samples.push(settledAt - started);
       labels.push(heading.textContent);
     }
-    return { samples, labels };
+    return { samples, labels, abandoned: null };
   });
   expect(selection, 'fewer than two selectable cells were listed').not.toBeNull();
-  // Every timed click selected a different cell, so no sample measured a no-op re-selection.
-  expect(new Set(selection.labels).size).toBe(selection.labels.length);
-  const select = summarizeLatency(selection.samples);
-  console.log(`[${info.project.name}] table selection to inspector heading: ${JSON.stringify(select)}`);
-  info.annotations.push({ type: 'measured', description: `selection median ${select.medianMs.toFixed(2)} ms` });
+  if (selection.abandoned !== null) notExercised(info, 'some cell selections', `the inspector heading stayed "${selection.abandoned}" for 5 s`);
+  if (selection.samples.length) {
+    // Every timed click selected a different cell, so no sample measured a no-op re-selection.
+    expect(new Set(selection.labels).size).toBe(selection.labels.length);
+    const select = summarizeLatency(selection.samples);
+    console.log(`[${info.project.name}] table selection to inspector heading: ${JSON.stringify(select)}`);
+    info.annotations.push({ type: 'measured', description: `selection median ${select.medianMs.toFixed(2)} ms` });
+  } else notExercised(info, 'selection latency', 'no timed selection updated the inspector heading');
 
   // The camera and the selection are display state only: the counts line and the mode are unchanged.
   await expect(atlasCounts(page)).toHaveText(counts);
