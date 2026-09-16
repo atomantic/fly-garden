@@ -1,5 +1,5 @@
 import test from 'node:test';import assert from 'node:assert/strict';
-import { readRecordedReplay,sameRecordingRequest } from '../client/src/connectome-recording-state.js';
+import { readRecordedListing,readRecordedReplay,sameRecordingRequest } from '../client/src/connectome-recording-state.js';
 const source={individualId:'a',dataset:'banc:v888',sessionEpoch:'old',graphSha256:'a'.repeat(64),graphManifestSha256:'b'.repeat(64),model:{id:'test',dtMs:1}},selection={mode:'explicit-ids',neuronIds:['banc:v888/9007199254740993'],selectedCount:1,retainedNeuronCount:10};
 const replay={schemaVersion:1,kind:'connectome-sample-recording-export',mode:'read-only',canResume:false,session:{schemaVersion:1,kind:'connectome-sample-recording',id:'saved',status:'complete',startedAtMs:1,source,selection,nextSequence:1,droppedSamples:0},records:[{sequence:0,tick:1,simTimeMs:1,wallTimeMs:1,timeWindow:{kind:'instantaneous',startTick:1,endTick:1,startSimTimeMs:1,endSimTimeMs:1},samples:[{neuronId:selection.neuronIds[0],potential:-0.5,firing:0,refractoryStepsRemaining:0}]}],gaps:[],complete:true};
 test('inert UI replay preserves exact selection and refuses invented values, rates and completion',()=>{
@@ -8,4 +8,14 @@ test('inert UI replay preserves exact selection and refuses invented values, rat
 });
 test('old recording effects cannot attach to a new source or later request',()=>{
  const request={key:'selected-source-a',generation:2};assert(sameRecordingRequest(request,request));assert(!sameRecordingRequest(request,{...request,generation:3}));assert(!sameRecordingRequest(request,{...request,key:'selected-source-b'}));
+});
+
+test('the shared recording listing is bounded and every session validated before any panel reads it',()=>{
+ const listing={sessions:[replay.session]};assert.equal(readRecordedListing(listing),listing);
+ assert.equal(readRecordedListing({sessions:[]}).sessions.length,0);
+ assert.throws(()=>readRecordedListing(null),/incompatible/);
+ assert.throws(()=>readRecordedListing({sessions:'many'}),/incompatible/);
+ assert.throws(()=>readRecordedListing({sessions:Array(101).fill(replay.session)}),/incompatible/);
+ const broken=structuredClone(replay.session);broken.selection.selectedCount=2;
+ assert.throws(()=>readRecordedListing({sessions:[broken]}),/metadata is incompatible/);
 });
