@@ -1,0 +1,24 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><title>Garden scene-change GPU raster source</title>
+<style>body{font:16px system-ui;max-width:70rem;margin:2rem auto;padding:1rem;background:#14221c;color:#eee}button{padding:1rem}canvas{max-width:20rem;margin:0.25rem}pre{white-space:pre-wrap;overflow-wrap:anywhere}</style>
+<h1>Garden scene-change GPU raster source</h1>
+<p>This page is the browser half of one recording. It builds the production <code>Scene.jsx</code> garden scene graph and rasters it through the production 8&times;4 controller camera on the real graphics device, so that <code>scripts/gpu-scene-change-causality.mjs</code> can close a loop around it. The 32-neuron fixture, the engineered luminance encoding and the declared motor readout run in that driving Node process, never here.</p>
+<p>Nothing happens until the button is pressed, and pressing it still starts no simulation, creates no individual, issues no app API call and sends nothing off the loopback interface. It only makes the raster source reachable to whatever drives this page.</p>
+<button id="arm">Arm this page as a GPU raster source</button>
+<p id="status" role="status">Not armed.</p><p id="device"></p><div id="views"></div>
+<script type="module">
+import { createSceneChangeRasterHost } from '/client/src/scene-change-evidence.js';
+document.querySelector('#arm').addEventListener('click', event => {
+ event.target.disabled = true;
+ try {
+  const views = document.querySelector('#views');
+  window.flyGardenSceneChange = createSceneChangeRasterHost(name => {
+   const canvas = document.createElement('canvas');
+   canvas.width = 640; canvas.height = 360;
+   if (name) { canvas.title = name; views.append(canvas); }
+   return canvas;
+  });
+  document.querySelector('#device').textContent = JSON.stringify(window.flyGardenSceneChange.describe());
+  document.querySelector('#status').textContent = 'Armed. Each garden a driver opens appears below as it is rastered.';
+ } catch(error) { document.querySelector('#status').textContent = `Unavailable: ${error.message}`; }
+});
+</script></html>

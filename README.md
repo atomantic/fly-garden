@@ -44,6 +44,13 @@ loopback, and it never closes or reads a page it did not open.
 [the environment adapter](docs/ENVIRONMENT_ADAPTER.md) on a real graphics device. It starts nothing and
 creates no individual.
 
+`node scripts/gpu-scene-change-causality.mjs` uses the same variable to record the closed sensory-to-motor
+loop on a real graphics device: the production garden is rastered in the browser while the script holds the
+fixture, the adapter and the authoritative pose. It results in
+[the GPU scene-change record](research/results/scene-change-causality-gpu.json), documented in
+[the environment adapter](docs/ENVIRONMENT_ADAPTER.md). It runs its own in-process fixture, creates no
+individual and makes no app API call.
+
 Open http://127.0.0.1:8790. The atlas reads locally prepared anatomical files. Use [complete dataset preparation](docs/DATASET_PREPARATION.md) for the pinned sources, graphs and atlas, and the separate [paused memory measurement](docs/CONNECTOME_MEMORY.md) before loading. Nothing is downloaded or simulated on startup.
 
 In **Connectome lab**, create a saved, unloaded individual, then choose **Load complete graph (paused)**. Loading requires matching local memory evidence and enough configured capacity. **Start** only permits an explicit bounded **Advance**; it does not begin background execution. Checkpoint history preserves exact source lineage. See [the full-graph service and controls](docs/CONNECTOME_HTTP.md).
