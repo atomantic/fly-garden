@@ -90,6 +90,40 @@ test('registry timer pauses an attached recipient and revokes encounters when re
   assert.equal(store.snapshot(attached).tick, 2);
 });
 
+test('HTTP fresh arrival after a rendering gap pauses before a registry tick and requires explicit resume', async t => {
+  let clock = Date.now(); t.mock.method(Date, 'now', () => clock);
+  const store = openIdentityStore(directory(t)); t.after(() => store.close());
+  const server = createServer({ identities: store, autoTick: false });
+  server.listen(0, '127.0.0.1'); await once(server, 'listening');
+  t.after(() => new Promise(resolve => server.close(resolve)));
+  const base = `http://127.0.0.1:${server.address().port}`, id = store.primaryId;
+  const post = body => fetch(`${base}/api/individuals/${id}/environment/frames`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+  });
+  const lease = store.environmentControl(id, 'attach'); store.control(id, 'start');
+  assert.equal((await post(frameFor(store.snapshot(id), lease.controllerToken))).status, 200);
+  store.encounterDynamicsControl(id, true);
+  const before = store.snapshot(id);
+  clock += RETINAL_ADAPTER.maxAgeMs + 1;
+  const late = await post(frameFor(before, lease.controllerToken));
+  assert.equal(late.status, 409);
+  assert.match((await late.json()).error, /stale/);
+  const paused = store.snapshot(id);
+  assert.equal(paused.status, 'paused'); assert.equal(paused.tick, before.tick);
+  assert.equal(paused.simTimeMs, before.simTimeMs);
+  assert.deepEqual(paused.neural, before.neural);
+  assert.deepEqual(paused.environmentAdapter.pose, before.environmentAdapter.pose);
+  assert.deepEqual(paused.environmentAdapter.motor, { forward: 0, yaw: 0 });
+  assert.notEqual(paused.environmentAdapter.environmentEpoch, before.environmentAdapter.environmentEpoch);
+  assert.equal(paused.encounterDynamics.enabled, false);
+  assert.equal(paused.encounterDynamics.phase, 'disabled');
+  assert.equal((await post(frameFor(paused, lease.controllerToken))).status, 409);
+  store.step(); assert.equal(store.snapshot(id).tick, before.tick);
+  store.control(id, 'start');
+  assert.equal((await post(frameFor(store.snapshot(id), lease.controllerToken))).status, 200);
+  assert.equal(store.snapshot(id).tick, before.tick + 1);
+});
+
 test('HTTP registry tick pauses a controller whose browser stopped posting frames', async t => {
   const store = openIdentityStore(directory(t)); t.after(() => store.close());
   const server = createServer({ identities: store, autoTick: false });

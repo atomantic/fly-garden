@@ -47,6 +47,54 @@ test('duplicate, stale, future and cross-recipient/session/epoch frames cannot a
   assert.equal(adapter.checkFreshness(), false); assert.equal(runtime.snapshot().status, 'paused');
   assert.notEqual(adapter.snapshot().environmentEpoch, accepted.environmentEpoch);
 });
+test('fresh arrivals cannot erase an expired observation gap before the watchdog runs', () => {
+  for (const gap of [251, -1]) {
+    const { runtime, adapter, frame, elapse } = setup(); runtime.control('start');
+    adapter.accept(frame());
+    const before = runtime.checkpoint(), environment = adapter.snapshot();
+    elapse(gap);
+    assert.throws(() => adapter.accept(frame()), /stale/);
+    assert.equal(runtime.snapshot().status, 'paused');
+    assert.equal(runtime.snapshot().tick, before.dynamics.tick);
+    assert.deepEqual(runtime.checkpoint().dynamics, before.dynamics);
+    assert.deepEqual(adapter.snapshot().pose, environment.pose);
+    assert.notEqual(adapter.snapshot().environmentEpoch, environment.environmentEpoch);
+    assert.deepEqual(adapter.snapshot().motor, { forward: 0, yaw: 0 });
+    assert.equal(adapter.snapshot().lastFrameId, -1);
+    assert.throws(() => adapter.accept(frame()), /Explicitly run/);
+    runtime.control('start');
+    adapter.accept(frame());
+    assert.equal(runtime.snapshot().tick, before.dynamics.tick + 1);
+  }
+});
+test('invalid frame traffic neither refreshes freshness nor changes the epoch', () => {
+  const { runtime, adapter, frame, elapse } = setup(); runtime.control('start');
+  adapter.accept(frame()); const environment = adapter.snapshot();
+  elapse(200);
+  assert.throws(() => adapter.accept({ ...frame(), rgb: Array(96).fill(NaN) }), /RGB/);
+  assert.equal(adapter.snapshot().lastReceivedAtMs, environment.lastReceivedAtMs);
+  elapse(51);
+  assert.throws(() => adapter.accept({ ...frame(), environmentEpoch: 'other' }), /epoch/);
+  assert.equal(adapter.snapshot().environmentEpoch, environment.environmentEpoch);
+  assert.equal(runtime.snapshot().tick, 1);
+  assert.throws(() => adapter.accept(frame()), /stale/);
+  assert.equal(runtime.snapshot().status, 'paused');
+  assert.equal(runtime.snapshot().tick, 1);
+});
+test('fresh arrival at the exact observation deadline advances only one step', () => {
+  const { runtime, adapter, frame, elapse } = setup(); runtime.control('start');
+  adapter.accept(frame()); const epoch = adapter.snapshot().environmentEpoch;
+  elapse(250); adapter.accept(frame());
+  assert.equal(runtime.snapshot().tick, 2);
+  assert.equal(adapter.snapshot().environmentEpoch, epoch);
+});
+test('a first frame cannot bypass an expired first-frame grace period', () => {
+  const { runtime, adapter, frame, elapse } = setup(); runtime.control('start');
+  adapter.checkFreshness(); elapse(251);
+  assert.throws(() => adapter.accept(frame()), /stale/);
+  assert.equal(runtime.snapshot().tick, 0);
+  assert.equal(runtime.snapshot().status, 'paused');
+});
 test('rest, quiet and idle never escalate input or erase optional policy reservations', () => {
   const { runtime, adapter, frame } = setup(); runtime.control('start'); runtime.encounter('nectar');
   const reserved = runtime.snapshot().stimulusPolicy.reservedDose;

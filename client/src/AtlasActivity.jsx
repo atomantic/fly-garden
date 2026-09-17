@@ -89,6 +89,9 @@ export default function AtlasActivity({ data, dataset, individualId, scope, visi
     catch (e) { onOverlay(staleAtlasActivity(overlay, e.message)); setError(e.message); }
   }
   function chooseMode(next) {
+    live.current.generation++;
+    active.current?.abort(); active.current = null;
+    setBusy(false);
     setMode(next); setError(''); onOverlay(null);
     if (next !== 'replay') { setReplay(null); setObservation(0); }
   }

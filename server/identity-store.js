@@ -343,7 +343,10 @@ export function openIdentityStore(directory, { write = atomicWrite, loadPrimary 
       if (requireResident(id).snapshot().status !== 'running') revokeEncounters(id);
       return { trace, environment: environmentSnapshot(id), state: snapshot(id) };
     }
-    catch (error) { throw error.statusCode ? error : new RuntimeError(error.message, 409); }
+    catch (error) {
+      if (requireResident(id).snapshot().status !== 'running') revokeEncounters(id);
+      throw error.statusCode ? error : new RuntimeError(error.message, 409);
+    }
   }
   function stepIndividual(id) {
     if (externalOwners.has(id)) return;
