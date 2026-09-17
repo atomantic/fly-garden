@@ -547,7 +547,7 @@ function App() {
                 </details>
                 {(state.faultReason || state.persistence.error) && <p role="alert">{state.faultReason || state.persistence.error}</p>}
                 <div className="panel-divider" />
-                <EnvironmentControls key={state.individualId} state={state} disabled={!available || Boolean(state.sharedSession || state.externalOwner)} onMutation={handleEnvironmentMutation} />
+                <EnvironmentControls key={state.individualId} state={state} disabled={!available || Boolean(state.externalOwner)} onMutation={handleEnvironmentMutation} />
                 <details className="creative-panel info-disclosure">
                   <summary>Music and pollen capture</summary>
                   <CreativeControls key={state.individualId} state={state} disabled={!available || Boolean(state.sharedSession || state.externalOwner)} onMutation={handleCreativeMutation} />

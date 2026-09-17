@@ -6,6 +6,13 @@ export default function EnvironmentControls({ state, disabled = false, onMutatio
   latest.current = state;
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const attached = state?.environmentAdapter?.attached;
+  const shared = state?.sharedSession;
+  const member = shared?.participants?.find(participant => participant.individualId === state?.individualId
+    && participant.sessionId === state?.sessionId);
+  const encounterReady = state?.status === 'running' && (shared
+    ? shared.status === 'running' && Boolean(member) && member.mode !== 'resting'
+    : attached);
+  const unavailable = disabled || Boolean(state?.externalOwner) || !state?.persistence?.resident;
   async function change(action) {
     const garden = action === 'enable-encounters' || action === 'disable-encounters';
     const individualId = state.individualId, sessionId = state.sessionId;
@@ -26,20 +33,20 @@ export default function EnvironmentControls({ state, disabled = false, onMutatio
   }
   return <section className="environment-controls" aria-label="Engineered visual controller">
     <h3>Visual fixture loop</h3>
-    <p>{attached ? 'Dedicated controller camera attached. Each accepted frame owns one 5 ms neural step and applies only its returned engineered motor pose.' : 'Garden body is illustrative. Attach the controller camera explicitly to enable the experimental visual fixture loop.'}</p>
+    <p>{shared ? 'Shared controller cameras own this body. Independent camera attachment is unavailable while joined.' : attached ? 'Dedicated controller camera attached. Each accepted frame owns one 5 ms neural step and applies only its returned engineered motor pose.' : 'Garden body is illustrative. Attach the controller camera explicitly to enable the experimental visual fixture loop.'}</p>
     {state?.environmentAdapter?.pauseReason && <p role="status">{state.environmentAdapter.pauseReason}</p>}
     <p>Attaching starts paused. Use Run fixture to begin; a missing camera pauses the simulation. No biological vision, retained learning, or subjective experience is established.</p>
-    <button disabled={busy || disabled || !state?.persistence?.resident} onClick={() => change(attached ? 'detach' : 'attach')}>
+    <button disabled={busy || unavailable || Boolean(shared)} onClick={() => change(attached ? 'detach' : 'attach')}>
       {attached ? 'Detach controller camera (pause)' : 'Attach controller camera (paused)'}
     </button>
     <div aria-label="Optional garden encounters">
       <h4>Optional flower encounters</h4>
       <p>Flower contact is a nonvisual geometry proxy, separate from controller-camera pixels. Floral scent and fictional nectar inputs use bounded synthetic currents; no receptor, pheromone, pharmacology or consent claim.</p>
-      <button disabled={busy || disabled || !state?.persistence?.resident || (!state?.encounterDynamics?.enabled && (!attached || state?.status !== 'running'))}
+      <button disabled={busy || unavailable || (!state?.encounterDynamics?.enabled && !encounterReady)}
         onClick={() => change(state?.encounterDynamics?.enabled ? 'disable-encounters' : 'enable-encounters')}>
         {state?.encounterDynamics?.enabled ? 'Disable flower encounters' : 'Enable optional flower encounters'}
       </button>
-      <p role="status">{state?.encounterDynamics?.enabled ? `Enabled · ${state.encounterDynamics.phase}` : 'Disabled · attach and run the visual fixture before deliberate enablement.'}
+      <p role="status">{state?.encounterDynamics?.enabled ? `Enabled · ${state.encounterDynamics.phase}` : shared ? 'Disabled · start the shared world and resume this member before deliberate enablement.' : 'Disabled · attach and run the visual fixture before deliberate enablement.'}
         {state?.encounterDynamics?.contactIds?.length > 0 && ` · Contact: ${state.encounterDynamics.contactIds.join(', ')}`}</p>
       <p>Enablement gives no immediate dose. A later entry can offer one bounded pulse; staying near a flower never increases or repeats it. Leaving stops that pulse without refunding its budget. Pause, rest, home, restore and camera takeover disable encounters.</p>
       <details><summary>Engineered catalog and contact mapping</summary>
