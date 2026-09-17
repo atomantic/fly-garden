@@ -4,14 +4,14 @@ import { createRuntime } from './runtime.js';
 import { createManagedVisitorBridge } from './managed-visitor-bridge.js';
 import { createManagedVisitorTransport } from './managed-visitor-transport.js';
 const deferred = () => { let resolve; const promise = new Promise(r => { resolve = r; }); return { promise, resolve }; };
-function setup({ capacity = 2 } = {}) {
+function setup({ capacity = 2, beforePreview = () => {} } = {}) {
   let clock = 10000; const runtimes = new Map(['a', 'b'].map(id => [id, createRuntime({ individualId: id, sessionId: `runtime-${id}` })]));
   const owners = new Map(), leases = new Map(), calls = [], controls = [];
   let epochs = 0;
   const authority = { claim(id, owner) {
     assert(!owners.has(id)); const r = runtimes.get(id); owners.set(id, owner);
     return { snapshot: () => r.snapshot(), control: action => { controls.push([id, action]); return r.control(action); }, prepareStep: input => r.prepareStep(input),
-      previewStep: token => r.previewStep(token), commitStep: token => r.commitStep(token),
+      previewStep: token => { beforePreview(); return r.previewStep(token); }, commitStep: token => r.commitStep(token),
       isCurrent: () => owners.get(id) === owner && runtimes.get(id) === r,
       release: () => { if (owners.get(id) === owner) owners.delete(id); } };
   } };
@@ -427,6 +427,71 @@ test('interaction after expiry or revocation never leaves the process', async ()
     // Arming is refused once the lease is gone; nothing is retried automatically.
     await assert.rejects(() => s.bridge.control('a', 'interact'), error => ['unavailable', 'unsupported'].includes(error.code));
   }
+});
+test('an observation arriving at lease expiry cannot dispatch movement or interaction', async () => {
+  for (const interaction of [false, true]) {
+    const s = setup();
+    await s.bridge.admit('a', { worldId: 'world' }); await s.bridge.control('a', 'start');
+    await s.bridge.tick('a');
+    if (interaction) await s.bridge.control('a', 'interact');
+    const before = s.runtimes.get('a').snapshot(), calls = structuredClone(s.calls);
+    const trace = s.bridge.snapshot('a').lastTrace, observe = s.transport.observe;
+    const entered = deferred(), gate = deferred();
+    s.transport.observe = async (...args) => { entered.resolve(); await gate.promise; return observe(...args); };
+    s.advance(s.bridge.snapshot('a').expiresAt - s.clock() - 1);
+    const pending = s.bridge.tick('a'); await entered.promise;
+    assert.deepEqual(s.runtimes.get('a').snapshot(), before);
+    s.advance(1); gate.resolve(); await pending;
+    const after = s.runtimes.get('a').snapshot();
+    assert.equal(after.tick, before.tick);
+    assert.equal(after.simTimeMs, before.simTimeMs);
+    assert.equal(after.sessionId, before.sessionId);
+    assert.equal(after.status, 'paused');
+    assert.deepEqual(s.calls, calls);
+    assert.deepEqual(s.bridge.snapshot('a').lastTrace, trace);
+    assert.equal(s.bridge.snapshot('a').lastInteraction, null);
+    assert.equal(s.bridge.snapshot('a').running, false);
+    assert.equal(s.bridge.snapshot('a').phase, 'home');
+    assert.equal(s.owners.has('a'), false);
+    assert([...s.leases.values()].every(lease => lease.expiresAt <= s.clock()));
+    await s.bridge.tick('a'); assert.deepEqual(s.calls, calls);
+  }
+});
+test('dispatch rechecks lease, capture freshness and clock rollback after local preview', async () => {
+  for (const fault of ['expiry', 'stale-capture', 'clock-rollback']) {
+    for (const interaction of [false, true]) {
+      let previewHook = () => {};
+      const s = setup({ beforePreview: () => previewHook() });
+      await s.bridge.admit('a', { worldId: 'world' }); await s.bridge.control('a', 'start');
+      await s.bridge.tick('a');
+      if (interaction) await s.bridge.control('a', 'interact');
+      const before = s.runtimes.get('a').snapshot(), calls = structuredClone(s.calls);
+      const trace = s.bridge.snapshot('a').lastTrace;
+      previewHook = () => s.advance(fault === 'expiry' ? s.bridge.snapshot('a').expiresAt - s.clock()
+        : fault === 'stale-capture' ? 251 : -1);
+      await s.bridge.tick('a');
+      const after = s.runtimes.get('a').snapshot();
+      assert.equal(after.tick, before.tick, fault);
+      assert.equal(after.simTimeMs, before.simTimeMs, fault);
+      assert.equal(after.sessionId, before.sessionId, fault);
+      assert.equal(after.status, 'paused', fault);
+      assert.deepEqual(s.calls, calls, fault);
+      assert.deepEqual(s.bridge.snapshot('a').lastTrace, trace, fault);
+      assert.equal(s.bridge.snapshot('a').lastInteraction, null, fault);
+      assert.equal(s.bridge.snapshot('a').running, false, fault);
+      assert.equal(s.owners.has('a'), false, fault);
+    }
+  }
+});
+test('a fresh capture at its age limit can dispatch before lease expiry', async () => {
+  const s = setup({ beforePreview: () => s.advance(250) });
+  await s.bridge.admit('a', { worldId: 'world' }); await s.bridge.control('a', 'start');
+  const before = s.runtimes.get('a').snapshot(), calls = s.calls.length;
+  await s.bridge.tick('a');
+  assert.equal(s.calls.length, calls + 1);
+  assert.equal(s.calls.at(-1).action.type, 'move');
+  assert.equal(s.runtimes.get('a').snapshot().tick, before.tick + 1);
+  assert.equal(s.bridge.snapshot('a').running, true);
 });
 test('no host or resident payload can reach the local runtime control path', async () => {
   const s = await armed(), action = s.transport.action, observe = s.transport.observe;
