@@ -103,6 +103,40 @@ test('the illustrated body is hidden only for the raster and restored even when 
   assert.equal(renderer.boundTarget(), null);
 });
 
+test('lost graphics contexts cannot return retained raster bytes before, during or after rendering', () => {
+  for (const phase of ['before', 'render', 'readback']) {
+    const { renderer, scene, camera, target, rgba, body } = harness();
+    const request = { renderer, scene, camera, target, rgba, body };
+    aimControllerCamera(camera, { x: 0, z: -1, yaw: 0 });
+    const baseline = readControllerRaster(request);
+    const retained = rgba.slice();
+    let lost = phase === 'before', renders = 0, reads = 0;
+    const render = renderer.render.bind(renderer);
+    const read = renderer.readRenderTargetPixels.bind(renderer);
+    renderer.getContext = () => ({ isContextLost: () => lost });
+    renderer.render = (...args) => {
+      renders++;
+      if (phase === 'render') lost = true;
+      if (!lost) render(...args);
+    };
+    renderer.readRenderTargetPixels = (...args) => {
+      reads++;
+      if (phase === 'readback') lost = true;
+      if (!lost) read(...args);
+    };
+    assert.throws(() => readControllerRaster(request), /Controller graphics context lost/, phase);
+    assert.equal(renders, phase === 'before' ? 0 : 1);
+    assert.equal(reads, phase === 'readback' ? 1 : 0);
+    assert.deepEqual(rgba, retained);
+    assert.equal(body.visible, true);
+    assert.equal(renderer.boundTarget(), null);
+    renderer.render = render;
+    renderer.readRenderTargetPixels = read;
+    lost = false;
+    assert.deepEqual(readControllerRaster(request), baseline);
+  }
+});
+
 test('raster and comparison helpers refuse malformed buffers instead of padding a sensory frame', () => {
   const { renderer, scene, camera, target } = harness();
   for (const rgba of [null, new Uint8Array(127), new Uint8Array(129), new Array(128).fill(0)]) {

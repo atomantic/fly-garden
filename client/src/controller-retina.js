@@ -33,11 +33,15 @@ export function readControllerRaster({ renderer, scene, camera, target, rgba, bo
   if (!renderer || !scene || !camera || !target || !(rgba instanceof Uint8Array) || rgba.length !== width * height * 4) {
     throw new Error('Invalid controller raster request');
   }
+  const context = renderer.getContext?.();
+  if (context?.isContextLost()) throw new Error('Controller graphics context lost');
   if (body) body.visible = false;
   try {
     renderer.setRenderTarget(target);
     renderer.render(scene, camera);
+    if (context?.isContextLost()) throw new Error('Controller graphics context lost');
     renderer.readRenderTargetPixels(target, 0, 0, width, height, rgba);
+    if (context?.isContextLost()) throw new Error('Controller graphics context lost');
     return topDownRetinalRGB(rgba, width, height);
   } finally {
     renderer.setRenderTarget(null);
