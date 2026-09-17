@@ -70,6 +70,7 @@ export function createEnvironmentAdapter(runtime, { now = Date.now, initialPose 
     if (!integer(frame.capturedAtMs) || !integer(receivedAtMs) || frame.capturedAtMs > receivedAtMs
       || receivedAtMs - frame.capturedAtMs > RETINAL_ADAPTER.maxAgeMs) throw new Error('Controller retinal frame is stale or future-dated.');
     const currents = encodeRetinalRgb(frame.rgb);
+    if (!checkFreshness()) throw new Error('Controller observation unavailable or stale; explicit resume and fresh epoch required.');
     runtime.step({ retinalCurrents: currents });
     const after = runtime.snapshot();
     // Faulting steps retain last valid state; do not manufacture a movement output.
