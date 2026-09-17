@@ -27,7 +27,7 @@ export default defineConfig({
   projects: [
     {
       name: 'motion-default',
-      testMatch: ['reduced-motion.spec.js', 'webgl-context-loss.spec.js', 'atlas-redraw.spec.js', 'atlas-interaction.spec.js'],
+      testMatch: ['reduced-motion.spec.js', 'webgl-context-loss.spec.js', 'atlas-redraw.spec.js', 'atlas-interaction.spec.js', 'atlas-activity.spec.js'],
       use: { ...devices['Desktop Chrome'], reducedMotion: 'no-preference' },
     },
     { name: 'motion-reduce', testMatch: 'reduced-motion.spec.js', use: { ...devices['Desktop Chrome'], reducedMotion: 'reduce' } },
