@@ -7,6 +7,57 @@ import { PANELS, STATE_WORDS, markPanel, settledPanelText, tabThroughPanel } fro
  * connectome lab. Each check presses Tab and reads text and computed styles.
  * No lifecycle, neural, provider or host command is issued by this spec.
  */
+test('shared encounter controls allow deliberate per-member opt-in without an independent camera', async ({ page }) => {
+  const baseline = await (await page.request.get('/api/state')).json();
+  const shared = { version: 2, sharedId: 'browser-shared', worldEpoch: 1, commandSequence: 0,
+    tick: 0, worldTimeMs: 0, status: 'running', participants: [
+      { individualId: baseline.individualId, sessionId: baseline.sessionId, mode: 'active',
+        simTimeMs: 0, pose: { x: 0, z: 0, yaw: 0 } },
+      { individualId: 'browser-partner', sessionId: 'partner-session', mode: 'active',
+        simTimeMs: 0, pose: { x: 1, z: 0, yaw: 0 } },
+    ] };
+  const member = { ...baseline, status: 'running', sharedSession: shared,
+    persistence: { ...baseline.persistence, resident: true },
+    environmentAdapter: { ...baseline.environmentAdapter, attached: false },
+    encounterDynamics: { ...baseline.encounterDynamics, enabled: false } };
+  const partner = { ...member, individualId: 'browser-partner', sessionId: 'partner-session' };
+  const commands = [];
+  await page.route('**/api/state', route => route.fulfill({ json: member }));
+  await page.route('**/api/individuals', route => route.fulfill({ json: { individuals: [member, partner] } }));
+  await page.route('**/api/shared/browser-shared', route => route.fulfill({ json: { shared, members: [member, partner] } }));
+  await page.route(`**/api/individuals/${member.individualId}/garden`, async route => {
+    const body = route.request().postDataJSON();
+    commands.push(body);
+    member.commandSequence = body.sequence;
+    member.encounterDynamics = { ...member.encounterDynamics, enabled: body.enabled, phase: 'armed-awaiting-observation' };
+    await route.fulfill({ json: member });
+  });
+  await page.goto('/#Observatory');
+  const enable = page.getByRole('button', { name: 'Enable optional flower encounters', exact: true });
+  const disable = page.getByRole('button', { name: 'Disable flower encounters', exact: true });
+  await expect(page.getByRole('button', { name: 'Attach controller camera (paused)', exact: true })).toBeDisabled();
+  await expect(enable).toBeEnabled();
+  await enable.click();
+  await expect(disable).toBeEnabled();
+  expect(commands).toEqual([{ protocolVersion: 1, individualId: member.individualId,
+    sessionId: member.sessionId, sequence: baseline.commandSequence + 1, enabled: true }]);
+  expect(partner.encounterDynamics.enabled).toBe(false);
+  await disable.click();
+  await expect(enable).toBeEnabled();
+  expect(commands[1]).toEqual({ ...commands[0], sequence: commands[0].sequence + 1, enabled: false });
+  member.status = 'resting'; shared.participants[0].mode = 'resting';
+  await expect(enable).toBeDisabled();
+  member.status = 'running'; shared.participants[0].mode = 'active';
+  await expect(enable).toBeEnabled();
+  shared.status = 'paused';
+  await expect(enable).toBeDisabled();
+  shared.status = 'running';
+  await expect(enable).toBeEnabled();
+  member.externalOwner = { kind: 'managed-visitor' };
+  await expect(enable).toBeDisabled();
+  expect(commands).toHaveLength(2);
+});
+
 for (const panel of PANELS) {
   test(`${panel.region} is fully keyboard reachable with a visible focus outline`, async ({ page }, info) => {
     // Each Tab press is one round trip, and these panels sit deep in the document's

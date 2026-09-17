@@ -43,6 +43,41 @@ test('garden HTTP enablement is deliberate, session-scoped and revoked by lifecy
   await command(id, 'control', { action: 'start' }); assert.equal((await state(id)).encounterDynamics.enabled, false);
 });
 
+test('shared garden HTTP controls preserve per-recipient opt-in and quiet lifecycle boundaries', async t => {
+  const { identities, state, command } = await fixture(t), a = identities.primaryId;
+  const b = identities.create().individualId;
+  identities.load(b);
+  const shared = identities.sharedJoin([a, b], 2);
+  assert.equal((await command(a, 'garden', { enabled: true })).status, 409);
+  identities.sharedControl(shared.sharedId, 'start');
+  assert.equal((await state(a)).environmentAdapter.attached, false);
+  const partnerBefore = await state(b);
+  const response = await command(a, 'garden', { enabled: true });
+  assert.equal(response.status, 200);
+  const enabled = await response.json();
+  assert.equal(enabled.encounterDynamics.enabled, true);
+  assert.equal(enabled.encounterDynamics.environmentEpoch, enabled.sharedSession.worldEpoch);
+  assert.equal(enabled.stimulusPolicy.reservedDose, 0);
+  assert.equal(Object.hasOwn(enabled, 'controllerToken'), false);
+  const partnerAfter = await state(b);
+  assert.deepEqual(partnerAfter.encounterDynamics, partnerBefore.encounterDynamics);
+  assert.deepEqual(partnerAfter.stimulusPolicy, partnerBefore.stimulusPolicy);
+  assert.equal(partnerAfter.commandSequence, partnerBefore.commandSequence);
+  assert.equal((await command(a, 'garden', { enabled: false })).status, 200);
+  assert.equal((await state(a)).encounterDynamics.enabled, false);
+  assert.equal((await command(a, 'garden', { enabled: true })).status, 200);
+  assert.equal((await command(b, 'garden', { enabled: true })).status, 200);
+  assert.equal((await command(a, 'control', { action: 'rest' })).status, 200);
+  assert.equal((await state(a)).encounterDynamics.enabled, false);
+  assert.equal((await state(b)).encounterDynamics.enabled, true);
+  assert.equal((await command(a, 'garden', { enabled: true })).status, 409);
+  identities.sharedControl(shared.sharedId, 'pause');
+  assert.equal((await state(b)).encounterDynamics.enabled, false);
+  assert.equal((await command(b, 'garden', { enabled: true })).status, 409);
+  identities.sharedControl(shared.sharedId, 'start');
+  assert.equal((await state(b)).encounterDynamics.enabled, false);
+});
+
 test('garden rejects cross-origin, stale or cross-recipient commands and unsupported fields/values', async t => {
   const { identities, state, command, post, base } = await fixture(t), a = identities.primaryId;
   const b = identities.create().individualId;
