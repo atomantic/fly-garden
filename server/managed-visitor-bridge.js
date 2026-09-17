@@ -245,13 +245,14 @@ export function createManagedVisitorBridge({ authority, transport = createManage
     if (!r.running || !r.lease) return null;
     r.pending = 'step';
     try {
-      const before = r.handle.snapshot(), observation = await transport.observe(r.lease.sessionId, scope(r));
+      const before = r.handle.snapshot(), observation = await transport.observe(r.lease.sessionId, scope(r)), observedAt = now();
       if (!exact(observation, [...common, 'frameId', 'capturedAtMs', 'camera', 'width', 'height', 'rgb', 'pose', 'sensorySource'])
         || !matches(r, observation) || !integer(observation.frameId) || observation.frameId <= r.frameId
-        || !integer(observation.capturedAtMs) || observation.capturedAtMs > now() || now() - observation.capturedAtMs > 250
+        || !integer(observation.capturedAtMs) || observation.capturedAtMs > observedAt || observedAt - observation.capturedAtMs > 250
         || observation.camera !== 'controller' || observation.width !== 8 || observation.height !== 4
         || observation.sensorySource !== 'engineered-gentle-patch-spatial-proxy-v1' || !poseValid(observation.pose)
-        || !current(r) || r.cancelRequested || r.handle.snapshot().simTimeMs !== before.simTimeMs) throw failure();
+        || !current(r) || r.cancelRequested || !r.lease || r.lease.expiresAt <= observedAt
+        || r.handle.snapshot().simTimeMs !== before.simTimeMs) throw failure();
       const currents = encodeRetinalRgb(observation.rgb), token = r.handle.prepareStep({ retinalCurrents: currents }), preview = r.handle.previewStep(token);
       if (preview.kind !== 'ready' || preview.simTimeMs !== before.simTimeMs + 5) throw failure();
       const motor = readFixtureMotor(preview), sequence = r.sequence + 1;
@@ -261,6 +262,9 @@ export function createManagedVisitorBridge({ authority, transport = createManage
         ? r.patchObjects.find(object => withinReach(observation.pose, object)) ?? null : null;
       const outward = contact ? { type: 'interact', objectId: contact.objectId, effect: 'settle', intervalMs: 5 }
         : { type: 'move', ...motor, intervalMs: 5 };
+      const dispatchAt = now();
+      if (!current(r) || r.cancelRequested || !r.lease || r.lease.expiresAt <= dispatchAt
+        || dispatchAt - observation.capturedAtMs > 250) throw failure();
       const result = await transport.action(r.lease.sessionId, { ...scope(r), sequence, action: outward });
       if (contact) validateInteraction(r, result, sequence, contact); else validateAction(r, result, sequence, 'running');
       if (!current(r) || r.cancelRequested || r.lease.expiresAt <= now()) throw failure();
