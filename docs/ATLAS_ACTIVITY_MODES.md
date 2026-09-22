@@ -61,8 +61,20 @@ A live read goes through the same contracts as the single-cell inspector in `doc
 2. `readNeuronSamples` requires the reply to carry this worker session's epoch, model and graph, an
    instantaneous zero-width time window, and the exact requested IDs in the requested order. The
    single-cell inspector is now literally the one-ID case of this validator.
-3. `confirmNeuronSample` re-reads the worker afterwards. If the session epoch, graph or command sequence
-   moved, the values are published as `stale` rather than as current state.
+3. The panel re-reads the worker afterwards. `confirmNeuronSample` validates its resident source, and
+   the atlas additionally requires the confirming command sequence and neural tick to equal the sample's.
+   If the session epoch, graph, command sequence or tick moved, the values are published as `stale`
+   rather than as current state. The separate single-cell inspector still permits historical snapshots.
+
+Requesting another live sample immediately withdraws the previous canvas marks and labels the retained
+text as superseded. A failed or timed-out refresh leaves those marks withdrawn; only a successfully
+validated and confirmed read may draw new ones. Reads remain manual snapshots: no background poll detects
+commands made after confirmation, and the report keeps the captured tick, command sequence and status.
+
+`tests/browser/atlas-activity.spec.js` exercises successful confirmation, refresh failure/timeout and
+recovery, and a newer command or tick arriving before confirmation. It runs the real component with
+explicitly synthetic HTTP responses and checks the drawable-mark projection and textual stale state.
+It neither creates nor loads a worker and is not live full-connectome or GPU rendering evidence.
 
 A replay read additionally requires the recording's `source.dataset` and `source.graphManifestSha256` to
 equal this atlas profile's own. A recording from another specimen or another graph is refused with a
