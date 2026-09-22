@@ -45,6 +45,9 @@ export default function AtlasActivity({ data, dataset, individualId, scope, visi
   }
 
   async function readLive(signal, current) {
+    // A refresh retires the old live marks immediately. If it fails or times out, the last
+    // values remain only as superseded text, never as an apparently confirmed live overlay.
+    onOverlay(staleAtlasActivity(overlay, 'A new sample was requested; the previous values are no longer confirmed.'));
     const base = `/api/connectomes/${encodeURIComponent(individualId)}`;
     const selection = atlasActivitySelection({ ...data, visibleGroups, selectedIndex, max: MAX_ATLAS_ACTIVITY_CELLS });
     const state = matchingSampleResident(await json(base, signal), sampleScope);
@@ -58,7 +61,13 @@ export default function AtlasActivity({ data, dataset, individualId, scope, visi
     // genuinely moved on publishes stale values, and those carry no canvas mark.
     const latest = await json(base, signal);
     if (!current()) return;
-    try { confirmNeuronSample(sample, latest, sampleScope); }
+    try {
+      confirmNeuronSample(sample, latest, sampleScope);
+      // The single-cell inspector accepts historical snapshots from this session. A live
+      // atlas mark has the stricter contract: a command or advance already supersedes it.
+      if (latest.commandSequence !== sample.commandSequence || latest.neural.tick !== sample.tick)
+        throw new Error('The worker advanced or its controls changed while reading. Request a new sample.');
+    }
     catch (e) { onOverlay(staleAtlasActivity(read, e.message)); return; }
     onOverlay(read);
   }
