@@ -76,3 +76,12 @@ test('roster entries expose each fly pod state without a selection change', () =
   assert.notEqual(roster[0].label, roster[1].label);
   assert.equal(podRosterEntry({ individualId: 'c' }).phase, 'home');
 });
+
+test('the away habitat uses the scoped render-only visitor projection without a control path', () => {
+  const main = source('../client/src/main.jsx'), component = source('../client/src/VisitorPatchPreview.jsx');
+  assert.match(main, /VisitorPatchPreview/);
+  assert.match(component, /deriveVisitorPreview/);
+  assert.match(component, /RENDER-ONLY PROJECTION/);
+  assert.match(component, /NO TARGET COORDINATES OR CONTROL AUTHORITY/);
+  assert.doesNotMatch(component, /fetch\(|controllerToken|environment\/frames/);
+});

@@ -175,13 +175,23 @@ engineered host acknowledgment, not evidence of preference, intent or experience
 
 A missing admission response may still correspond to a live body. The bridge cancels by the original scoped admission request through `/admissions/cancel`; it never guesses a host lease ID. A broker-confirmed cancellation releases ownership only after the local admission request has settled. Otherwise the broker's absolute admission deadline bounds quarantine. A failed leave retains paused local ownership until confirmed cleanup or that trusted bound. The UI must show returning/disconnected/timed-out state during quarantine and must not offer a second body or controller.
 
+### Local render-only observer projection
+
+The away habitat now includes a local SVG projection of the acknowledged visitor. It is deliberately a **render-only status surface**, not a second embodiment or a claim about the host's renderer. The projection shows the stable individual ID, visit epoch, last confirmed frame, bounded motor readout, declared sensory source, and (only when the host acknowledged it) the settled allowlisted interaction. A second local observer can select the same individual and read the same scoped snapshot without acquiring control or creating a public relay.
+
+`client/src/visitor-preview.js` accepts a trace only when the visitor is currently `visiting`, the individual and runtime session match, and the visit epoch matches. It rejects malformed poses, motors, sources, actions, or interaction acknowledgments; it does not retain or expose patch object coordinates. `VisitorPatchPreview.jsx` maps only the bounded host-confirmed pose into a local drawing and labels the result as a restricted scene projection. The displayed pose is never sent to the controller, and a returned or re-admitted fly cannot inherit the previous epoch's marker.
+
+This slice deliberately does not fabricate retinal pixels, host presence, a biological camera, creative output, chat, or a live PortOS-managed journey. Those require the separate Eidoverse and PortOS renderer/capability work described in the issue. The local projection is useful evidence that the Fly Garden side can show a distinct, scoped visitor state, but it is not evidence that another human saw the host's body or that the fly learned, intended, or experienced anything.
+
+Validation for this slice is in `server/visitor-preview.test.js` and `server/managed-visitor-ui.test.js`; run the full suite and production build before publication. The remaining #10 reconciliation is: deliver and verify the nonhumanoid host renderer and actual observer/camera path in the Eidoverse repository, implement any explicitly scoped creative/chat forwarding there, and run an authorized managed-host journey with a human observer. Until then this work remains a local-contract partial and uses `Refs #10`, not `Closes #10`.
+
 ## Validation and limits
 
 ### Dispatch freshness boundary (#9)
 
 The local regression suite covers an observation returning exactly at lease expiry with a fresh capture, and expiry, capture aging or clock rollback during local candidate preview. Both movement and armed interaction must emit no additional action, commit no step and preserve the last confirmed trace while returning paused. A positive boundary case accepts a capture exactly 250 ms old while the lease remains live. These tests use synthetic runtimes, injected clocks and fake transports; they do not contact a production host or establish host enforcement.
 
-Validation for this slice: all 490 Node tests and the production build passed after installing the locked dependencies. The first full-suite attempt failed because the fresh worktree had no `three` installation; rerunning after installation passed. The build retains its large-chunk warning. No lint or typecheck script is configured. Browser tests were not rerun because this slice changes no presentation code.
+Validation for this slice: all 512 Node tests and the production build passed after installing the locked dependencies. The first build attempt failed because the fresh worktree had no `vite` installation; rerunning after installation passed. The build retains its large-chunk warning. No lint or typecheck script is configured. The optional Playwright suite was not run in this slice; it is a separate browser/renderer check and does not provide live-host evidence.
 
 **Remaining for #9:** linked PortOS-side capability/admission delivery and production-route validation, plus an authorized managed-host journey proving acknowledgment, expiry/revocation/disconnection and fresh re-entry across the deployed components. The existing [isolated running-host evidence](LIVE_VISITOR_FIXTURE_EVIDENCE.md) excludes production middleware and rendered-observer proof. No production host, credentials or sibling-repository code were accessed for this slice. Fixture state continuity is not retained-learning evidence. This partial delivery does not close #9.
 
