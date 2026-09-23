@@ -19,8 +19,8 @@ const graph = () => ({ ids: ['1', '2', '3', '4'], offsets: new Uint32Array([0, 1
 
 /** Transactional synthetic double: an explicit engineered map from declared channels to one
  * sparse input per substep, staged on a candidate kernel and committed only on request. */
-function tinyDouble(individualId, { delays = [], motor = true, stage: override, commit: commitFault, rollback: rollbackFault } = {}) {
-  let kernel = createSparseLif(graph(), { individualId }), previous = null, staged = null, calls = 0;
+function tinyDouble(individualId, { delays = [], motor = true, stage: override, commit: commitFault, rollback: rollbackFault, partialCommit = false } = {}) {
+  let kernel = createSparseLif(graph(), { individualId }), applied = null, staged = null, calls = 0;
   const requests = [], log = [];
   const key = ref => `${ref.worldEpoch}:${ref.worldTick}`;
   const backend = {
@@ -42,11 +42,16 @@ function tinyDouble(individualId, { delays = [], motor = true, stage: override, 
     },
     async commit(ref) {
       log.push(['commit', individualId]);
-      if (commitFault?.()) throw new Error('commit failed');
       if (staged?.key !== key(ref)) throw new Error('foreign commit');
-      previous = kernel; kernel = staged.candidate; staged = null;
+      if (commitFault?.() && !partialCommit) throw new Error('commit failed');
+      applied = { key: key(ref), previous: kernel }; kernel = staged.candidate; staged = null;
+      if (commitFault?.()) throw new Error('commit failed after applying');
     },
-    async rollback() { log.push(['rollback', individualId]); if (rollbackFault?.()) throw new Error('rollback failed'); kernel = previous; },
+    async rollback(ref) {
+      log.push(['rollback', individualId]);
+      if (rollbackFault?.()) throw new Error('rollback failed');
+      if (applied?.key === key(ref)) { kernel = applied.previous; applied = null; }
+    },
     async discard() { log.push(['discard', individualId]); staged = null; },
   };
   return { backend, requests, log, kernel: () => kernel };
@@ -227,10 +232,18 @@ test('a commit failure rolls back already committed members; an unrecoverable ro
   await assert.rejects(context.adapter.step(context.batch()), code('worker-fault'));
   assert.deepEqual(['a', 'b', 'c'].map(id => context.doubles[id].kernel().summary().tick), [0, 0, 0]);
   assert.deepEqual(context.doubles.a.log, [['commit', 'a'], ['rollback', 'a']]);
+  assert.deepEqual(context.doubles.b.log, [['commit', 'b'], ['rollback', 'b']]);
   assert.deepEqual(context.doubles.c.log, [['discard', 'c']]);
   failCommit = false;
   context.run();
   assert.equal((await context.adapter.step(context.batch())).worldTick, 1);
+
+  // A commit that applies its candidate and then throws is rolled back too.
+  const partial = setup({ doubles: { b: { commit: () => true, partialCommit: true } } });
+  partial.run();
+  await assert.rejects(partial.adapter.step(partial.batch()), code('worker-fault'));
+  assert.deepEqual([partial.doubles.a.kernel().summary().tick, partial.doubles.b.kernel().summary().tick], [0, 0]);
+  assert.equal(partial.adapter.view().status, 'paused');
 
   const broken = setup({ doubles: { a: { rollback: () => true }, b: { commit: () => true } } });
   broken.run();

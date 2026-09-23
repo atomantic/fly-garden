@@ -122,7 +122,9 @@ const HALT_REASONS = Object.freeze({
 
 /** members: [{ declaration, backend: { stage, commit, discard, rollback }, clock: { tick, simTimeMs } }].
  * backend.stage(request) prepares, without committing, exactly `substeps` neural steps for one
- * recipient; commit/discard/rollback take { individualId, worldEpoch, worldTick }. */
+ * recipient; commit/discard/rollback take { individualId, worldEpoch, worldTick }. rollback(ref)
+ * restores the pre-batch state for that ref and is a no-op when that ref was never applied, so a
+ * commit that fails after partially applying is also rolled back. */
 export function createSharedEnvironmentAdapter({ sharedId = randomUUID(), members, intervalMs = 5, substeps = 5, now = Date.now,
   stageTimeoutMs = SHARED_ADAPTER_CONTRACT.defaultStageTimeoutMs, maxObservationAgeMs = SHARED_ADAPTER_CONTRACT.maxObservationAgeMs } = {}) {
   if (!idValid(sharedId) || !Array.isArray(members) || members.length < 2 || members.length > MAX_MEMBERS || typeof now !== 'function'
@@ -230,8 +232,9 @@ export function createSharedEnvironmentAdapter({ sharedId = randomUUID(), member
       for (const member of recipients) {
         try { await member.backend.commit(ref(member)); committed.push(member); }
         catch {
-          const undone = await Promise.allSettled(committed.reverse().map(value => value.backend.rollback(ref(value))));
-          await Promise.allSettled(recipients.filter(value => !committed.includes(value)).map(value => value.backend.discard(ref(value))));
+          const attempted = [...committed, member];
+          const undone = await Promise.allSettled(attempted.reverse().map(value => value.backend.rollback(ref(value))));
+          await Promise.allSettled(recipients.filter(value => !attempted.includes(value)).map(value => value.backend.discard(ref(value))));
           if (undone.some(result => result.status === 'rejected')) status = 'fault';
           halt('worker-fault');
         }
