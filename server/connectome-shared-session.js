@@ -4,6 +4,7 @@ import { RuntimeError } from './runtime.js';
 import { CONNECTOME_PROFILES } from './connectome-profiles.js';
 import { portableConnectomeProfiles } from './portable-connectome-profiles.js';
 import { assessSharedCapacity, createBarrierTelemetry, SHARED_MEASUREMENT_BOUNDS } from './shared-barrier-telemetry.js';
+import { connectomeDeclaration, describeDeclarations } from './shared-environment-adapter.js';
 
 const exact = (value, keys) => value && typeof value === 'object' && !Array.isArray(value)
   && Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value, key));
@@ -12,6 +13,8 @@ const WORLD_INTERVAL_MS = 5;
 const SUBSTEPS = WORLD_INTERVAL_MS / LIF_MODEL.dtMs;
 const MODEL_IDS = Object.freeze(Object.fromEntries(Object.entries(CONNECTOME_PROFILES).map(([dataset, profile]) => [dataset, profile.modelId])));
 const count = value => Number.isSafeInteger(value) && value >= 0 ? value : null;
+/** Admission requires the adapter contract's fail-closed, channel-free connectome declaration. */
+const declared = state => { try { connectomeDeclaration(state); return true; } catch { return false; } };
 const disclosure = 'Full-connectome research barrier only. Each complete barrier advances every active pinned graph by five exact 1 ms neural substeps. No retinal input, motor output, body, chemistry, retained learning, biological sex comparison or cloud fallback is present.';
 
 function fail(message, statusCode = 409) { throw new RuntimeError(message, statusCode); }
@@ -108,7 +111,7 @@ export function createConnectomeSharedSession({ snapshot, control, barrier, inva
       status: session.status, reason: session.reason, commandSequence: session.commandSequence, participants, events: structuredClone(session.events),
       substeps: SUBSTEPS, telemetry: { ...session.telemetry.view(), health: health(session, participants), resources: resourceSummary,
         measurement: structuredClone(session.measurement), capacity: { ...capacity, configuredMaxResidents: resourceSummary.aggregate?.maxResidentFlies ?? null } },
-      disclosure }, members };
+      adapter: describeDeclarations(states), disclosure }, members };
   };
   const view = () => ({ protocolVersion: 1, kind: 'full-connectome-research-shared-view', available: available(), sessions: [...sessions.values()].map(bundle).map(value => value.shared) });
   async function pauseAll(session) {
@@ -140,8 +143,7 @@ export function createConnectomeSharedSession({ snapshot, control, barrier, inva
       if (!envelope(member)) fail('Invalid shared research membership envelope.');
       const state = stateFor(member.individualId);
       if (state.sessionEpoch !== member.sessionEpoch || state.commandSequence !== member.commandSequence || state.resident !== true
-        || state.capabilities?.sensoryMotor !== false || state.capabilities?.learning !== false || state.capabilities?.chemistry !== false
-        || state.capabilities?.embodiment !== false || owns(member.individualId)) {
+        || !declared(state) || owns(member.individualId)) {
         fail('Stale or unavailable shared research participant; refresh the catalog before joining.');
       }
       return state;
@@ -152,8 +154,7 @@ export function createConnectomeSharedSession({ snapshot, control, barrier, inva
        if (closing) fail('Full-connectome shared research is unavailable.');
        const refreshed = states.map(state => stateFor(state.individualId));
       if (refreshed.some((state, index) => state.dataset !== states[index].dataset || state.graphSha256 !== states[index].graphSha256
-        || !state.resident || !state.neural || state.capabilities?.sensoryMotor !== false
-        || state.capabilities?.learning !== false || state.capabilities?.chemistry !== false || state.capabilities?.embodiment !== false)) {
+        || !state.resident || !state.neural || !declared(state))) {
         fail('A shared research participant became unavailable while joining.');
       }
       invalidate(refreshed.map(state => state.individualId));
@@ -368,8 +369,7 @@ export function createConnectomeSharedSession({ snapshot, control, barrier, inva
        const state = stateFor(member.individualId), expectedMember = expectedById.get(member.individualId);
        if ((expectedMember.dataset && state.dataset !== expectedMember.dataset) || (expectedMember.graphSha256 && state.graphSha256 !== expectedMember.graphSha256) || (expectedMember.modelId && state.model?.id !== expectedMember.modelId)) fail('Shared restore member namespace does not match the saved checkpoint.');
        if (state.sessionEpoch !== member.sessionEpoch || state.commandSequence !== member.commandSequence || state.status !== 'paused'
-         || state.resident !== true || state.capabilities?.sensoryMotor !== false || state.capabilities?.learning !== false
-         || state.capabilities?.chemistry !== false || state.capabilities?.embodiment !== false) fail('Every shared restore member must be an explicitly paused healthy resident.');
+         || state.resident !== true || !declared(state)) fail('Every shared restore member must be an explicitly paused healthy resident.');
      }
     if (expected.some(member => !body.members.some(value => value.individualId === member.individualId))) fail('Shared research restore requires the complete saved membership.');
     const memberIds = body.members.map(member => member.individualId);
