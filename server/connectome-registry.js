@@ -13,7 +13,7 @@ const capabilities = Object.freeze({ sensoryMotor: false, learning: false, chemi
  * measured capacity evidence and atomic checkpoint/head persistence. No HTTP or timers. */
 export function createConnectomeRegistry({ identities = [], capacity = createCapacityPolicy(), getResources = async () => ({}),
   persistCheckpoint, loadCheckpoint, persistJointCheckpoint, readJointCheckpoint, prepareJointRestore, commitJointRestore, cancelJointRestore,
-  openBackend = openConnectomeBackend, operationTimeoutMs = 30000 } = {}) {
+  openBackend = openConnectomeBackend, operationTimeoutMs = 30000, now = () => performance.now() } = {}) {
   if (!Array.isArray(identities) || identities.length > 64 || typeof persistCheckpoint !== 'function'
     || (loadCheckpoint !== undefined && typeof loadCheckpoint !== 'function')
     || (persistJointCheckpoint !== undefined && typeof persistJointCheckpoint !== 'function')
@@ -21,7 +21,7 @@ export function createConnectomeRegistry({ identities = [], capacity = createCap
     || (prepareJointRestore !== undefined && typeof prepareJointRestore !== 'function')
     || (commitJointRestore !== undefined && typeof commitJointRestore !== 'function')
     || (cancelJointRestore !== undefined && typeof cancelJointRestore !== 'function')
-    || !Number.isInteger(operationTimeoutMs) || operationTimeoutMs < 1 || operationTimeoutMs > 120000) throw new Error('Invalid research registry configuration');
+    || !Number.isInteger(operationTimeoutMs) || operationTimeoutMs < 1 || operationTimeoutMs > 120000 || typeof now !== 'function') throw new Error('Invalid research registry configuration');
   const records = new Map(); let loadQueue = Promise.resolve(), closed = false, closing = false;
   const restoreReservations = new Map(), restoreCalls = new Set(), restoreWaiters = new Set();
   function register(input) {
@@ -80,7 +80,7 @@ export function createConnectomeRegistry({ identities = [], capacity = createCap
     let timer;
     try {
       return await Promise.race([promise, new Promise((_, reject) => { timer = setTimeout(() => {
-        onTimeout?.(); reject(new Error('Connectome operation deadline exceeded; shutdown requested and admission retained until exit'));
+        onTimeout?.(); reject(Object.assign(new Error('Connectome operation deadline exceeded; shutdown requested and admission retained until exit'), { code: 'CONNECTOME_DEADLINE' }));
       }, operationTimeoutMs); timer.unref?.(); })]);
     } finally { clearTimeout(timer); }
   }
@@ -172,35 +172,55 @@ export function createConnectomeRegistry({ identities = [], capacity = createCap
     for (const r of records) r.sequence++;
     return records.map(publicState);
   }
-  async function barrier(ids, steps, expectedEpochs = {}) {
+  /** `observe` receives one timing record after the outcome is decided. It is observation-only:
+   * its exceptions are ignored and it cannot change membership, commit, rollback or lifecycle. */
+  async function barrier(ids, steps, expectedEpochs = {}, observe = undefined) {
     if (!Array.isArray(ids) || ids.length < 2 || ids.length > 64 || new Set(ids).size !== ids.length || !Number.isInteger(steps) || steps < 1 || steps > 1000) {
       throw new Error('Invalid shared research barrier membership or step count');
     }
     const records = ids.map(record);
     const reservation = reserveRestore(records, 'barrier');
-    let prepared = [];
+    const clock = () => { try { return now(); } catch { return Number.NaN; } };
+    const timing = { queueWaitMs: null, prepareMs: null, commitMs: null, failure: null,
+      members: ids.map(individualId => ({ individualId, prepareMs: null, commitMs: null })), completionOrder: { prepare: [], commit: [] } };
+    const phase = async (key, operation) => {
+      const started = clock();
+      const results = await Promise.allSettled(records.map((r, index) => operation(r, index).then(value => {
+        timing.members[index][`${key}Ms`] = clock() - started; timing.completionOrder[key].push(r.individualId); return value;
+      })));
+      timing[`${key}Ms`] = clock() - started;
+      return results;
+    };
+    const rejectedFailure = results => results.some(result => result.status === 'rejected' && result.reason?.code === 'CONNECTOME_DEADLINE') ? 'deadline' : 'worker-failure';
+    let prepared = [], failure = 'worker-failure';
     try {
+      const queued = clock();
       await Promise.all(records.map(r => r.queue));
+      timing.queueWaitMs = clock() - queued;
       for (const r of records) {
         if (!r.backend || r.lifecycle !== 'running' || r.state?.status === 'fault'
           || Object.hasOwn(expectedEpochs, r.individualId) && expectedEpochs[r.individualId] !== r.state?.sessionEpoch) {
+          failure = 'participant-unavailable';
           throw new Error('Every shared research participant must be healthy, running and on the current session epoch');
         }
       }
-      const candidates = await Promise.allSettled(records.map(r => call(r, 'prepareAdvance', steps, { allowReserved: true })));
+      const candidates = await phase('prepare', r => call(r, 'prepareAdvance', steps, { allowReserved: true }));
       prepared = candidates.map(result => result.status === 'fulfilled' ? result.value : null);
-      if (candidates.some(result => result.status === 'rejected')) throw new Error('Research worker could not prepare a shared barrier candidate');
+      if (candidates.some(result => result.status === 'rejected')) { failure = rejectedFailure(candidates); throw new Error('Research worker could not prepare a shared barrier candidate'); }
       for (const value of prepared) {
-        if (typeof value?.token !== 'string' || !value.token || value.steps !== steps) throw new Error('Research worker returned an invalid shared barrier candidate');
+        if (typeof value?.token !== 'string' || !value.token || value.steps !== steps) { failure = 'invalid-candidate'; throw new Error('Research worker returned an invalid shared barrier candidate'); }
       }
-      const committed = await Promise.all(records.map((r, index) => call(r, 'commitAdvance', prepared[index].token, { allowReserved: true })));
-      for (const [index, state] of committed.entries()) {
-        if (state?.individualId !== records[index].individualId || state?.status !== 'running') throw new Error('Research worker returned an invalid shared barrier commit');
+      const commits = await phase('commit', (r, index) => call(r, 'commitAdvance', prepared[index].token, { allowReserved: true }));
+      if (commits.some(result => result.status === 'rejected')) { failure = rejectedFailure(commits); throw new Error('Research worker could not commit a shared barrier candidate'); }
+      for (const [index, { value: state }] of commits.entries()) {
+        if (state?.individualId !== records[index].individualId || state?.status !== 'running') { failure = 'invalid-result'; throw new Error('Research worker returned an invalid shared barrier commit'); }
         records[index].state = state; records[index].lifecycle = state.status;
       }
+      failure = 'worker-failure';
       await Promise.all(records.map((r, index) => call(r, 'releaseAdvance', prepared[index].token, { allowReserved: true })));
       return records.map(publicState);
     } catch (error) {
+      timing.failure = error?.code === 'CONNECTOME_DEADLINE' ? 'deadline' : failure;
       const rollback = await Promise.allSettled(records.map((r, index) => r.backend && prepared[index]?.token
         ? call(r, 'rollbackAdvance', prepared[index].token, { allowReserved: true }).then(state => { r.state = state; r.lifecycle = 'paused'; })
         : Promise.resolve()));
@@ -209,6 +229,7 @@ export function createConnectomeRegistry({ identities = [], capacity = createCap
       throw new Error('Shared research barrier failed; no participant advanced.');
     } finally {
       releaseRestore(reservation);
+      if (typeof observe === 'function') { try { observe(structuredClone(timing)); } catch { /* observation cannot affect the barrier */ } }
     }
   }
   async function persist(r, checkpoint, operation, sourceCheckpointId = null) {

@@ -1,12 +1,17 @@
 import { randomUUID } from 'node:crypto';
 import { LIF_MODEL } from './sparse-lif.js';
 import { RuntimeError } from './runtime.js';
+import { CONNECTOME_PROFILES } from './connectome-profiles.js';
+import { portableConnectomeProfiles } from './portable-connectome-profiles.js';
+import { assessSharedCapacity, createBarrierTelemetry, SHARED_MEASUREMENT_BOUNDS } from './shared-barrier-telemetry.js';
 
 const exact = (value, keys) => value && typeof value === 'object' && !Array.isArray(value)
   && Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value, key));
 const MAX_MEMBERS = 64;
 const WORLD_INTERVAL_MS = 5;
 const SUBSTEPS = WORLD_INTERVAL_MS / LIF_MODEL.dtMs;
+const MODEL_IDS = Object.freeze(Object.fromEntries(Object.entries(CONNECTOME_PROFILES).map(([dataset, profile]) => [dataset, profile.modelId])));
+const count = value => Number.isSafeInteger(value) && value >= 0 ? value : null;
 const disclosure = 'Full-connectome research barrier only. Each complete barrier advances every active pinned graph by five exact 1 ms neural substeps. No retinal input, motor output, body, chemistry, retained learning, biological sex comparison or cloud fallback is present.';
 
 function fail(message, statusCode = 409) { throw new RuntimeError(message, statusCode); }
@@ -27,15 +32,26 @@ function participantFrom(state, mode = 'active') {
     model: state.model ?? null, capabilities: state.capabilities };
   if (!state.resident || !state.neural || !Number.isSafeInteger(state.neural.tick) || state.neural.tick < 0
     || !Number.isSafeInteger(state.neural.simTimeMs) || state.neural.simTimeMs < 0
-    || !/^[a-f0-9]{64}$/.test(state.graphSha256 ?? '') || !['paused', 'running', 'resting'].includes(state.status)) fail('Research participant is not an admitted, healthy resident.');
+    || !/^[a-f0-9]{64}$/.test(state.graphSha256 ?? '') || !['paused', 'running', 'resting'].includes(state.status)) {
+    // Reads report an unhealthy resident; only the explicit barrier/start paths act on it.
+    if (state.resident === true) return { individualId: state.individualId, sessionEpoch: state.sessionEpoch, dataset: state.dataset,
+      mode, status: state.status === 'fault' ? 'fault' : 'unavailable', tick: null, simTimeMs: null, graphSha256: state.graphSha256 ?? null,
+      model: state.model ?? null, capabilities: state.capabilities };
+    fail('Research participant is not an admitted, healthy resident.');
+  }
   return { individualId: state.individualId, sessionEpoch: state.sessionEpoch, dataset: state.dataset,
     mode, status: mode === 'resting' ? 'resting' : state.status, tick: state.neural.tick,
     simTimeMs: state.neural.simTimeMs, graphSha256: state.graphSha256 ?? null,
     model: state.model ?? null, capabilities: state.capabilities };
 }
 
-export function createConnectomeSharedSession({ snapshot, control, barrier, invalidate = () => {}, checkpoint, readJointCheckpoint, listJoints, prepareRestore, commitRestore, available = () => true } = {}) {
+export function createConnectomeSharedSession({ snapshot, control, barrier, invalidate = () => {}, checkpoint, readJointCheckpoint, listJoints, prepareRestore, commitRestore, available = () => true,
+  now = () => performance.now(), resources = () => null, memoryUsage = () => process.memoryUsage(), measuredAt = () => new Date().toISOString(),
+  runtime = { node: process.version, platform: process.platform, arch: process.arch }, pinned = portableConnectomeProfiles,
+  measurementDeadlineMs = SHARED_MEASUREMENT_BOUNDS.deadlineMs } = {}) {
   if (typeof snapshot !== 'function' || typeof control !== 'function' || typeof barrier !== 'function' || typeof invalidate !== 'function'
+    || [now, resources, memoryUsage, measuredAt, pinned].some(value => typeof value !== 'function') || !runtime || typeof runtime !== 'object'
+    || !Number.isSafeInteger(measurementDeadlineMs) || measurementDeadlineMs < 1 || measurementDeadlineMs > 600000
     || (checkpoint !== undefined && typeof checkpoint !== 'function') || (readJointCheckpoint !== undefined && typeof readJointCheckpoint !== 'function')
     || (listJoints !== undefined && typeof listJoints !== 'function') || (prepareRestore !== undefined && typeof prepareRestore !== 'function')
     || (commitRestore !== undefined && typeof commitRestore !== 'function')) throw new Error('Invalid shared connectome service configuration');
@@ -50,14 +66,49 @@ export function createConnectomeSharedSession({ snapshot, control, barrier, inva
   const sessionFor = id => { required(); const value = sessions.get(id); if (!value) fail('Shared research session not found.', 404); return value; };
   const stateFor = id => safeState(snapshot(id));
   const event = (session, type, extra = {}) => { session.events.push({ type, tick: session.tick, ...extra }); session.events = session.events.slice(-64); };
+  const clock = () => { try { return now(); } catch { return Number.NaN; } };
+  let pinnedProfiles = null;
+  const pinnedReference = () => { try { pinnedProfiles ??= pinned(); } catch { pinnedProfiles = {}; } return pinnedProfiles; };
+  const newSession = fields => ({ ...fields, telemetry: createBarrierTelemetry({ intervalMs: WORLD_INTERVAL_MS, substeps: SUBSTEPS }), measurement: null, fault: null, pressure: false });
+  function observe(session, sample) {
+    try { session.telemetry.record(sample); } catch { /* telemetry is observation-only and cannot change the barrier outcome */ }
+  }
+  /** Safe aggregate/per-member metadata only: counts, bytes and pinned namespaces, never paths or graph arrays. */
+  function resourceView(participants) {
+    let value = null;
+    try { value = resources(); } catch { value = null; }
+    const aggregate = value && typeof value === 'object' ? { residentCount: count(value.residentCount), runningCount: count(value.runningCount),
+      maxResidentFlies: count(value.maxResidentFlies), aggregateMemoryBytes: count(value.aggregateMemoryBytes), availableMemoryBytes: count(value.availableMemoryBytes),
+      pressure: ['within-budget', 'hard-limit', 'unknown'].includes(value.pressure) ? value.pressure : 'unknown' } : null;
+    return { aggregate, reason: aggregate ? null : 'Resource monitoring is unavailable to this session.',
+      members: participants.map(participant => ({ individualId: participant.individualId, dataset: participant.dataset, modelId: participant.model?.id ?? null,
+        status: participant.status, incrementalMemoryBytes: count(value?.memberMemoryBytes?.[participant.dataset]) })) };
+  }
+  function health(session, participants) {
+    const reasons = [];
+    for (const [index, participant] of participants.entries()) {
+      if (['fault', 'unavailable'].includes(participant.status)) reasons.push({ individualId: participant.individualId, code: 'participant-fault' });
+      else if (participant.sessionEpoch !== session.participants[index].sessionEpoch) reasons.push({ individualId: participant.individualId, code: 'stale-epoch' });
+    }
+    if (session.fault) reasons.push({ individualId: null, code: session.fault });
+    if (session.pressure) reasons.push({ individualId: null, code: 'resource-pressure' });
+    const codes = reasons.map(reason => reason.code);
+    const state = codes.some(code => code !== 'stale-epoch' && code !== 'resource-pressure') ? 'fault' : codes.includes('stale-epoch') ? 'stale' : codes.includes('resource-pressure') ? 'pressure' : 'nominal';
+    return { state, reasons };
+  }
   const bundle = session => {
     const states = session.participants.map(member => stateFor(member.individualId));
     const participants = session.participants.map((member, index) => participantFrom(states[index], member.mode));
     const members = states.map((value, index) => session.participants[index].mode === 'resting' ? { ...value, status: 'resting' } : value);
+    const resourceSummary = resourceView(participants);
+    const capacity = assessSharedCapacity({ measurement: session.measurement, participants, runtime, pinned: session.measurement ? pinnedReference() : {},
+      modelIds: MODEL_IDS, substeps: SUBSTEPS, intervalMs: WORLD_INTERVAL_MS });
     return { shared: { protocolVersion: 1, kind: 'full-connectome-research-shared', sharedId: session.sharedId,
       worldEpoch: session.worldEpoch, tick: session.tick, intervalMs: WORLD_INTERVAL_MS, worldTimeMs: session.tick * WORLD_INTERVAL_MS,
       status: session.status, reason: session.reason, commandSequence: session.commandSequence, participants, events: structuredClone(session.events),
-      substeps: SUBSTEPS, disclosure }, members };
+      substeps: SUBSTEPS, telemetry: { ...session.telemetry.view(), health: health(session, participants), resources: resourceSummary,
+        measurement: structuredClone(session.measurement), capacity: { ...capacity, configuredMaxResidents: resourceSummary.aggregate?.maxResidentFlies ?? null } },
+      disclosure }, members };
   };
   const view = () => ({ protocolVersion: 1, kind: 'full-connectome-research-shared-view', available: available(), sessions: [...sessions.values()].map(bundle).map(value => value.shared) });
   async function pauseAll(session) {
@@ -70,6 +121,7 @@ export function createConnectomeSharedSession({ snapshot, control, barrier, inva
     if (session.status !== 'running' && !session.pressureRequested) return;
     const paused = await pauseAll(session);
     session.pressureRequested = paused.some(result => result.status === 'rejected');
+    session.pressure = true; session.telemetry.recordPressure(session.tick, !session.pressureRequested);
     session.status = 'paused';
     session.reason = session.pressureRequested
       ? `Resource pressure pause incomplete: ${pauseFailure(paused)}`
@@ -105,8 +157,8 @@ export function createConnectomeSharedSession({ snapshot, control, barrier, inva
         fail('A shared research participant became unavailable while joining.');
       }
       invalidate(refreshed.map(state => state.individualId));
-      const session = { sharedId: randomUUID(), worldEpoch: randomUUID(), tick: 0, status: 'paused', reason: 'Explicit shared start required.', commandSequence: 0, pressureRequested: false,
-        participants: refreshed.map(state => ({ individualId: state.individualId, sessionEpoch: state.sessionEpoch, mode: 'active' })), events: [{ type: 'join', tick: 0 }] };
+      const session = newSession({ sharedId: randomUUID(), worldEpoch: randomUUID(), tick: 0, status: 'paused', reason: 'Explicit shared start required.', commandSequence: 0, pressureRequested: false,
+        participants: refreshed.map(state => ({ individualId: state.individualId, sessionEpoch: state.sessionEpoch, mode: 'active' })), events: [{ type: 'join', tick: 0 }] });
       sessions.set(session.sharedId, session);
       for (const member of session.participants) owners.set(member.individualId, session.sharedId);
       return bundle(session);
@@ -136,7 +188,7 @@ export function createConnectomeSharedSession({ snapshot, control, barrier, inva
         if (active.some(member => { const state = stateFor(member.individualId); return !state.resident || !state.neural; })) fail('A shared research participant is unavailable.');
         await Promise.all(active.map(member => control(member.individualId, 'start')));
       } catch { await pauseAll(session); session.status = 'paused'; session.reason = 'Shared participant unavailable; explicit shared start required.'; session.worldEpoch = randomUUID(); fail(session.reason); }
-      session.status = 'running'; session.reason = null; session.worldEpoch = randomUUID(); event(session, 'start');
+      session.status = 'running'; session.reason = null; session.worldEpoch = randomUUID(); session.fault = null; session.pressure = false; event(session, 'start');
     } else if (body.action === 'pause') {
       const paused = await pauseAll(session);
       if (paused.some(result => result.status === 'rejected')) {
@@ -170,34 +222,105 @@ export function createConnectomeSharedSession({ snapshot, control, barrier, inva
     session.commandSequence++;
     return bundle(session);
   }
+  /** One complete barrier on a validated, running session. Telemetry observes the decided outcome only. */
+  async function performBarrier(session) {
+    const active = session.participants.filter(member => member.mode === 'active');
+    if (!active.length) fail('Every shared research participant is resting; the world clock is frozen.');
+    const memberIds = active.map(member => member.individualId);
+    const startedAt = clock();
+    let timing, observed = null, stage = 'precheck', reason = 'stale-epoch';
+    try {
+      assertParticipantEpochs(session);
+      reason = 'participant-unavailable';
+      const before = new Map(active.map(member => [member.individualId, stateFor(member.individualId)]));
+      if (active.some(member => { const state = before.get(member.individualId); return !state.resident || !state.neural || state.status !== 'running'; })) fail('A shared research participant is unavailable.');
+      const expected = Object.fromEntries(active.map(member => [member.individualId, before.get(member.individualId).sessionEpoch]));
+      stage = 'barrier';
+      const result = await barrier(memberIds, SUBSTEPS, expected, value => { timing = value; });
+      stage = 'validate'; reason = 'invalid-result';
+      if (!Array.isArray(result) || result.length !== active.length) throw new Error('Shared research barrier returned an incomplete result.');
+      const byId = new Map(result.map(value => [value.individualId, safeState(value)]));
+      observed = Object.fromEntries(active.map(member => {
+        const prior = before.get(member.individualId).neural.tick, next = byId.get(member.individualId)?.neural?.tick;
+        return [member.individualId, Number.isSafeInteger(next) ? next - prior : null];
+      }));
+      for (const member of active) {
+        const prior = before.get(member.individualId), value = byId.get(member.individualId);
+        if (!value?.neural || value.sessionEpoch !== prior.sessionEpoch || value.neural.tick !== prior.neural.tick + SUBSTEPS
+          || value.neural.simTimeMs !== prior.neural.simTimeMs + WORLD_INTERVAL_MS) { reason = 'step-mismatch'; throw new Error('Shared research barrier returned a skipped or extra neural step.'); }
+      }
+      session.tick++; session.commandSequence++; event(session, 'barrier', { substeps: SUBSTEPS });
+      observe(session, { outcome: 'committed', worldTick: session.tick, startedAt, finishedAt: clock(), memberIds, timing, observedSubsteps: observed });
+      return active.map(member => { const value = byId.get(member.individualId); return { individualId: member.individualId,
+        sessionEpoch: value.sessionEpoch, inputSimTimeMs: value.neural.simTimeMs - WORLD_INTERVAL_MS, outputSimTimeMs: value.neural.simTimeMs,
+        substeps: SUBSTEPS, neural: value.neural }; });
+    } catch (error) {
+      const failure = stage === 'barrier' ? timing?.failure ?? 'worker-failure' : reason;
+      observe(session, { outcome: 'failed', reason: failure, worldTick: session.tick, startedAt, finishedAt: clock(), memberIds, timing, observedSubsteps: observed });
+      await pauseAll(session); session.status = 'paused'; session.reason = 'Shared research barrier failed; no participant advanced; explicit shared start required.'; session.worldEpoch = randomUUID();
+      session.fault = failure;
+      fail(error?.message || session.reason);
+    }
+  }
   async function runAdvance(sharedId, body) {
     const session = sessionFor(sharedId);
     if (!exact(body, ['protocolVersion', 'sharedId', 'worldEpoch', 'sequence', 'action']) || body.action !== 'barrier') fail('Invalid shared research barrier envelope.');
     validateControl(session, body, ['protocolVersion', 'sharedId', 'worldEpoch', 'sequence', 'action']);
     if (session.status !== 'running') fail('Explicit shared start required before a research barrier.');
-    const active = session.participants.filter(member => member.mode === 'active');
-    if (!active.length) fail('Every shared research participant is resting; the world clock is frozen.');
-    try {
-      assertParticipantEpochs(session);
-      const before = new Map(active.map(member => [member.individualId, stateFor(member.individualId)]));
-      if (active.some(member => { const state = before.get(member.individualId); return !state.resident || !state.neural || state.status !== 'running'; })) fail('A shared research participant is unavailable.');
-      const expected = Object.fromEntries(active.map(member => [member.individualId, before.get(member.individualId).sessionEpoch]));
-      const result = await barrier(active.map(member => member.individualId), SUBSTEPS, expected);
-      if (!Array.isArray(result) || result.length !== active.length) throw new Error('Shared research barrier returned an incomplete result.');
-      const byId = new Map(result.map(value => [value.individualId, safeState(value)]));
-      for (const member of active) {
-        const prior = before.get(member.individualId), value = byId.get(member.individualId);
-        if (!value?.neural || value.sessionEpoch !== prior.sessionEpoch || value.neural.tick !== prior.neural.tick + SUBSTEPS
-          || value.neural.simTimeMs !== prior.neural.simTimeMs + WORLD_INTERVAL_MS) throw new Error('Shared research barrier returned a skipped or extra neural step.');
-      }
-      session.tick++; session.commandSequence++; event(session, 'barrier', { substeps: SUBSTEPS });
-      return { ...bundle(session), traces: active.map(member => { const value = byId.get(member.individualId); return { individualId: member.individualId,
-        sessionEpoch: value.sessionEpoch, inputSimTimeMs: value.neural.simTimeMs - WORLD_INTERVAL_MS, outputSimTimeMs: value.neural.simTimeMs,
-        substeps: SUBSTEPS, neural: value.neural }; }) };
-    } catch (error) {
-      await pauseAll(session); session.status = 'paused'; session.reason = 'Shared research barrier failed; no participant advanced; explicit shared start required.'; session.worldEpoch = randomUUID();
-      fail(error?.message || session.reason);
+    const traces = await performBarrier(session);
+    return { ...bundle(session), traces };
+  }
+  /** Explicit, bounded measurement on an already started session. It runs complete barriers
+   * through the same path and stops (never crops, substitutes or retries) on failure,
+   * deadline or resource pressure, reporting the measurement as unavailable. */
+  async function runMeasure(sharedId, body) {
+    const session = sessionFor(sharedId);
+    const keys = ['protocolVersion', 'sharedId', 'worldEpoch', 'sequence', 'barriers'];
+    if (!exact(body, keys) || !Number.isSafeInteger(body.barriers) || body.barriers < SHARED_MEASUREMENT_BOUNDS.minBarriers
+      || body.barriers > SHARED_MEASUREMENT_BOUNDS.maxBarriers) fail('Invalid shared research measurement envelope.');
+    validateControl(session, body, keys);
+    if (session.status !== 'running') fail('Explicit shared start required before a bounded measurement.');
+    if (session.participants.some(member => member.mode !== 'active')) fail('Measurement requires every shared research participant to be active; resting members are never measured.');
+    session.commandSequence++;
+    const rss = () => { try { const value = memoryUsage()?.rss; return Number.isSafeInteger(value) && value >= 0 ? value : null; } catch { return null; } };
+    const members = session.participants.map(member => { const state = stateFor(member.individualId);
+      return { individualId: member.individualId, dataset: state.dataset, modelId: state.model?.id ?? null, graphSha256: state.graphSha256 ?? null, completedSubsteps: 0 }; });
+    const baseline = rss(), walls = [], startedAt = clock();
+    let peak = baseline, stopReason = null;
+    for (let index = 0; index < body.barriers; index++) {
+      let pressure = 'within-budget';
+      try { pressure = resources()?.pressure ?? 'within-budget'; } catch { pressure = 'unknown'; }
+      if (session.pressureRequested || pressure !== 'within-budget') { stopReason = 'resource-pressure'; break; }
+      const elapsed = clock() - startedAt;
+      if (!Number.isFinite(elapsed) || elapsed < 0) { stopReason = 'invalid-telemetry'; break; }
+      if (elapsed > measurementDeadlineMs) { stopReason = 'deadline'; break; }
+      const barrierStarted = clock();
+      try { await performBarrier(session); } catch { stopReason = session.fault ?? 'worker-failure'; break; }
+      walls.push(clock() - barrierStarted);
+      for (const member of members) member.completedSubsteps += SUBSTEPS;
+      const current = rss();
+      peak = peak === null || current === null ? null : Math.max(peak, current);
     }
+    if (stopReason === 'resource-pressure') await applyPressurePause(session);
+    if (stopReason === 'deadline') {
+      const paused = await pauseAll(session);
+      session.status = 'paused'; session.worldEpoch = randomUUID();
+      session.reason = paused.some(result => result.status === 'rejected') ? `Measurement deadline pause incomplete: ${pauseFailure(paused)}` : 'Measurement deadline reached; shared research paused; explicit shared start required.';
+      event(session, 'pause');
+    }
+    const sorted = [...walls].sort((left, right) => left - right);
+    const totalMs = walls.reduce((sum, value) => sum + value, 0);
+    if (!stopReason && (!walls.length || walls.some(value => !Number.isFinite(value) || value < 0) || !(totalMs > 0))) stopReason = 'invalid-telemetry';
+    const complete = !stopReason;
+    session.measurement = { schemaVersion: 1, kind: 'shared-barrier-measurement', backend: 'connectome', status: complete ? 'complete' : 'unavailable',
+      stopReason, requestedBarriers: body.barriers, completedBarriers: walls.length, intervalMs: WORLD_INTERVAL_MS, substepsPerBarrier: SUBSTEPS,
+      runtime: { node: runtime.node, platform: runtime.platform, arch: runtime.arch }, measuredAt: measuredAt(), members,
+      wall: complete ? { totalMs, minMs: sorted[0], medianMs: sorted[Math.floor((sorted.length - 1) / 2)], maxMs: sorted.at(-1) } : null,
+      simulatedToWallRatio: complete ? walls.length * WORLD_INTERVAL_MS / totalMs : null,
+      memory: complete && baseline !== null && peak !== null ? { baselineRssBytes: baseline, sampledPeakRssBytes: peak, incrementBytes: peak - baseline } : null,
+      disclosure: 'Explicit zero-drive shared barrier measurement on already loaded workers. RSS is sampled between barriers and can miss transient peaks. No sensory input, rendering, learning or cloud fallback.' };
+    event(session, 'measure', { completedBarriers: walls.length, status: session.measurement.status });
+    return bundle(session);
   }
   async function runMemberControl(sharedId, body) {
     const session = sessionFor(sharedId);
@@ -261,8 +384,8 @@ export function createConnectomeSharedSession({ snapshot, control, barrier, inva
         return { individualId: member.individualId, sessionEpoch: state.sessionEpoch, mode: member.mode };
       });
        const allResting = participants.every(member => member.mode === 'resting');
-       const session = { sharedId: randomUUID(), worldEpoch: randomUUID(), tick: joint.payload.tick, status: allResting ? 'resting' : 'paused', reason: allResting ? 'Every participant is resting; the world clock is frozen.' : 'Explicit shared restore is paused.', commandSequence: 0,
-         pressureRequested: false, participants, events: [{ type: 'restore', tick: joint.payload.tick, jointCheckpointId: joint.jointCheckpointId }] };
+       const session = newSession({ sharedId: randomUUID(), worldEpoch: randomUUID(), tick: joint.payload.tick, status: allResting ? 'resting' : 'paused', reason: allResting ? 'Every participant is resting; the world clock is frozen.' : 'Explicit shared restore is paused.', commandSequence: 0,
+         pressureRequested: false, participants, events: [{ type: 'restore', tick: joint.payload.tick, jointCheckpointId: joint.jointCheckpointId }] });
       sessions.set(session.sharedId, session);
       for (const member of participants) owners.set(member.individualId, session.sharedId);
       return bundle(session);
@@ -287,6 +410,10 @@ export function createConnectomeSharedSession({ snapshot, control, barrier, inva
     sessionFor(sharedId); reserve(sharedId);
     try { return await runAdvance(sharedId, body); } finally { await finishOperation(sharedId); }
   }
+  async function measure(sharedId, body) {
+    sessionFor(sharedId); reserve(sharedId);
+    try { return await runMeasure(sharedId, body); } finally { await finishOperation(sharedId); }
+  }
   async function memberControl(sharedId, body) {
     sessionFor(sharedId); reserve(sharedId);
     try { return await runMemberControl(sharedId, body); } finally { await finishOperation(sharedId); }
@@ -304,5 +431,5 @@ export function createConnectomeSharedSession({ snapshot, control, barrier, inva
     for (const session of sessions.values()) for (const member of session.participants) owners.delete(member.individualId);
     sessions.clear(); joining.clear();
   }
-  return { view, join, control: controlShared, advance, member: memberControl, restore, checkpoints, owns, pauseForPressure, snapshot: id => bundle(sessionFor(id)), close };
+  return { view, join, control: controlShared, advance, measure, member: memberControl, restore, checkpoints, owns, pauseForPressure, snapshot: id => bundle(sessionFor(id)), close };
 }

@@ -14,6 +14,9 @@ import { createServer } from './index.js';
 import { openIdentityStore } from './identity-store.js';
 import { openConnectomeStore } from './connectome-store.js';
 import { createConnectomeService } from './connectome-service.js';
+import { assessSharedCapacity, BARRIER_TELEMETRY_RETENTION, createBarrierTelemetry } from './shared-barrier-telemetry.js';
+import { CONNECTOME_PROFILES } from './connectome-profiles.js';
+import { describeTelemetry, measurementEnvelope } from '../client/src/connectome-shared-telemetry.js';
 
 const datasets = ['male-cns:v1.0', 'banc:v888'];
 const graph = dataset => ({ ids: [`${dataset}/1`, `${dataset}/2`], offsets: new Uint32Array([0, 1, 2]), targets: new Uint32Array([1, 0]), contacts: new Uint32Array([2, 2]), signs: new Int8Array([1, 1]) });
@@ -541,4 +544,319 @@ test('HTTP joint checkpoint save, listing and restore are explicit, paused and l
   const stale = await h.post('/api/connectomes/shared/restore', { protocolVersion: 1, jointCheckpointId: jointId,
     members: current.map(value => ({ protocolVersion: 1, individualId: value.individualId, sessionEpoch: value.sessionEpoch, commandSequence: value.commandSequence })) });
   assert.equal(stale.status, 409);
+});
+
+// ---- Barrier telemetry, bounded resource metadata and explicit measurement (#103) ----
+const MODEL_IDS = Object.fromEntries(Object.entries(CONNECTOME_PROFILES).map(([dataset, profile]) => [dataset, profile.modelId]));
+const envelope = (shared, extra) => ({ protocolVersion: 1, sharedId: shared.sharedId, worldEpoch: shared.worldEpoch, sequence: shared.commandSequence + 1, ...extra });
+const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+function delayedRegistry(delays, options = {}) {
+  return createConnectomeRegistry({ identities, capacity: createCapacityPolicy({ settings }), ...options,
+    getResources: async ({ dataset }) => ({ aggregateMemoryBytes: 100, availableMemoryBytes: 10000,
+      measurement: { backend: 'connectome', dataset, includesCheckpointSerialization: true, incrementalMemoryBytes: 100 } }),
+    persistCheckpoint: async () => ({ checkpointId: randomUUID() }),
+    openBackend: async (_directory, opened) => { const backend = backendFor(opened); const id = opened.individualId;
+      return { ...backend,
+        start: async () => { await wait(delays.start?.[id] ?? 0); return backend.start(); },
+        prepareAdvance: async value => { if (delays.hang?.[id]) await delays.hang[id]; await wait(delays.prepare?.[id] ?? 0); return backend.prepareAdvance(value); },
+        commitAdvance: async value => { await wait(delays.commit?.[id] ?? 0); return backend.commitAdvance(value); } }; } });
+}
+function registryShared(registry, extra = {}) {
+  return createConnectomeSharedSession({ snapshot: id => registry.snapshot(id), control: (id, action) => registry.sharedControl(id, action),
+    barrier: (ids, steps, expected, observe) => registry.barrier(ids, steps, expected, observe), invalidate: ids => registry.invalidateCommands(ids), ...extra });
+}
+async function joinedRunning(service, registry) {
+  const members = ['shared-a', 'shared-b'].map(id => { const state = registry.snapshot(id); return { protocolVersion: 1, individualId: id, sessionEpoch: state.sessionEpoch, commandSequence: state.commandSequence }; });
+  const joined = await service.join({ protocolVersion: 1, members });
+  return (await service.control(joined.shared.sharedId, envelope(joined.shared, { action: 'start' }))).shared;
+}
+function mockShared({ ids = ['one', 'two'], graphSha = index => `${index}`.repeat(64), ...extra } = {}) {
+  const states = new Map(), calls = { control: 0, barrier: 0 };
+  for (const [index, id] of ids.entries()) {
+    const dataset = datasets[index % 2];
+    states.set(id, { source: 'connectome', individualId: id, dataset, sessionEpoch: `epoch-${id}`, commandSequence: 0, resident: true, status: 'paused',
+      neural: { tick: 0, simTimeMs: 0 }, graphSha256: graphSha(index), model: { id: MODEL_IDS[dataset] },
+      capabilities: { sensoryMotor: false, learning: false, chemistry: false, embodiment: false } });
+  }
+  const behaviour = { step: 5, timing: 'report', fail: false };
+  const control = async (id, action) => { calls.control++; const state = states.get(id); if (state.status !== 'fault') state.status = action === 'start' ? 'running' : 'paused'; return structuredClone(state); };
+  const barrier = async (memberIds, _steps, _expected, observe) => {
+    calls.barrier++;
+    if (behaviour.fail) { observe?.({ queueWaitMs: 0, prepareMs: 1, commitMs: null, failure: 'worker-failure', members: memberIds.map(individualId => ({ individualId, prepareMs: 1, commitMs: null })), completionOrder: { prepare: [...memberIds], commit: [] } }); throw new Error('injected failure'); }
+    const result = memberIds.map(id => { const state = states.get(id); state.neural.tick += behaviour.step; state.neural.simTimeMs += behaviour.step; return structuredClone(state); });
+    if (behaviour.timing === 'report') observe?.({ queueWaitMs: 0.5, prepareMs: 1, commitMs: 1, failure: null, members: memberIds.map(individualId => ({ individualId, prepareMs: 1, commitMs: 1 })), completionOrder: { prepare: [...memberIds].reverse(), commit: [...memberIds] } });
+    else if (behaviour.timing === 'malformed') observe?.({ queueWaitMs: Number.NaN, prepareMs: -1, commitMs: 1, failure: null, members: [], completionOrder: { prepare: ['ghost'], commit: [] } });
+    else if (behaviour.timing === 'throwing') { observe?.({ queueWaitMs: 0, prepareMs: 0, commitMs: 0 }); }
+    return result;
+  };
+  const service = createConnectomeSharedSession({ snapshot: id => structuredClone(states.get(id)), control, barrier, runtime: { node: 'v-test', platform: 'test', arch: 'test' },
+    measuredAt: () => '2026-09-23T00:00:00.000Z', memoryUsage: () => ({ rss: 1000 }), pinned: () => ({}), ...extra });
+  const envelopes = () => ids.map(id => ({ protocolVersion: 1, individualId: id, sessionEpoch: states.get(id).sessionEpoch, commandSequence: 0 }));
+  return { states, calls, behaviour, service, envelopes };
+}
+
+test('injected scheduling varies queue wait and completion order while every committed barrier stays exactly five 1 ms substeps', async t => {
+  const delays = { prepare: {}, commit: {}, start: {} };
+  const registry = delayedRegistry(delays), service = registryShared(registry);
+  t.after(async () => { await service.close(); await registry.close(); });
+  await Promise.all([registry.load('shared-a'), registry.load('shared-b')]);
+  let shared = await joinedRunning(service, registry);
+  delays.prepare = { 'shared-a': 30 }; delays.commit = { 'shared-a': 30 };
+  shared = (await service.advance(shared.sharedId, envelope(shared, { action: 'barrier' }))).shared;
+  const first = shared.telemetry.latest;
+  assert.deepEqual(first.completionOrder, { prepare: ['shared-b', 'shared-a'], commit: ['shared-b', 'shared-a'] });
+  delays.prepare = { 'shared-b': 30 }; delays.commit = { 'shared-b': 30 };
+  shared = (await service.advance(shared.sharedId, envelope(shared, { action: 'barrier' }))).shared;
+  const second = shared.telemetry.latest;
+  assert.deepEqual(second.completionOrder, { prepare: ['shared-a', 'shared-b'], commit: ['shared-a', 'shared-b'] });
+  delays.prepare = {}; delays.commit = {}; delays.start = { 'shared-a': 40 };
+  const queued = registry.sharedControl('shared-a', 'start');
+  await wait(5);
+  shared = (await service.advance(shared.sharedId, envelope(shared, { action: 'barrier' }))).shared;
+  await queued;
+  const third = shared.telemetry.latest;
+  assert.ok(third.queueWaitMs >= 20 && third.queueWaitMs > first.queueWaitMs, `queue wait ${third.queueWaitMs} should include the in-flight lifecycle operation`);
+  for (const sample of [first, second, third]) {
+    assert.equal(sample.outcome, 'committed'); assert.equal(sample.valid, true); assert.equal(sample.substepValidation, 'exact');
+    assert.deepEqual(sample.members.map(member => [member.individualId, member.observedSubsteps, member.skippedSubsteps, member.extraSubsteps]), [['shared-a', 5, 0, 0], ['shared-b', 5, 0, 0]]);
+    for (const value of [sample.wallMs, sample.queueWaitMs, sample.prepareMs, sample.commitMs, sample.lagMs]) assert.ok(Number.isFinite(value) && value >= 0);
+    assert.ok(sample.wallMs >= sample.prepareMs + sample.commitMs);
+  }
+  assert.deepEqual(registry.list().map(state => [state.neural.tick, state.neural.simTimeMs]), [[15, 15], [15, 15]]);
+  assert.deepEqual(shared.telemetry.history.map(sample => sample.worldTick), [1, 2, 3]);
+  assert.deepEqual(shared.telemetry.counts, { committed: 3, failed: 0, invalid: 0, pressurePauses: 0 });
+  assert.equal(shared.telemetry.retention.maxSamples, BARRIER_TELEMETRY_RETENTION);
+});
+
+test('a registry deadline is reported as a failed barrier, rolls back and pauses through the existing path', async t => {
+  let release;
+  const delays = { hang: { 'shared-b': new Promise(resolve => { release = resolve; }) } };
+  const registry = delayedRegistry(delays, { operationTimeoutMs: 25 }), service = registryShared(registry);
+  t.after(async () => { release(); await service.close(); await registry.close(); });
+  await Promise.all([registry.load('shared-a'), registry.load('shared-b')]);
+  const shared = await joinedRunning(service, registry);
+  await assert.rejects(service.advance(shared.sharedId, envelope(shared, { action: 'barrier' })), /no participant advanced/);
+  const after = service.view().sessions[0];
+  assert.equal(after.status, 'paused'); assert.equal(after.tick, 0);
+  assert.equal(after.telemetry.latest.outcome, 'failed'); assert.equal(after.telemetry.latest.reason, 'deadline');
+  assert.equal(after.telemetry.latest.substepValidation, 'not-committed');
+  assert.equal(after.telemetry.health.state, 'fault');
+  assert.ok(after.telemetry.health.reasons.some(reason => reason.code === 'deadline'));
+  assert.equal(registry.snapshot('shared-a').neural.tick, 0);
+});
+
+test('telemetry recorder keeps a declared bound and fails closed on malformed or non-finite values', () => {
+  const telemetry = createBarrierTelemetry({ intervalMs: 5, substeps: 5 });
+  const ids = ['one', 'two'];
+  const timing = { queueWaitMs: 0, prepareMs: 1, commitMs: 1, failure: null, members: ids.map(individualId => ({ individualId, prepareMs: 1, commitMs: 1 })), completionOrder: { prepare: ids, commit: ids } };
+  const good = { outcome: 'committed', worldTick: 1, startedAt: 10, finishedAt: 17, memberIds: ids, timing, observedSubsteps: { one: 5, two: 5 } };
+  assert.equal(telemetry.record(good).lagMs, 2);
+  const invalid = [
+    { ...good, startedAt: Number.NaN }, { ...good, finishedAt: 9 }, { ...good, startedAt: Infinity, finishedAt: Infinity },
+    { ...good, timing: { ...timing, queueWaitMs: -1 } }, { ...good, timing: { ...timing, prepareMs: Number.POSITIVE_INFINITY } },
+    { ...good, timing: { ...timing, members: [{ individualId: 'two', prepareMs: 1, commitMs: 1 }, { individualId: 'one', prepareMs: 1, commitMs: 1 }] } },
+    { ...good, timing: { ...timing, completionOrder: { prepare: ['one', 'one'], commit: ids } } },
+    { ...good, timing: { ...timing, completionOrder: { prepare: ['one'], commit: ids } } },
+    { ...good, observedSubsteps: { one: 4, two: 5 } }, { ...good, observedSubsteps: { one: 5, two: 6 } }, { ...good, timing: null }
+  ];
+  for (const sample of invalid) {
+    const recorded = telemetry.record(sample);
+    assert.equal(recorded.valid, false); assert.equal(recorded.reason, 'invalid-telemetry');
+    assert.deepEqual([recorded.wallMs, recorded.queueWaitMs, recorded.prepareMs, recorded.commitMs, recorded.lagMs], [null, null, null, null, null]);
+    assert.equal(recorded.completionOrder, null); assert.equal(recorded.members.every(member => member.prepareRank === null && member.observedSubsteps === null), true);
+  }
+  const mismatch = telemetry.record({ outcome: 'failed', reason: 'step-mismatch', worldTick: 1, startedAt: 1, finishedAt: 2, memberIds: ids, timing: undefined, observedSubsteps: { one: 4, two: 5 } });
+  assert.equal(mismatch.valid, true); assert.equal(mismatch.substepValidation, 'mismatch');
+  assert.deepEqual(mismatch.members.map(member => [member.skippedSubsteps, member.extraSubsteps]), [[1, 0], [0, 0]]);
+  assert.equal(telemetry.record({ ...good, outcome: 'failed', reason: '/private/path leak' }).reason, 'worker-failure');
+  assert.throws(() => telemetry.record({ ...good, memberIds: ['one', 'one'] }), /Invalid barrier telemetry record/);
+  for (let index = 0; index < 40; index++) telemetry.record({ ...good, worldTick: index + 2 });
+  const view = telemetry.view();
+  assert.equal(view.history.length, BARRIER_TELEMETRY_RETENTION); assert.equal(view.history.at(-1).index, 54);
+  assert.deepEqual(view.counts, { committed: 52, failed: 2, invalid: 11, pressurePauses: 0 });
+  assert.equal(view.observational, true);
+  assert.throws(() => createBarrierTelemetry({ intervalMs: 5, substeps: 5, retention: 0 }), /Invalid barrier telemetry configuration/);
+});
+
+test('reads never consume a sequence, call a worker or change lifecycle; faults still pause only through the explicit barrier', async () => {
+  const f = mockShared();
+  const joined = await f.service.join({ protocolVersion: 1, members: f.envelopes() });
+  let shared = (await f.service.control(joined.shared.sharedId, envelope(joined.shared, { action: 'start' }))).shared;
+  shared = (await f.service.advance(shared.sharedId, envelope(shared, { action: 'barrier' }))).shared;
+  const before = { calls: { ...f.calls }, shared: structuredClone(shared) };
+  for (let index = 0; index < 5; index++) { f.service.view(); f.service.snapshot(shared.sharedId); }
+  const read = f.service.snapshot(shared.sharedId).shared;
+  assert.deepEqual(f.calls, before.calls);
+  assert.deepEqual([read.commandSequence, read.worldEpoch, read.status, read.tick], [shared.commandSequence, shared.worldEpoch, 'running', 1]);
+  assert.deepEqual(read.telemetry, shared.telemetry);
+  assert.equal(read.telemetry.health.state, 'nominal');
+  assert.equal(JSON.stringify(read.telemetry).includes('neural'), false);
+
+  f.states.get('two').status = 'fault';
+  const faulted = f.service.snapshot(shared.sharedId).shared;
+  assert.equal(faulted.status, 'running'); assert.deepEqual(f.calls, before.calls);
+  assert.deepEqual(faulted.telemetry.health, { state: 'fault', reasons: [{ individualId: 'two', code: 'participant-fault' }] });
+  assert.equal(faulted.participants[1].status, 'fault');
+  await assert.rejects(f.service.advance(shared.sharedId, envelope(faulted, { action: 'barrier' })), /unavailable/);
+  const paused = f.service.snapshot(shared.sharedId).shared;
+  assert.equal(paused.status, 'paused'); assert.equal(paused.telemetry.latest.reason, 'participant-unavailable');
+  assert.equal(f.calls.barrier, before.calls.barrier);
+
+  f.states.get('two').status = 'paused'; f.states.get('one').sessionEpoch = 'replaced';
+  const stale = f.service.snapshot(shared.sharedId).shared;
+  assert.equal(stale.telemetry.health.state, 'fault');
+  assert.ok(stale.telemetry.health.reasons.some(reason => reason.code === 'stale-epoch' && reason.individualId === 'one'));
+  await f.service.close();
+});
+
+test('malformed, missing or throwing telemetry never blocks a valid barrier and is published as invalid', async () => {
+  let ticks = 0;
+  const f = mockShared({ now: () => { ticks++; if (ticks === 2) throw new Error('clock unavailable'); return ticks; } });
+  const joined = await f.service.join({ protocolVersion: 1, members: f.envelopes() });
+  let shared = (await f.service.control(joined.shared.sharedId, envelope(joined.shared, { action: 'start' }))).shared;
+  shared = (await f.service.advance(shared.sharedId, envelope(shared, { action: 'barrier' }))).shared;
+  assert.equal(shared.tick, 1); assert.equal(shared.telemetry.latest.valid, false);
+  f.behaviour.timing = 'malformed';
+  shared = (await f.service.advance(shared.sharedId, envelope(shared, { action: 'barrier' }))).shared;
+  assert.equal(shared.tick, 2); assert.equal(shared.telemetry.latest.reason, 'invalid-telemetry'); assert.equal(shared.status, 'running');
+  f.behaviour.timing = 'none';
+  shared = (await f.service.advance(shared.sharedId, envelope(shared, { action: 'barrier' }))).shared;
+  assert.equal(shared.telemetry.latest.valid, true); assert.equal(shared.telemetry.latest.queueWaitMs, null); assert.equal(shared.telemetry.latest.completionOrder, null);
+  f.behaviour.step = 4;
+  await assert.rejects(f.service.advance(shared.sharedId, envelope(shared, { action: 'barrier' })), /skipped or extra/);
+  const mismatch = f.service.snapshot(shared.sharedId).shared;
+  assert.equal(mismatch.status, 'paused'); assert.equal(mismatch.tick, 3);
+  assert.equal(mismatch.telemetry.latest.reason, 'step-mismatch'); assert.equal(mismatch.telemetry.latest.substepValidation, 'mismatch');
+  assert.deepEqual(mismatch.telemetry.counts, { committed: 3, failed: 1, invalid: 2, pressurePauses: 0 });
+  await f.service.close();
+});
+
+test('pressure pauses are counted and reported, and an explicit start clears the pressure reason', async () => {
+  const f = mockShared();
+  const joined = await f.service.join({ protocolVersion: 1, members: f.envelopes() });
+  let shared = (await f.service.control(joined.shared.sharedId, envelope(joined.shared, { action: 'start' }))).shared;
+  await f.service.pauseForPressure();
+  shared = f.service.snapshot(shared.sharedId).shared;
+  assert.equal(shared.status, 'paused'); assert.equal(shared.telemetry.counts.pressurePauses, 1);
+  assert.deepEqual(shared.telemetry.pressure, { worldTick: 0, reason: 'resource-pressure' });
+  assert.equal(shared.telemetry.health.state, 'pressure');
+  shared = (await f.service.control(shared.sharedId, envelope(shared, { action: 'start' }))).shared;
+  assert.equal(shared.telemetry.health.state, 'nominal'); assert.equal(shared.telemetry.counts.pressurePauses, 1);
+  await f.service.close();
+});
+
+test('explicit measurement is bounded, stops cleanly and never validates capacity for tiny or unpinned graphs', async () => {
+  const f = mockShared({ resources: () => ({ residentCount: 2, runningCount: 2, maxResidentFlies: 4, aggregateMemoryBytes: 10, availableMemoryBytes: 100, pressure: f.behaviour.pressure ?? 'within-budget', memberMemoryBytes: { [datasets[0]]: 123 } }) });
+  const joined = await f.service.join({ protocolVersion: 1, members: f.envelopes() });
+  await assert.rejects(f.service.measure(joined.shared.sharedId, envelope(joined.shared, { barriers: 100 })), /Explicit shared start/);
+  let shared = (await f.service.control(joined.shared.sharedId, envelope(joined.shared, { action: 'start' }))).shared;
+  for (const barriers of [9, 1001, 10.5, '100']) await assert.rejects(f.service.measure(shared.sharedId, envelope(shared, { barriers })), /Invalid shared research measurement envelope/);
+  assert.equal(f.calls.barrier, 0);
+  assert.equal(shared.telemetry.capacity.validatedConnectomeCapacity, null); assert.equal(shared.telemetry.capacity.reason, 'no-measurement');
+  assert.equal(shared.telemetry.capacity.configuredMaxResidents, 4);
+  assert.deepEqual(shared.telemetry.resources.members.map(member => member.incrementalMemoryBytes), [123, null]);
+  shared = (await f.service.measure(shared.sharedId, envelope(shared, { barriers: 100 }))).shared;
+  assert.equal(shared.telemetry.measurement.status, 'complete'); assert.equal(shared.telemetry.measurement.completedBarriers, 100);
+  assert.deepEqual(shared.telemetry.measurement.members.map(member => member.completedSubsteps), [500, 500]);
+  assert.equal(shared.tick, 100); assert.equal(shared.status, 'running');
+  assert.equal(shared.telemetry.capacity.validatedConnectomeCapacity, null); assert.equal(shared.telemetry.capacity.reason, 'not-pinned-full-graph');
+  f.behaviour.pressure = 'hard-limit';
+  shared = (await f.service.measure(shared.sharedId, envelope(shared, { barriers: 50 }))).shared;
+  assert.equal(shared.telemetry.measurement.status, 'unavailable'); assert.equal(shared.telemetry.measurement.stopReason, 'resource-pressure');
+  assert.equal(shared.status, 'paused'); assert.equal(shared.telemetry.health.state, 'pressure'); assert.equal(shared.tick, 100);
+  assert.equal(shared.telemetry.capacity.reason, 'measurement-incomplete');
+  f.behaviour.pressure = 'within-budget';
+  shared = (await f.service.control(shared.sharedId, envelope(shared, { action: 'start' }))).shared;
+  f.behaviour.fail = true;
+  shared = (await f.service.measure(shared.sharedId, envelope(shared, { barriers: 10 }))).shared;
+  assert.equal(shared.telemetry.measurement.stopReason, 'worker-failure'); assert.equal(shared.status, 'paused');
+  f.behaviour.fail = false;
+  shared = (await f.service.control(shared.sharedId, envelope(shared, { action: 'start' }))).shared;
+  shared = (await f.service.member(shared.sharedId, envelope(shared, { individualId: 'one', action: 'rest' }))).shared;
+  await assert.rejects(f.service.measure(shared.sharedId, envelope(shared, { barriers: 10 })), /every shared research participant to be active/);
+  await f.service.close();
+
+  let clock = 0;
+  const slow = mockShared({ now: () => (clock += 10), measurementDeadlineMs: 50 });
+  const slowJoined = await slow.service.join({ protocolVersion: 1, members: slow.envelopes() });
+  let slowShared = (await slow.service.control(slowJoined.shared.sharedId, envelope(slowJoined.shared, { action: 'start' }))).shared;
+  slowShared = (await slow.service.measure(slowShared.sharedId, envelope(slowShared, { barriers: 1000 }))).shared;
+  assert.equal(slowShared.telemetry.measurement.stopReason, 'deadline'); assert.equal(slowShared.status, 'paused');
+  assert.ok(slowShared.telemetry.measurement.completedBarriers < 10);
+  assert.match(slowShared.reason, /deadline/);
+  await slow.service.close();
+});
+
+test('validated capacity requires matching pinned graphs, models, membership and runtime', async () => {
+  const hashes = [ 'a'.repeat(64), 'b'.repeat(64) ];
+  const pinned = { [datasets[0]]: { graphSha256: hashes[0] }, [datasets[1]]: { graphSha256: hashes[1] } };
+  const f = mockShared({ graphSha: index => hashes[index], pinned: () => pinned });
+  const joined = await f.service.join({ protocolVersion: 1, members: f.envelopes() });
+  let shared = (await f.service.control(joined.shared.sharedId, envelope(joined.shared, { action: 'start' }))).shared;
+  shared = (await f.service.measure(shared.sharedId, envelope(shared, { barriers: 100 }))).shared;
+  const capacity = shared.telemetry.capacity.validatedConnectomeCapacity;
+  assert.equal(shared.telemetry.capacity.reason, 'matching-measurement');
+  assert.equal(capacity.residentCount, 2); assert.equal(capacity.completedBarriers, 100); assert.deepEqual(capacity.datasets, [...datasets].sort());
+  assert.match(capacity.scope, /not an admission authorization/);
+  const measurement = shared.telemetry.measurement, participants = shared.participants;
+  const base = { measurement, participants, runtime: { node: 'v-test', platform: 'test', arch: 'test' }, pinned, modelIds: MODEL_IDS, substeps: 5, intervalMs: 5 };
+  assert.ok(assessSharedCapacity(base).validatedConnectomeCapacity);
+  const cases = [
+    [{ runtime: { node: 'v0', platform: 'test', arch: 'test' } }, 'runtime-mismatch'],
+    [{ measurement: { ...measurement, backend: 'synthetic-fixture' } }, 'measurement-malformed'],
+    [{ measurement: { ...measurement, simulatedToWallRatio: Number.NaN } }, 'measurement-malformed'],
+    [{ measurement: { ...measurement, wall: { ...measurement.wall, maxMs: Infinity } } }, 'measurement-malformed'],
+    [{ measurement: { ...measurement, members: measurement.members.map(member => ({ ...member, completedSubsteps: 499 })) } }, 'measurement-malformed'],
+    [{ measurement: { ...measurement, completedBarriers: 50, members: measurement.members.map(member => ({ ...member, completedSubsteps: 250 })) } }, 'insufficient-barriers'],
+    [{ participants: [participants[0], { ...participants[1], mode: 'resting' }] }, 'membership-mismatch'],
+    [{ participants: [participants[0]] }, 'membership-mismatch'],
+    [{ participants: [participants[0], { ...participants[1], graphSha256: 'c'.repeat(64) }] }, 'membership-mismatch'],
+    [{ pinned: { [datasets[0]]: pinned[datasets[0]] } }, 'not-pinned-full-graph'],
+    [{ modelIds: { ...MODEL_IDS, [datasets[1]]: 'fixture-model' } }, 'not-pinned-full-graph'],
+    [{ measurement: null }, 'no-measurement']
+  ];
+  for (const [change, reason] of cases) assert.deepEqual(assessSharedCapacity({ ...base, ...change }), { validatedConnectomeCapacity: null, reason });
+  await f.service.close();
+});
+
+test('HTTP exposes bounded telemetry without private paths and an explicit measurement route', async t => {
+  const h = await httpSetup(t), a = await h.create(datasets[0]), b = await h.create(datasets[1]);
+  assert.equal((await h.load(a.individualId)).status, 200); assert.equal((await h.load(b.individualId)).status, 200);
+  const states = await Promise.all([h.state(a.individualId), h.state(b.individualId)]);
+  const joined = await (await h.post('/api/connectomes/shared/join', { protocolVersion: 1, members: states.map(value => ({ protocolVersion: 1, individualId: value.individualId, sessionEpoch: value.sessionEpoch, commandSequence: value.commandSequence })) })).json();
+  const running = await (await h.post(`/api/connectomes/shared/${joined.shared.sharedId}/control`, envelope(joined.shared, { action: 'start' }))).json();
+  const read = async () => (await fetch(`${h.base}/api/connectomes/shared/${joined.shared.sharedId}`)).json();
+  const first = await read(), second = await read();
+  assert.equal(first.shared.commandSequence, running.shared.commandSequence); assert.deepEqual(second.shared.telemetry, first.shared.telemetry);
+  assert.equal(first.shared.telemetry.capacity.validatedConnectomeCapacity, null);
+  assert.equal(first.shared.telemetry.resources.aggregate.maxResidentFlies, 3);
+  assert.deepEqual(first.shared.telemetry.resources.members.map(member => member.incrementalMemoryBytes), [1000, 1000]);
+  assert.equal((await fetch(`${h.base}/api/connectomes/shared/${joined.shared.sharedId}/measure`)).status, 405);
+  const measured = await h.post(`/api/connectomes/shared/${joined.shared.sharedId}/measure`, envelope(running.shared, { barriers: 10 }));
+  assert.equal(measured.status, 200); const result = await measured.json();
+  assert.equal(result.shared.telemetry.measurement.status, 'complete'); assert.equal(result.shared.tick, 10);
+  assert.equal(result.shared.telemetry.capacity.validatedConnectomeCapacity, null);
+  assert.ok(['not-pinned-full-graph', 'insufficient-barriers'].includes(result.shared.telemetry.capacity.reason));
+  assert.equal(result.shared.telemetry.history.length, 10);
+  assert.ok(result.shared.telemetry.history.every(sample => sample.outcome === 'committed' && sample.substepValidation === 'exact'));
+  const text = JSON.stringify(result);
+  assert.equal(text.includes(tmpdir()), false); assert.equal(text.includes('/trusted/'), false);
+  assert.deepEqual((await Promise.all([h.state(a.individualId), h.state(b.individualId)])).map(value => value.neural.tick), [50, 50]);
+  assert.equal((await h.post(`/api/connectomes/shared/${joined.shared.sharedId}/measure`, envelope(result.shared, { barriers: 10, extra: true }))).status, 409);
+});
+
+test('client telemetry description is read-only and states capacity boundaries', () => {
+  const telemetry = createBarrierTelemetry({ intervalMs: 5, substeps: 5 });
+  telemetry.record({ outcome: 'committed', worldTick: 1, startedAt: 0, finishedAt: 7, memberIds: ['one', 'two'],
+    timing: { queueWaitMs: 0, prepareMs: 2, commitMs: 3, members: [{ individualId: 'one', prepareMs: 2, commitMs: 3 }, { individualId: 'two', prepareMs: 1, commitMs: 1 }], completionOrder: { prepare: ['two', 'one'], commit: ['two', 'one'] } },
+    observedSubsteps: { one: 5, two: 5 } });
+  const summary = describeTelemetry({ ...telemetry.view(), health: { state: 'nominal', reasons: [] }, resources: { aggregate: null }, measurement: null,
+    capacity: { validatedConnectomeCapacity: null, reason: 'no-measurement', configuredMaxResidents: 2 } });
+  assert.match(summary.latest, /committed · world tick 1 · wall 7\.000 ms/);
+  assert.match(summary.members[0], /one · prepare #2/);
+  assert.match(summary.capacity, /unavailable: no explicit active-pair measurement/);
+  assert.equal(summary.resources, 'Resource monitoring unavailable.');
+  assert.equal(describeTelemetry(null), null);
+  assert.deepEqual(measurementEnvelope({ sharedId: 's', worldEpoch: 'w', commandSequence: 4 }), { protocolVersion: 1, sharedId: 's', worldEpoch: 'w', sequence: 5, barriers: 100 });
 });
