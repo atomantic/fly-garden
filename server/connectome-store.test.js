@@ -88,8 +88,24 @@ test('joint checkpoint writes and restores every member head as one catalog tran
   assert.equal(reopened.readJointCheckpoint(first.jointCheckpointId).payload.members.length, 2);
 });
 
+test('joint restore preflights staged durability before exposing a transaction', t => {
+  let fail = false;
+  const { path, store } = open(t, { syncCatalogDirectory: () => { if (fail) throw new Error('directory fsync failed'); } });
+  const a = store.create(datasets[0]), b = store.create(datasets[1]), ka = kernel(a), kb = kernel(b);
+  save(store, a, ka.checkpoint()); save(store, b, kb.checkpoint());
+  const joint = store.persistJointCheckpoint({ jointCheckpointId: randomUUID(), intervalMs: 5, tick: 0, members: store.identities().map(identity => ({ individualId: identity.individualId, dataset: identity.dataset,
+    parentId: identity.checkpointId, checkpoint: identity.individualId === a.individualId ? ka.checkpoint() : kb.checkpoint(), mode: 'active' })) });
+  const before = store.identities().map(identity => identity.checkpointId);
+  fail = true;
+  assert.throws(() => store.prepareJointRestore(joint.jointCheckpointId), /directory fsync failed/);
+  assert.deepEqual(store.identities().map(identity => identity.checkpointId), before);
+  assert.deepEqual(store.jointCheckpoints().map(value => value.jointCheckpointId), [joint.jointCheckpointId]);
+  fail = false; store.close();
+  const reopened = openConnectomeStore(path, { profiles }); t.after(() => reopened.close());
+  assert.deepEqual(reopened.identities().map(identity => identity.checkpointId), before);
+});
 test('prepared joint restore tokens can be cancelled without retaining checkpoint payloads', t => {
-  const { store } = open(t), a = store.create(datasets[0]), b = store.create(datasets[1]), ka = kernel(a), kb = kernel(b);
+   const { store } = open(t), a = store.create(datasets[0]), b = store.create(datasets[1]), ka = kernel(a), kb = kernel(b);
   save(store, a, ka.checkpoint()); save(store, b, kb.checkpoint());
   const members = store.identities().map(identity => ({ individualId: identity.individualId, dataset: identity.dataset,
     parentId: identity.checkpointId, checkpoint: identity.individualId === a.individualId ? ka.checkpoint() : kb.checkpoint(), mode: 'active' }));
@@ -112,6 +128,7 @@ test('joint post-rename directory sync failure exposes the selected transaction 
   const catalog = JSON.parse(readFileSync(join(path, 'catalog.json')));
   assert.equal(catalog.jointCheckpoints.length, 1); assert.equal(catalog.individuals.every(record => record.head === catalog.jointCheckpoints[0].payload.members.find(member => member.individualId === record.individualId).checkpointId), true);
   assert.equal(uncertain.selectedCheckpointId, catalog.jointCheckpoints[0].payload.members[0].checkpointId);
+  assert.deepEqual(uncertain.selectedHeads, Object.fromEntries(catalog.jointCheckpoints[0].payload.members.map(member => [member.individualId, member.checkpointId])));
   assert.throws(() => store.readCheckpoint(a.individualId, uncertain.selectedCheckpointId), error => error.code === 'CONNECTOME_STORE_RECOVERY_REQUIRED');
 });
 

@@ -23,6 +23,7 @@ export function createConnectomeRegistry({ identities = [], capacity = createCap
     || (cancelJointRestore !== undefined && typeof cancelJointRestore !== 'function')
     || !Number.isInteger(operationTimeoutMs) || operationTimeoutMs < 1 || operationTimeoutMs > 120000) throw new Error('Invalid research registry configuration');
   const records = new Map(); let loadQueue = Promise.resolve(), closed = false, closing = false;
+  const restoreReservations = new Map(), restoreCalls = new Set(), restoreWaiters = new Set();
   function register(input) {
     if (closed || closing || records.size >= 64) throw new Error('Connectome registry closed or identity capacity reached');
     if (!input || !idValid(input.individualId) || records.has(input.individualId) || typeof input.directory !== 'string' || !input.directory) throw new Error('Invalid or duplicate connectome identity');
@@ -51,12 +52,36 @@ export function createConnectomeRegistry({ identities = [], capacity = createCap
     const result = r.queue.then(() => { if (closed) throw new Error('Connectome registry closed'); return fn(); });
     r.queue = result.catch(() => {}); return result;
   }
+  function reserveRestore(recordsToReserve, kind = 'restore') {
+    const ids = recordsToReserve.map(r => r.individualId);
+    if (ids.some(id => restoreReservations.has(id))) throw new Error('Connectome participant is reserved for another coordinated operation');
+    const token = randomUUID();
+    for (const id of ids) restoreReservations.set(id, { token, kind });
+    return token;
+  }
+  function releaseRestore(token) {
+    for (const [id, value] of restoreReservations) if (value.token === token) restoreReservations.delete(id);
+  }
+  function ensureUnreserved(r) {
+    if (restoreReservations.has(r.individualId)) throw new Error('Connectome participant is reserved for another coordinated operation');
+  }
+  function trackRestoreCall(promise) {
+    let cancel, tracked;
+    const cancellation = new Promise((_, reject) => { cancel = reject; });
+    tracked = Promise.race([Promise.resolve(promise), cancellation]).finally(() => { restoreCalls.delete(tracked); restoreWaiters.delete(cancel); });
+    restoreCalls.add(tracked); restoreWaiters.add(cancel);
+    return tracked;
+  }
+  function cancelRestoreCalls() {
+    for (const cancel of restoreWaiters) cancel(new Error('Connectome registry closed'));
+    restoreWaiters.clear();
+  }
   async function bounded(promise, onTimeout) {
     let timer;
     try {
       return await Promise.race([promise, new Promise((_, reject) => { timer = setTimeout(() => {
         onTimeout?.(); reject(new Error('Connectome operation deadline exceeded; shutdown requested and admission retained until exit'));
-      }, operationTimeoutMs); })]);
+      }, operationTimeoutMs); timer.unref?.(); })]);
     } finally { clearTimeout(timer); }
   }
   function release(r, owner, unexpected = false) {
@@ -86,16 +111,20 @@ export function createConnectomeRegistry({ identities = [], capacity = createCap
     })();
     return owner.stopping;
   }
-  async function call(r, operation, value) {
+  async function call(r, operation, value, { allowReserved = false } = {}) {
+    if (!allowReserved) ensureUnreserved(r);
     const backend = r.backend; if (!backend) throw new Error('Explicitly load this connectome individual first');
-    try { return await bounded(Promise.resolve().then(() => backend[operation](value)), () => { void evict(r, 'Worker deadline; durable checkpoint retained for paused recovery.').catch(() => {}); }); }
-    catch (error) {
-      if (r.backend) {
-        try { r.state = await bounded(backend.snapshot(), () => { void evict(r, 'Worker unavailable; durable checkpoint retained.').catch(() => {}); }); r.lifecycle = r.state.status; }
-        catch { await evict(r, 'Worker unavailable; durable checkpoint retained.'); }
-      }
-      throw error;
+    try {
+      const request = bounded(Promise.resolve().then(() => backend[operation](value)), () => { void evict(r, 'Worker deadline; durable checkpoint retained for paused recovery.').catch(() => {}); });
+      return await (allowReserved ? trackRestoreCall(request) : request);
     }
+     catch (error) {
+       if (r.backend && !closing) {
+         try { r.state = await bounded(backend.snapshot(), () => { void evict(r, 'Worker unavailable; durable checkpoint retained.').catch(() => {}); }); r.lifecycle = r.state.status; }
+         catch { await evict(r, 'Worker unavailable; durable checkpoint retained.'); }
+       }
+       throw error;
+     }
   }
   async function pause(r) {
     if (r.state?.status === 'fault') return;
@@ -103,8 +132,9 @@ export function createConnectomeRegistry({ identities = [], capacity = createCap
   }
   async function sharedControl(id, action) {
     const r = record(id);
-    return enqueue(r, async () => {
-      if (!['start', 'pause', 'rest', 'resume'].includes(action)) throw new Error('Unknown shared research control action');
+     return enqueue(r, async () => {
+       ensureUnreserved(r);
+       if (!['start', 'pause', 'rest', 'resume'].includes(action)) throw new Error('Unknown shared research control action');
       if (!r.backend) {
         if (r.lifecycle === 'unavailable') return publicState(r);
         throw new Error('Explicitly load a healthy research individual first');
@@ -147,35 +177,38 @@ export function createConnectomeRegistry({ identities = [], capacity = createCap
       throw new Error('Invalid shared research barrier membership or step count');
     }
     const records = ids.map(record);
-    await Promise.all(records.map(r => r.queue));
-    for (const r of records) {
-      if (!r.backend || r.lifecycle !== 'running' || r.state?.status === 'fault'
-        || Object.hasOwn(expectedEpochs, r.individualId) && expectedEpochs[r.individualId] !== r.state?.sessionEpoch) {
-        throw new Error('Every shared research participant must be healthy, running and on the current session epoch');
-      }
-    }
+    const reservation = reserveRestore(records, 'barrier');
     let prepared = [];
     try {
-      const candidates = await Promise.allSettled(records.map(r => call(r, 'prepareAdvance', steps)));
+      await Promise.all(records.map(r => r.queue));
+      for (const r of records) {
+        if (!r.backend || r.lifecycle !== 'running' || r.state?.status === 'fault'
+          || Object.hasOwn(expectedEpochs, r.individualId) && expectedEpochs[r.individualId] !== r.state?.sessionEpoch) {
+          throw new Error('Every shared research participant must be healthy, running and on the current session epoch');
+        }
+      }
+      const candidates = await Promise.allSettled(records.map(r => call(r, 'prepareAdvance', steps, { allowReserved: true })));
       prepared = candidates.map(result => result.status === 'fulfilled' ? result.value : null);
       if (candidates.some(result => result.status === 'rejected')) throw new Error('Research worker could not prepare a shared barrier candidate');
       for (const value of prepared) {
         if (typeof value?.token !== 'string' || !value.token || value.steps !== steps) throw new Error('Research worker returned an invalid shared barrier candidate');
       }
-      const committed = await Promise.all(records.map((r, index) => call(r, 'commitAdvance', prepared[index].token)));
+      const committed = await Promise.all(records.map((r, index) => call(r, 'commitAdvance', prepared[index].token, { allowReserved: true })));
       for (const [index, state] of committed.entries()) {
         if (state?.individualId !== records[index].individualId || state?.status !== 'running') throw new Error('Research worker returned an invalid shared barrier commit');
         records[index].state = state; records[index].lifecycle = state.status;
       }
-      await Promise.all(records.map((r, index) => call(r, 'releaseAdvance', prepared[index].token)));
+      await Promise.all(records.map((r, index) => call(r, 'releaseAdvance', prepared[index].token, { allowReserved: true })));
       return records.map(publicState);
     } catch (error) {
       const rollback = await Promise.allSettled(records.map((r, index) => r.backend && prepared[index]?.token
-        ? call(r, 'rollbackAdvance', prepared[index].token).then(state => { r.state = state; r.lifecycle = 'paused'; })
+        ? call(r, 'rollbackAdvance', prepared[index].token, { allowReserved: true }).then(state => { r.state = state; r.lifecycle = 'paused'; })
         : Promise.resolve()));
       for (const [index, result] of rollback.entries()) if (result.status === 'rejected') await evict(records[index], 'Shared barrier rollback failed; durable checkpoint retained for explicit paused recovery.').catch(() => {});
-      await Promise.allSettled(records.map(r => r.backend ? call(r, 'pause').then(state => { r.state = state; r.lifecycle = 'paused'; }) : Promise.resolve()));
+      await Promise.allSettled(records.map(r => r.backend ? call(r, 'pause', undefined, { allowReserved: true }).then(state => { r.state = state; r.lifecycle = 'paused'; }) : Promise.resolve()));
       throw new Error('Shared research barrier failed; no participant advanced.');
+    } finally {
+      releaseRestore(reservation);
     }
   }
   async function persist(r, checkpoint, operation, sourceCheckpointId = null) {
@@ -186,37 +219,63 @@ export function createConnectomeRegistry({ identities = [], capacity = createCap
         parentId: r.checkpointId, checkpoint: structuredClone(checkpoint), operation, sourceCheckpointId });
     } catch (error) {
       if (error?.code === 'CONNECTOME_DURABILITY_UNCERTAIN') {
-        r.recoveryRequired = true;
-        if (error.individualId === r.individualId && idValid(error.selectedCheckpointId)) {
-          r.saved = loadCheckpoint ? null : checkpoint;
-          r.checkpointId = error.selectedCheckpointId;
-        } else r.durableHeadUnknown = true;
-        await evict(r, 'Catalog selection changed but durability is uncertain. Recover storage before explicit paused reload.');
+        await handleDurabilityFailure([r], error, 'Catalog selection changed but durability is uncertain. Recover storage before explicit paused reload.');
+        if (error.individualId === r.individualId && idValid(error.selectedCheckpointId)) r.saved = loadCheckpoint ? null : checkpoint;
       }
       throw error;
     }
     if (!result || !idValid(result.checkpointId)) throw new Error('Checkpoint writer returned no valid durable head');
     r.saved = loadCheckpoint ? null : checkpoint; r.checkpointId = result.checkpointId;
   }
-  async function cancelPreparedRestore(token) {
-    if (typeof cancelJointRestore !== 'function') return;
-    try { await cancelJointRestore(token); } catch {}
+  async function discardWorkerRestore(r, token) {
+    if (!token || !r.backend || typeof r.backend.discardRestore !== 'function') return;
+    try {
+      const state = await call(r, 'discardRestore', token, { allowReserved: true });
+      if (state?.status) { r.state = state; r.lifecycle = state.status; }
+    } catch {
+      await evict(r, 'Prepared shared restore cleanup failed; durable checkpoint retained for explicit paused recovery.').catch(() => {});
+    }
+  }
+  async function rollbackWorkerRestore(r, member) {
+    if (typeof r.backend?.rollbackRestore === 'function') {
+      const state = await call(r, 'rollbackRestore', { token: member.restoreToken, checkpoint: member.rollbackCheckpoint }, { allowReserved: true });
+      if (state?.status) { r.state = state; r.lifecycle = state.status; }
+      return;
+    }
+    const prepared = await call(r, 'prepareRestore', member.rollbackCheckpoint, { allowReserved: true });
+    const state = await call(r, 'commitRestore', prepared.token, { allowReserved: true });
+    r.state = state; r.lifecycle = 'paused';
+  }
+  async function cancelPreparedRestore(prepared, skipIds = new Set()) {
+    if (typeof cancelJointRestore === 'function' && prepared?.token) {
+      try { await cancelJointRestore(prepared.token); } catch {}
+    }
+    for (const member of prepared?.members ?? []) {
+      if (skipIds.has(member.individualId)) continue;
+      const r = records.get(member.individualId);
+      if (r) await discardWorkerRestore(r, member.restoreToken);
+    }
+    if (prepared?.reservation) releaseRestore(prepared.reservation);
   }
   async function handleDurabilityFailure(records, error, reason) {
     if (error?.code !== 'CONNECTOME_DURABILITY_UNCERTAIN') return;
     for (const r of records) {
-      r.recoveryRequired = true; r.durableHeadUnknown = true;
-      if (error.individualId === r.individualId && idValid(error.selectedCheckpointId)) r.checkpointId = error.selectedCheckpointId;
+      r.recoveryRequired = true; r.reason = reason;
+      const selected = error.selectedHeads?.[r.individualId]
+        ?? (error.individualId === r.individualId ? error.selectedCheckpointId : null);
+      if (idValid(selected)) { r.checkpointId = selected; r.durableHeadUnknown = false; }
+      else r.durableHeadUnknown = true;
     }
-    await Promise.allSettled(records.map(r => evict(r, reason)));
+    for (const r of records) await evict(r, reason);
   }
   function load(id) {
     const r = record(id);
-    return enqueue(r, () => {
-      const result = loadQueue.then(async () => {
-        if (r.backend) return publicState(r);
+     return enqueue(r, () => {
+       const result = loadQueue.then(async () => {
+         ensureUnreserved(r);
+         if (r.backend) return publicState(r);
         if (r.owner) throw new Error('Previous worker termination is unconfirmed; admission remains reserved');
-        if (r.recoveryRequired && (r.durableHeadUnknown || !loadCheckpoint)) throw new Error('Storage recovery and registry reconstruction are required before loading an uncertain durable head');
+         if (r.recoveryRequired && (r.durableHeadUnknown || !loadCheckpoint)) throw new Error('Storage recovery and registry reconstruction are required before loading an uncertain durable head');
         const resources = await getResources({ individualId: id, dataset: r.dataset });
         const measurement = resources.measurement;
         const footprint = measurement?.backend === 'connectome' && measurement.dataset === r.dataset
@@ -266,92 +325,148 @@ export function createConnectomeRegistry({ identities = [], capacity = createCap
     if (typeof persistJointCheckpoint !== 'function' || !Array.isArray(ids) || ids.length < 2 || ids.length > 64 || new Set(ids).size !== ids.length
       || intervalMs !== 5 || !Number.isSafeInteger(tick) || tick < 0) throw new Error('Invalid shared checkpoint request');
     const records = ids.map(record);
-    await Promise.all(records.map(r => r.queue));
-    const values = await Promise.all(records.map(async r => {
-      if (!r.backend || !r.owner || !r.state || !['paused', 'running', 'resting'].includes(r.lifecycle) || r.state.status === 'fault') throw new Error('Every shared checkpoint participant must be a healthy resident');
-      const checkpoint = await call(r, 'checkpoint');
-      const state = await call(r, 'snapshot');
-      r.state = state; r.lifecycle = state.status;
-      const mode = modes instanceof Map ? modes.get(r.individualId) : modes?.[r.individualId];
-      if (mode !== undefined && !['active', 'resting'].includes(mode)) throw new Error('Invalid shared checkpoint member mode');
-      return { individualId: r.individualId, dataset: r.dataset, parentId: r.checkpointId, checkpoint, mode: mode ?? 'active' };
-    }));
-    invalidateCommands(ids);
-    let result;
+    const reservation = reserveRestore(records, 'checkpoint');
     try {
-      result = await persistJointCheckpoint({ jointCheckpointId: randomUUID(), intervalMs, tick, members: values });
-    } catch (error) {
-      await handleDurabilityFailure(records, error, 'Shared joint checkpoint durability is uncertain; recover the catalog before explicit paused reload.');
-      throw error;
+      await Promise.all(records.map(r => r.queue));
+      if (records.some(r => !Number.isSafeInteger(r.sequence + 1))) throw new Error('Research command sequence limit reached');
+      const values = await Promise.all(records.map(async r => {
+        if (!r.backend || !r.owner || !r.state || !['paused', 'running', 'resting'].includes(r.lifecycle) || r.state.status === 'fault') throw new Error('Every shared checkpoint participant must be a healthy resident');
+        const checkpoint = await call(r, 'checkpoint', undefined, { allowReserved: true });
+        const state = await call(r, 'snapshot', undefined, { allowReserved: true });
+        r.state = state; r.lifecycle = state.status;
+        const mode = modes instanceof Map ? modes.get(r.individualId) : modes?.[r.individualId];
+        if (mode !== undefined && !['active', 'resting'].includes(mode)) throw new Error('Invalid shared checkpoint member mode');
+        return { individualId: r.individualId, dataset: r.dataset, parentId: r.checkpointId, checkpoint, mode: mode ?? 'active' };
+      }));
+      let result;
+      try {
+        result = await persistJointCheckpoint({ jointCheckpointId: randomUUID(), intervalMs, tick, members: values });
+      } catch (error) {
+        await handleDurabilityFailure(records, error, 'Shared joint checkpoint durability is uncertain; recover the catalog before explicit paused reload.');
+        throw error;
+      }
+      const byId = new Map(Array.isArray(result?.payload?.members) ? result.payload.members.map(member => [member.individualId, member]) : []);
+      if (byId.size !== records.length || records.some(r => !idValid(byId.get(r.individualId)?.checkpointId))) {
+        const selectedHeads = Object.fromEntries([...byId].filter(([, member]) => idValid(member?.checkpointId)).map(([id, member]) => [id, member.checkpointId]));
+        const error = Object.assign(new Error('Shared checkpoint writer returned an incomplete transaction'), { code: 'CONNECTOME_DURABILITY_UNCERTAIN', selectedHeads });
+        await handleDurabilityFailure(records, error, 'Shared joint checkpoint receipt is uncertain; recover the catalog before explicit paused reload.');
+        throw error;
+      }
+      invalidateCommands(ids);
+      for (const r of records) {
+        const member = byId.get(r.individualId);
+        r.checkpointId = member.checkpointId; r.saved = loadCheckpoint ? null : values.find(value => value.individualId === r.individualId).checkpoint;
+      }
+      return result;
+    } finally {
+      releaseRestore(reservation);
     }
-    const byId = new Map(result.payload.members.map(member => [member.individualId, member]));
-    for (const r of records) {
-      const member = byId.get(r.individualId);
-      if (!member) throw new Error('Shared checkpoint omitted a participant');
-      r.checkpointId = member.checkpointId; r.saved = loadCheckpoint ? null : values.find(value => value.individualId === r.individualId).checkpoint;
-    }
-    return result;
   }
   async function prepareSharedRestore(jointCheckpointId, expectedSequences = {}) {
     if (typeof readJointCheckpoint !== 'function' || typeof prepareJointRestore !== 'function' || typeof commitJointRestore !== 'function'
-      || typeof jointCheckpointId !== 'string') throw new Error('Shared checkpoint restore is unavailable');
+      || typeof jointCheckpointId !== 'string' || !expectedSequences || typeof expectedSequences !== 'object') throw new Error('Shared checkpoint restore is unavailable');
     const joint = readJointCheckpoint(jointCheckpointId);
-    if (!joint?.payload?.members?.length) throw new Error('Joint checkpoint has no members');
-    const prepared = prepareJointRestore(jointCheckpointId);
+    if (!joint?.payload?.members?.length || !Array.isArray(joint.payload.members)) throw new Error('Joint checkpoint has no members');
+    const ids = joint.payload.members.map(member => member?.individualId);
+    if (new Set(ids).size !== ids.length) throw new Error('Joint checkpoint has duplicate members');
+    const records = ids.map(record);
+    const reservation = reserveRestore(records, 'restore');
+    let prepared;
     const members = [];
     try {
-      for (const member of prepared.members) {
-        const r = record(member.individualId);
+      await Promise.all(records.map(r => r.queue));
+      prepared = prepareJointRestore(jointCheckpointId);
+      if (!Array.isArray(prepared?.members) || prepared.members.length !== joint.payload.members.length) throw new Error('Joint restore planner returned an incomplete membership');
+      for (const [index, member] of prepared.members.entries()) {
+        const r = records[index];
+        if (member.individualId !== ids[index]) throw new Error('Joint restore planner changed membership');
         const commandSequence = Object.hasOwn(expectedSequences, member.individualId) ? expectedSequences[member.individualId] : r.sequence;
         if (!r.backend || !r.owner || !r.state || r.state.status === 'fault' || r.checkpointId !== member.parentId
-          || !Number.isSafeInteger(commandSequence) || r.sequence !== commandSequence) throw new Error('A shared restore participant is unavailable or stale');
+          || !Number.isSafeInteger(commandSequence) || r.sequence !== commandSequence || r.state.status !== 'paused') throw new Error('A shared restore participant is unavailable or stale');
         const sessionEpoch = r.state.sessionEpoch;
-        const token = await call(r, 'prepareRestore', member.checkpoint);
-        if (r.sequence !== commandSequence || r.state?.sessionEpoch !== sessionEpoch) throw new Error('A shared restore participant changed during preparation');
-        members.push({ ...member, restoreToken: token.token, sessionEpoch: r.state.sessionEpoch, commandSequence });
+        const rollbackCheckpoint = await call(r, 'checkpoint', undefined, { allowReserved: true });
+        if (rollbackCheckpoint?.individualId !== r.individualId || rollbackCheckpoint?.dataset !== r.dataset) throw new Error('A shared restore participant returned an invalid rollback checkpoint');
+        const token = await call(r, 'prepareRestore', member.checkpoint, { allowReserved: true });
+        if (!token?.token || r.sequence !== commandSequence || r.state?.sessionEpoch !== sessionEpoch) throw new Error('A shared restore participant changed during preparation');
+        members.push({ ...member, restoreToken: token.token, sessionEpoch: r.state.sessionEpoch, commandSequence, rollbackCheckpoint: structuredClone(rollbackCheckpoint) });
       }
-      return { jointCheckpointId, token: prepared.token, members };
+      return { jointCheckpointId, token: prepared.token, members, reservation };
     } catch (error) {
-      await cancelPreparedRestore(prepared.token);
+      await cancelPreparedRestore({ ...(prepared ?? {}), members, reservation });
       throw error;
     }
   }
   async function commitSharedRestore(prepared) {
     if (typeof commitJointRestore !== 'function' || !prepared || !Array.isArray(prepared.members) || prepared.members.length < 2) throw new Error('Invalid shared restore transaction');
-    const records = prepared.members.map(member => record(member.individualId));
-    let mutationStarted = false;
+    let records;
+    try {
+      records = prepared.members.map(member => record(member.individualId));
+      if (new Set(records.map(r => r.individualId)).size !== records.length) throw new Error('Invalid shared restore transaction');
+      if (!prepared.reservation || records.some(r => restoreReservations.get(r.individualId)?.token !== prepared.reservation)) throw new Error('Shared restore reservation is no longer valid');
+    } catch (error) {
+      if (prepared.reservation) releaseRestore(prepared.reservation);
+      throw error;
+    }
+    let storageCommitted = false, reservationReleased = false, committed = [];
     try {
       for (const [index, member] of prepared.members.entries()) {
         const r = records[index], state = r.state;
         if (!r.backend || !r.owner || r.checkpointId !== member.parentId || state?.status !== 'paused'
           || state.sessionEpoch !== member.sessionEpoch || r.sequence !== member.commandSequence) throw new Error('A shared restore participant changed before commit');
       }
-      invalidateCommands(records.map(r => r.individualId));
-      mutationStarted = true;
-      const committed = [];
-      for (const [index, member] of prepared.members.entries()) committed.push({ record: records[index], state: await call(records[index], 'commitRestore', member.restoreToken) });
+      if (records.some(r => !Number.isSafeInteger(r.sequence + 1))) throw new Error('Research command sequence limit reached');
+      for (const [index, member] of prepared.members.entries()) {
+        const state = await call(records[index], 'commitRestore', member.restoreToken, { allowReserved: true });
+        if (state?.individualId !== records[index].individualId || state?.status !== 'paused') throw new Error('Shared restore worker returned an invalid paused state');
+        records[index].state = state; records[index].lifecycle = 'paused';
+        committed.push({ record: records[index], state });
+      }
       const durable = commitJointRestore(prepared.token);
-      const durableById = new Map(durable.members.map(member => [member.individualId, member]));
+      storageCommitted = true;
+      const durableById = Array.isArray(durable?.members) ? new Map(durable.members.map(member => [member.individualId, member])) : new Map();
+      if (durableById.size !== records.length || records.some(r => !idValid(durableById.get(r.individualId)?.checkpointId))) {
+        const selectedHeads = Object.fromEntries([...durableById].filter(([, member]) => idValid(member?.checkpointId)).map(([id, member]) => [id, member.checkpointId]));
+        throw Object.assign(new Error('Shared restore returned an invalid durable head'), { code: 'CONNECTOME_DURABILITY_UNCERTAIN', selectedHeads });
+      }
       for (const value of committed) {
         const member = durableById.get(value.record.individualId);
-        if (!member) throw new Error('Shared restore omitted a participant');
         value.record.state = value.state; value.record.lifecycle = 'paused'; value.record.checkpointId = member.checkpointId;
-        value.record.saved = loadCheckpoint ? null : prepared.members.find(value => value.individualId === value.record.individualId).checkpoint;
+        value.record.saved = loadCheckpoint ? null : prepared.members.find(item => item.individualId === value.record.individualId).checkpoint;
       }
+      invalidateCommands(records.map(r => r.individualId));
       return durable;
     } catch (error) {
-      await cancelPreparedRestore(prepared.token);
-      await handleDurabilityFailure(records, error, 'Shared restore durability is uncertain; reload the selected checkpoint paused.');
-      if (mutationStarted && error?.code !== 'CONNECTOME_DURABILITY_UNCERTAIN') await Promise.allSettled(records.map(r => evict(r, 'Shared restore failed; durable checkpoint retained for explicit paused recovery.')));
+      if (!storageCommitted && error?.code !== 'CONNECTOME_DURABILITY_UNCERTAIN') {
+        const committedIds = new Set(committed.map(value => value.record.individualId));
+        for (const value of committed) {
+          const r = value.record, member = prepared.members.find(item => item.individualId === r.individualId);
+          try {
+            if (!member.rollbackCheckpoint) throw new Error('Missing rollback checkpoint');
+            await rollbackWorkerRestore(r, member);
+          } catch {
+            await evict(r, 'Shared restore rollback failed; durable checkpoint retained for explicit paused recovery.').catch(() => {});
+          }
+        }
+        await cancelPreparedRestore(prepared, committedIds);
+        reservationReleased = true;
+      } else if (error?.code === 'CONNECTOME_DURABILITY_UNCERTAIN') {
+        for (const value of committed) value.record.saved = loadCheckpoint ? null : prepared.members.find(item => item.individualId === value.record.individualId).checkpoint;
+        await handleDurabilityFailure(records, error, 'Shared restore durability is uncertain; reload the selected checkpoint paused.');
+        releaseRestore(prepared.reservation);
+        reservationReleased = true;
+      }
       throw error;
+    } finally {
+      if (!reservationReleased) releaseRestore(prepared.reservation);
     }
   }
   function command(id, envelope, checkpoint = undefined, sourceCheckpointId = null) {
     const r = record(id);
     // Capture incoming values now: queued work must not read later caller mutations.
-    const request = structuredClone(envelope), target = checkpoint === undefined ? undefined : structuredClone(checkpoint);
-    return enqueue(r, async () => {
-      if (!exact(request, ['protocolVersion', 'individualId', 'sessionEpoch', 'commandSequence', 'action', 'steps'])
+     const request = structuredClone(envelope), target = checkpoint === undefined ? undefined : structuredClone(checkpoint);
+     return enqueue(r, async () => {
+       ensureUnreserved(r);
+       if (!exact(request, ['protocolVersion', 'individualId', 'sessionEpoch', 'commandSequence', 'action', 'steps'])
         || request.protocolVersion !== 1 || request.individualId !== id || request.sessionEpoch !== r.state?.sessionEpoch
         || request.commandSequence !== r.sequence || !Number.isSafeInteger(r.sequence + 1)
         || !['start', 'pause', 'rest', 'home', 'advance', 'save', 'unload', 'restore'].includes(request.action)
@@ -365,10 +480,23 @@ export function createConnectomeRegistry({ identities = [], capacity = createCap
         } else {
           await pause(r);
           if (request.action === 'restore') {
-            const prepared = await call(r, 'prepareRestore', target);
-            await persist(r, target, 'restore', sourceCheckpointId);
-            try { r.state = await call(r, 'commitRestore', prepared.token); r.lifecycle = 'paused'; }
-            catch (error) { await evict(r, 'Durable restore committed; worker stopped. Explicit load recovers the selected head paused.'); throw error; }
+            const reservation = reserveRestore([r], 'command-restore');
+            let runtimeCommitted = false, rollbackCheckpoint, restoreToken;
+            try {
+              rollbackCheckpoint = await call(r, 'checkpoint', undefined, { allowReserved: true });
+              const prepared = await call(r, 'prepareRestore', target, { allowReserved: true }); restoreToken = prepared.token;
+              const state = await call(r, 'commitRestore', prepared.token, { allowReserved: true });
+              if (state?.individualId !== r.individualId || state?.status !== 'paused') throw new Error('Connectome restore returned an invalid paused state');
+              r.state = state; r.lifecycle = 'paused'; runtimeCommitted = true;
+              await persist(r, target, 'restore', sourceCheckpointId);
+            } catch (error) {
+              if (runtimeCommitted && error?.code !== 'CONNECTOME_DURABILITY_UNCERTAIN') {
+                try {
+                  await rollbackWorkerRestore(r, { restoreToken, rollbackCheckpoint });
+                } catch { await evict(r, 'Restore rollback failed; durable checkpoint retained for explicit paused recovery.').catch(() => {}); }
+              }
+              throw error;
+            } finally { releaseRestore(reservation); }
           } else if (['save', 'unload'].includes(request.action)) {
             await persist(r, await call(r, 'checkpoint'), request.action);
             if (request.action === 'unload') await evict(r, null);
@@ -389,9 +517,10 @@ export function createConnectomeRegistry({ identities = [], capacity = createCap
       || typeof envelope.graphSha256 !== 'string' || !/^[a-f0-9]{64}$/.test(envelope.graphSha256)
       || typeof envelope.sessionEpoch !== 'string') throw new Error('Invalid connectome sample envelope');
     validateNeuronSampleIds(envelope.neuronIds, envelope.dataset);
-    const request = { ...envelope, neuronIds: [...envelope.neuronIds] };
-    return enqueue(r, async () => {
-      if (!r.backend || !['paused', 'running', 'resting'].includes(r.lifecycle)) throw new Error('Connectome sample unavailable; explicitly load a healthy worker first');
+     const request = { ...envelope, neuronIds: [...envelope.neuronIds] };
+     return enqueue(r, async () => {
+       ensureUnreserved(r);
+       if (!r.backend || !['paused', 'running', 'resting'].includes(r.lifecycle)) throw new Error('Connectome sample unavailable; explicitly load a healthy worker first');
       if (request.sessionEpoch !== r.state?.sessionEpoch || request.graphSha256 !== r.state?.graphSha256) throw new Error('Stale connectome sample session or graph');
       const backend = r.backend;
       // Read failures do not send pause/start or alter Rest. Only a worker deadline
@@ -407,6 +536,11 @@ export function createConnectomeRegistry({ identities = [], capacity = createCap
   }
   return { register, load, command, sample, sharedControl, invalidateCommands, barrier, sharedCheckpoint, prepareSharedRestore, commitSharedRestore,
     list: () => [...records.values()].map(publicState), snapshot: id => publicState(record(id)),
-    close: async () => { if (closed || closing) return; closing = true; await Promise.all([...records.values()].map(r => r.queue)); closed = true;
+    close: async () => { if (closed || closing) return; closing = true; cancelRestoreCalls();
+      const reservedRecords = [...new Set([...restoreReservations.keys()])].map(id => records.get(id)).filter(Boolean);
+      await Promise.allSettled(reservedRecords.map(r => evict(r, 'Registry closed; only previously committed checkpoints can recover.')));
+      await Promise.all([...records.values()].map(r => r.queue));
+      while (restoreCalls.size) await Promise.allSettled([...restoreCalls]);
+      restoreReservations.clear(); closed = true;
       await Promise.all([...records.values()].map(r => evict(r, 'Registry closed; only previously committed checkpoints can recover.'))); } };
 }

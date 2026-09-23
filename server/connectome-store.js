@@ -175,9 +175,10 @@ export function openConnectomeStore(directory, { profiles = {}, writeCatalog = a
     try { syncCatalogDirectory(directory); }
     catch {
       durabilityUncertain = true;
+      const selectedHeads = selection?.heads && typeof selection.heads === 'object' ? { ...selection.heads } : null;
       throw Object.assign(new Error('Connectome catalog selection changed but directory durability is uncertain; close and reopen the store before paused recovery'), {
         code: 'CONNECTOME_DURABILITY_UNCERTAIN', selectedCheckpointId: selection?.checkpointId ?? null,
-        individualId: selection?.individualId ?? null,
+        individualId: selection?.individualId ?? null, selectedHeads,
       });
     }
   }
@@ -241,23 +242,43 @@ export function openConnectomeStore(directory, { profiles = {}, writeCatalog = a
       for (const value of planned) {
         const target = next.individuals.find(record => record.individualId === value.recordId);
         target.checkpoints.push(value.item); target.head = value.item.checkpointId;
-        writeExclusive(join(checkpointDirectory,`${value.item.checkpointId}.json`), value.bytes);
       }
-      syncDirectory(checkpointDirectory);
       next.jointCheckpoints.push(joint);
-      persist(next, { individualId: planned[0].recordId, checkpointId: planned[0].item.checkpointId });
+      next.sha256 = catalogDigest(next); validateCatalog(next,profiles);
+      if (Buffer.byteLength(JSON.stringify(next)) > LIMITS.catalogBytes) throw new Error('Connectome catalog capacity reached');
+      for (const value of planned) writeExclusive(join(checkpointDirectory,`${value.item.checkpointId}.json`), value.bytes);
+      syncDirectory(checkpointDirectory);
+      persist(next, { individualId: planned[0].recordId, checkpointId: planned[0].item.checkpointId,
+        heads: Object.fromEntries(planned.map(value => [value.recordId, value.item.checkpointId])) });
       return structuredClone(joint);
     },
     prepareJointRestore(jointCheckpointId) {
       ensureDurable();
       const joint = (catalog.jointCheckpoints ?? []).find(value => value.jointCheckpointId === jointCheckpointId);
       if (!joint) throw new Error('Joint checkpoint not found');
-      const members = joint.payload.members.map(member => {
-        const record = recordFor(member.individualId), item = itemFor(record, member.checkpointId);
-        return { ...structuredClone(member), parentId: record.head, checkpoint: verifyPayload(directory, record, item).value };
-      });
+      const planned = []; let totalBytes = storageBytes();
+      for (const member of joint.payload.members) {
+        const record = recordFor(member.individualId), source = itemFor(record, member.checkpointId);
+        if (record.checkpoints.length >= LIMITS.history) throw new Error('Joint restore history capacity reached');
+        const bytes = verifyPayload(directory, record, source).bytes;
+        if (totalBytes + bytes.length > LIMITS.totalCheckpointBytes) throw new Error('Joint restore byte ceiling exceeded');
+        const item = { checkpointId: randomUUID(), parentId: record.head, restoredFrom: source.checkpointId, operation: 'restore', createdAt: Date.now(), sha256: source.sha256, bytes: bytes.length, tick: source.tick };
+        planned.push({ recordId: record.individualId, parentId: record.head, sourceCheckpointId: source.checkpointId, item, bytes, checkpoint: verifyPayload(directory, record, source).value });
+        totalBytes += bytes.length;
+      }
+      const next = structuredClone(catalog);
+      for (const value of planned) {
+        const target = next.individuals.find(record => record.individualId === value.recordId);
+        target.checkpoints.push(value.item); target.head = value.item.checkpointId;
+      }
+      next.sha256 = catalogDigest(next); validateCatalog(next,profiles);
+      if (Buffer.byteLength(JSON.stringify(next)) > LIMITS.catalogBytes) throw new Error('Connectome catalog capacity reached');
+      for (const value of planned) writeExclusive(join(checkpointDirectory,`${value.item.checkpointId}.json`), value.bytes);
+      syncDirectory(checkpointDirectory); syncCatalogDirectory(directory);
       const token = randomUUID();
-      pendingJointRestores.set(token, { jointCheckpointId, expectedHeads: Object.fromEntries(members.map(member => [member.individualId, member.parentId])), members });
+      const members = planned.map(value => ({ individualId: value.recordId, parentId: value.parentId, sourceCheckpointId: value.sourceCheckpointId, checkpoint: structuredClone(value.checkpoint) }));
+      pendingJointRestores.set(token, { jointCheckpointId, expectedHeads: Object.fromEntries(planned.map(value => [value.recordId, value.parentId])),
+        members: planned.map(value => ({ recordId: value.recordId, parentId: value.parentId, sourceCheckpointId: value.sourceCheckpointId, item: value.item })) });
       return { token, jointCheckpointId, members: structuredClone(members) };
     },
     cancelJointRestore(token) { ensureOpen(); return pendingJointRestores.delete(token); },
@@ -268,24 +289,18 @@ export function openConnectomeStore(directory, { profiles = {}, writeCatalog = a
         if (!pending) throw new Error('Unknown or stale joint restore token');
         const joint = (catalog.jointCheckpoints ?? []).find(value => value.jointCheckpointId === pending.jointCheckpointId);
         if (!joint) throw new Error('Joint checkpoint not found');
-        const planned = []; let total = storageBytes();
-        for (const member of pending.members) {
-          const record = recordFor(member.individualId);
-          if (record.head !== pending.expectedHeads[member.individualId] || record.checkpoints.length >= LIMITS.history) throw new Error('Stale joint restore membership');
-          const source = itemFor(record, member.checkpointId), bytes = verifyPayload(directory, record, source).bytes;
-          if (total + bytes.length > LIMITS.totalCheckpointBytes) throw new Error('Joint restore byte ceiling exceeded');
-          const item = { checkpointId: randomUUID(), parentId: record.head, restoredFrom: source.checkpointId, operation: 'restore', createdAt: Date.now(), sha256: source.sha256, bytes: bytes.length, tick: source.tick };
-          planned.push({ recordId: record.individualId, item, bytes }); total += bytes.length;
-        }
         const next = structuredClone(catalog);
-        for (const value of planned) {
+        for (const value of pending.members) {
+          const current = recordFor(value.recordId);
+          if (current.head !== pending.expectedHeads[value.recordId]) throw new Error('Stale joint restore membership');
+          const staged = readBounded(join(checkpointDirectory,`${value.item.checkpointId}.json`), LIMITS.checkpointBytes);
+          if (staged.length !== value.item.bytes || sha(staged) !== value.item.sha256) invalid();
           const target = next.individuals.find(record => record.individualId === value.recordId);
           target.checkpoints.push(value.item); target.head = value.item.checkpointId;
-          writeExclusive(join(checkpointDirectory,`${value.item.checkpointId}.json`), value.bytes);
         }
-        syncDirectory(checkpointDirectory);
-        persist(next, { individualId: planned[0].recordId, checkpointId: planned[0].item.checkpointId });
-        return { jointCheckpointId: pending.jointCheckpointId, members: planned.map(value => ({ individualId: value.recordId, checkpointId: value.item.checkpointId })) };
+        persist(next, { individualId: pending.members[0].recordId, checkpointId: pending.members[0].item.checkpointId,
+          heads: Object.fromEntries(pending.members.map(value => [value.recordId, value.item.checkpointId])) });
+        return { jointCheckpointId: pending.jointCheckpointId, members: pending.members.map(value => ({ individualId: value.recordId, checkpointId: value.item.checkpointId })) };
       } finally {
         pendingJointRestores.delete(token);
       }

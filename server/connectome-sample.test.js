@@ -39,17 +39,17 @@ test('duplicate, unknown, foreign, sparse and oversized selections reject atomic
   const selected=source.ids.slice(0,MAX_NEURON_SAMPLE);
   assert.equal(kernel.sample(selected).samples.length,256);assert.deepEqual(kernel.checkpoint(),before);
 });
-test('session samples retain prepared restore, reject stale epochs and never start or advance', () => {
+test('session samples require explicit restore discard, reject stale epochs and never start or advance', () => {
   const source=graph(),session=createConnectomeSession({graph:source,dataset,individualId,provenance:{manifestSha256:'a'.repeat(64)}});
   let epoch=session.snapshot().sessionEpoch;
   const send=(action,value)=>session.dispatch({action,value,sessionEpoch:epoch});
   const before=send('checkpoint'), prepared=send('prepareRestore',before);
-  for(let i=0;i<3;i++) {
-    const result=send('sample',[source.ids[0]]);assert.equal(result.status,'paused');assert.equal(result.tick,0);
-    assert.equal(result.sessionEpoch,epoch);assert.equal(result.provenance.manifestSha256,'a'.repeat(64));
-    assert.deepEqual(result.samples,[{neuronId:source.ids[0],potential:0,firing:0,refractoryStepsRemaining:0}]);
-  }
-  send('commitRestore',prepared.token);
+  for(let i=0;i<3;i++) assert.throws(()=>send('sample',[source.ids[0]]),/Restore preparation pending/);
+  send('discardRestore',prepared.token);
+  const result=send('sample',[source.ids[0]]);assert.equal(result.status,'paused');assert.equal(result.tick,0);
+  assert.equal(result.sessionEpoch,epoch);assert.equal(result.provenance.manifestSha256,'a'.repeat(64));
+  assert.deepEqual(result.samples,[{neuronId:source.ids[0],potential:0,firing:0,refractoryStepsRemaining:0}]);
+  const committed=send('prepareRestore',before);send('commitRestore',committed.token);
   assert.throws(()=>send('sample',[source.ids[0]]),/Stale/);
   epoch=session.snapshot().sessionEpoch;assert.deepEqual(send('checkpoint'),before);
   send('start');const running=send('sample',[source.ids[0]]);assert.equal(running.status,'running');assert.equal(running.tick,0);

@@ -22,7 +22,7 @@ function envelope(value) {
 }
 function participantFrom(state, mode = 'active') {
   safeState(state);
-  if (state.status === 'unavailable' && state.resident === false) return { individualId: state.individualId, sessionEpoch: state.sessionEpoch, dataset: state.dataset,
+  if (state.resident === false && ['unavailable', 'saved-unloaded'].includes(state.status)) return { individualId: state.individualId, sessionEpoch: state.sessionEpoch, dataset: state.dataset,
     mode, status: 'unavailable', tick: null, simTimeMs: null, graphSha256: state.graphSha256 ?? null,
     model: state.model ?? null, capabilities: state.capabilities };
   if (!state.resident || !state.neural || !Number.isSafeInteger(state.neural.tick) || state.neural.tick < 0
@@ -43,9 +43,10 @@ export function createConnectomeSharedSession({ snapshot, control, barrier, inva
   const owners = new Map();
   const joining = new Set();
   const pending = new Set();
+  let closing = false;
   const owns = id => owners.has(id) || joining.has(id);
   const reserve = id => { if (pending.has(id)) fail('Shared research operation already in progress.'); pending.add(id); };
-  const required = () => { if (!available()) fail('Full-connectome shared research is unavailable.', 409); };
+  const required = () => { if (closing || !available()) fail('Full-connectome shared research is unavailable.', 409); };
   const sessionFor = id => { required(); const value = sessions.get(id); if (!value) fail('Shared research session not found.', 404); return value; };
   const stateFor = id => safeState(snapshot(id));
   const event = (session, type, extra = {}) => { session.events.push({ type, tick: session.tick, ...extra }); session.events = session.events.slice(-64); };
@@ -95,8 +96,9 @@ export function createConnectomeSharedSession({ snapshot, control, barrier, inva
     });
     for (const id of states.map(state => state.individualId)) joining.add(id);
     try {
-      await Promise.all(states.map(state => control(state.individualId, 'pause')));
-      const refreshed = states.map(state => stateFor(state.individualId));
+       await Promise.all(states.map(state => control(state.individualId, 'pause')));
+       if (closing) fail('Full-connectome shared research is unavailable.');
+       const refreshed = states.map(state => stateFor(state.individualId));
       if (refreshed.some((state, index) => state.dataset !== states[index].dataset || state.graphSha256 !== states[index].graphSha256
         || !state.resident || !state.neural || state.capabilities?.sensoryMotor !== false
         || state.capabilities?.learning !== false || state.capabilities?.chemistry !== false || state.capabilities?.embodiment !== false)) {
@@ -249,9 +251,10 @@ export function createConnectomeSharedSession({ snapshot, control, barrier, inva
     const expectedSequences = Object.fromEntries(body.members.map(member => [member.individualId, member.commandSequence]));
     for (const id of memberIds) joining.add(id);
     try {
-      const prepared = await prepareRestore(body.jointCheckpointId, expectedSequences);
-      await commitRestore(prepared);
-      const participants = expected.map(member => {
+       const prepared = await prepareRestore(body.jointCheckpointId, expectedSequences);
+       await commitRestore(prepared);
+       if (closing) fail('Full-connectome shared research is unavailable.');
+       const participants = expected.map(member => {
         const state = stateFor(member.individualId);
         return { individualId: member.individualId, sessionEpoch: state.sessionEpoch, mode: member.mode };
       });
@@ -293,6 +296,7 @@ export function createConnectomeSharedSession({ snapshot, control, barrier, inva
     }
   }
   async function close() {
+    closing = true;
     for (const session of sessions.values()) await pauseAll(session);
     for (const session of sessions.values()) for (const member of session.participants) owners.delete(member.individualId);
     sessions.clear(); joining.clear();

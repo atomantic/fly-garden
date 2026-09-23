@@ -16,7 +16,7 @@ export function createConnectomeSharedHttp({ service, readBody, json, checkOrigi
     const match = /^\/api\/connectomes\/shared\/([0-9a-f-]+)(?:\/(control|barrier|member))?$/.exec(url.pathname);
     if (!collection && !checkpoints && !join && !restore && !match) fail('Shared research API route not found.', 404);
     if (request.method === 'GET' && collection) { json(response, 200, service.view()); return true; }
-    if (request.method === 'GET' && checkpoints) { json(response, 200, { checkpoints: service.checkpoints() }); return true; }
+    if (request.method === 'GET' && checkpoints) { json(response, 200, { checkpoints: await service.checkpoints() }); return true; }
     if (request.method === 'GET' && match && !match[2]) { json(response, 200, service.snapshot(match[1])); return true; }
     if (request.method !== 'POST') fail('Use POST for shared research mutations.', 405);
     checkOrigin(request, base);
