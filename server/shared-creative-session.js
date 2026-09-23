@@ -142,7 +142,7 @@ export function createSharedCreativeSessions({ arrangement = SHARED_ARRANGEMENT 
       const declared = new Map(r.source.participants.map(({ startPosition, ...p }) => [p.individualId, structuredClone(p)]));
       try { batch = validateActionBatch(supply(declared)); } catch { throw new Boundary('invalid-batch'); }
       if (batch.sharedId !== id || batch.worldEpoch !== r.epoch || batch.tick !== r.tick + 1 || batch.tick !== shared.tick
-        || batch.worldTimeMs !== shared.worldTimeMs || batch.actions.length !== r.source.participants.length) throw new Boundary('invalid-batch');
+        || batch.worldTimeMs !== shared.worldTimeMs || batch.wallTimeMs !== shared.lastReceivedAtMs || batch.actions.length !== r.source.participants.length) throw new Boundary('invalid-batch');
       const byId = new Map(batch.actions.map(a => [a.individualId, a]));
       // Delivery order is irrelevant: each action is matched by identity and provenance, then stored in membership order.
       const actions = r.source.participants.map(p => {

@@ -114,10 +114,11 @@ test('missing, duplicate, stale, discontinuous, cross-recipient or mismatched ac
     'cross-recipient': [traces => traces.map((t, i) => ({ ...t, sessionId: traces[1 - i].sessionId })), 'provenance-mismatch'],
     'moved pose': [traces => traces.map(t => ({ ...t, pose: { ...t.pose, x: t.pose.x + 0.01 } })), 'provenance-mismatch'],
     'not a trace': [() => null, 'invalid-batch'],
+    'false wall clock': [traces => traces, 'invalid-batch', batch => ({ ...batch, wallTimeMs: batch.wallTimeMs + 1 })],
   };
-  for (const [name, [alter, cause]] of Object.entries(alterations)) {
+  for (const [name, [alter, cause, rewrite]] of Object.entries(alterations)) {
     const f = fixture(); f.command('start'); f.capture(f.advance());
-    f.capture(alter(f.advance()));
+    f.capture(alter(f.advance()), rewrite && (t => rewrite(fixtureActionBatch(f.shared, t, f.live))));
     const status = f.captures.status('world'), source = f.source();
     assert.equal(status.active, false, name); assert.equal(status.partial, true, name); assert.equal(status.actionCount, 2, name);
     assert.deepEqual(status.boundary, { cause, worldEpoch: 'epoch', tick: 1 }, name);
