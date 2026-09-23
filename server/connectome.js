@@ -42,7 +42,9 @@ export function openConnectomeBackend(directory, { dataset = 'male-cns:v1.0', in
       try { validateNeuronSampleIds(neuronIds, dataset); return request('sample', neuronIds); }
       catch (error) { return Promise.reject(error); }
     }, start: () => request('start'), pause: () => request('pause'),
-    advance: steps => request('advance', steps), probe: indices => request('probe', indices), checkpoint: () => request('checkpoint'),
+    advance: steps => request('advance', steps), prepareAdvance: steps => request('prepareAdvance', steps),
+    commitAdvance: token => request('commitAdvance', token), rollbackAdvance: token => request('rollbackAdvance', token),
+    releaseAdvance: token => request('releaseAdvance', token), probe: indices => request('probe', indices), checkpoint: () => request('checkpoint'),
     restore: checkpoint => request('restore', checkpoint), prepareRestore: checkpoint => request('prepareRestore', checkpoint),
     commitRestore: token => request('commitRestore', token), close, terminated }));
   return Object.assign(opening, { terminate: close, terminated });

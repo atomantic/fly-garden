@@ -118,6 +118,96 @@ export function createSparseLif(graph, { individualId = randomUUID(), dataset = 
   let extensions = null;
   let revision = Symbol();
   const preparedRestores = new WeakMap();
+  const preparedAdvances = new WeakMap();
+
+  function prepareAdvance(steps) {
+    if (!Number.isInteger(steps) || steps < 1 || steps > 1000) throw new Error('Advance must be 1–1000 steps');
+    let candidatePotential = potential.slice();
+    let candidateFiring = firing.slice();
+    let candidateRefractory = refractory.slice();
+    let nextPotential = new Float64Array(n);
+    let nextFiring = new Uint8Array(n);
+    let nextRefractory = new Uint8Array(n);
+    let candidateTick = tick;
+    let candidateTotalSpikes = totalSpikes;
+    let candidateTraversedEdges = traversedEdges;
+    for (let step = 0; step < steps; step++) {
+      let visited = 0;
+      let spikes = 0;
+      incoming.fill(0);
+      nextFiring.fill(0);
+      nextRefractory.fill(0);
+      for (let source = 0; source < n; source++) {
+        if (!candidateFiring[source]) continue;
+        for (let edge = offsets[source]; edge < offsets[source + 1]; edge++) {
+          incoming[targets[edge]] += signs[source] * contacts[edge] * LIF_MODEL.contactGain;
+          visited++;
+        }
+      }
+      for (let i = 0; i < n; i++) {
+        nextRefractory[i] = candidateRefractory[i] > 0 ? candidateRefractory[i] - 1 : 0;
+        const value = candidateRefractory[i] > 0 ? LIF_MODEL.reset : candidatePotential[i] * decay + incoming[i];
+        if (!Number.isFinite(value)) throw new Error('Non-finite neural state; last valid state retained');
+        nextPotential[i] = value;
+        if (value >= LIF_MODEL.threshold) {
+          nextFiring[i] = 1;
+          nextPotential[i] = LIF_MODEL.reset;
+          nextRefractory[i] = LIF_MODEL.refractorySteps;
+          spikes++;
+        }
+      }
+      if (![candidateTick + 1, candidateTotalSpikes + spikes, candidateTraversedEdges + visited].every(Number.isSafeInteger)) {
+        throw new Error('Neural clock/counter limit; last valid state retained');
+      }
+      [candidatePotential, nextPotential] = [nextPotential, candidatePotential];
+      [candidateFiring, nextFiring] = [nextFiring, candidateFiring];
+      [candidateRefractory, nextRefractory] = [nextRefractory, candidateRefractory];
+      candidateTick++;
+      candidateTotalSpikes += spikes;
+      candidateTraversedEdges += visited;
+    }
+    const token = Object.freeze(Object.create(null));
+    preparedAdvances.set(token, { revision, potential: candidatePotential, firing: candidateFiring,
+      refractory: candidateRefractory, tick: candidateTick, totalSpikes: candidateTotalSpikes,
+      traversedEdges: candidateTraversedEdges, beforePotential: potential, beforeFiring: firing,
+      beforeRefractory: refractory, beforeTick: tick, beforeTotalSpikes: totalSpikes,
+      beforeTraversedEdges: traversedEdges, committed: false, committedRevision: null });
+    return token;
+  }
+
+  function commitAdvance(token) {
+    const candidate = preparedAdvances.get(token);
+    if (!candidate || candidate.revision !== revision || candidate.committed) throw new Error('Stale or foreign prepared neural advance');
+    potential = candidate.potential;
+    firing = candidate.firing;
+    refractory = candidate.refractory;
+    tick = candidate.tick;
+    totalSpikes = candidate.totalSpikes;
+    traversedEdges = candidate.traversedEdges;
+    candidate.committed = true;
+    candidate.committedRevision = revision = Symbol();
+    return summary();
+  }
+  function rollbackAdvance(token) {
+    const candidate = preparedAdvances.get(token);
+    if (!candidate || !candidate.committed || candidate.committedRevision !== revision) throw new Error('Stale or foreign committed neural advance');
+    potential = candidate.beforePotential;
+    firing = candidate.beforeFiring;
+    refractory = candidate.beforeRefractory;
+    tick = candidate.beforeTick;
+    totalSpikes = candidate.beforeTotalSpikes;
+    traversedEdges = candidate.beforeTraversedEdges;
+    preparedAdvances.delete(token);
+    revision = Symbol();
+    return summary();
+  }
+  function releaseAdvance(token) {
+    const candidate = preparedAdvances.get(token);
+    if (!candidate) throw new Error('Unknown prepared neural advance');
+    if (candidate.committed && candidate.committedRevision !== revision) throw new Error('Prepared neural advance was mutated');
+    preparedAdvances.delete(token);
+    return summary();
+  }
 
   // A one-time, explicitly requested numerical probe. No tonic/reward drive or RNG.
   function seedProbe(indices) {
@@ -299,7 +389,7 @@ export function createSparseLif(graph, { individualId = randomUUID(), dataset = 
   if (checkpoint !== null) restore(checkpoint);
   // Graph ownership is transferred to the kernel; callers must not mutate CSR arrays.
   // Copies for small numerical diagnostics only; full graph benchmark uses summary().
-  return { step, seedProbe, summary, sample, checkpoint: exportCheckpoint, restore, prepareRestore, commitRestore, individualId, graphSha256, model,
+  return { step, prepareAdvance, commitAdvance, rollbackAdvance, releaseAdvance, seedProbe, summary, sample, checkpoint: exportCheckpoint, restore, prepareRestore, commitRestore, individualId, graphSha256, model,
     setCheckpointExtensions, checkpointExtensions: readCheckpointExtensions, checkpointExtensionsSha256,
     retainedWeightState,
     inspect: () => ({ potential: potential.slice(), firing: firing.slice(), refractory: refractory.slice() }) };

@@ -4,6 +4,7 @@ import { RuntimeError } from './runtime.js';
 import { CONNECTOME_PROFILES } from './connectome-profiles.js';
 import { openConnectomeBackend } from './connectome.js';
 import { createConnectomeRegistry } from './connectome-registry.js';
+import { createConnectomeSharedSession } from './connectome-shared-session.js';
 const exact=(v,keys)=>v&&typeof v==='object'&&!Array.isArray(v)&&Object.keys(v).length===keys.length&&keys.every(k=>Object.hasOwn(v,k));
 const fail=(message,status=409)=>{throw new RuntimeError(message,status);};
 const plainState=state=>({...state,reason:state.reason?(state.recoveryRequired?'Storage durability is uncertain; recover the catalog before explicit paused reload.':'Research operation unavailable or paused; refresh state and verify local configuration.'):null});
@@ -14,6 +15,10 @@ export function createConnectomeService({store=null,profiles={},reason=null,capa
   const registry=store?createConnectomeRegistry({identities:store.identities(),capacity,getResources:async({dataset})=>({...getResources(),measurement:profiles[dataset]?.measurement}),
     loadCheckpoint:({individualId,checkpointId})=>store.readCheckpoint(individualId,checkpointId),
     persistCheckpoint:request=>store.persistCheckpoint(request),openBackend:(directory,options)=>(openBackend??openConnectomeBackend)(directory,{...options,onExit:()=>{options.onExit();onLifecycle(options.individualId);}})}):null;
+  const shared=createConnectomeSharedSession({available:()=>!!registry&&!storageFault,
+    snapshot:id=>registry.snapshot(id),invalidate:ids=>registry.invalidateCommands(ids),
+    control:async(id,action)=>{try{return await registry.sharedControl(id,action);}finally{onLifecycle(id);}},
+    barrier:async(ids,steps,expected)=>{try{return await registry.barrier(ids,steps,expected);}finally{ids.forEach(id=>onLifecycle(id));}}});
   const required=()=>{if(!registry)fail(reason??'No verified local research catalog is available.');return registry;};
   function withAdmission(operation){const result=admissions.then(operation);admissions=result.catch(()=>{});return result;}
   const population=()=>capacity.snapshot(getResources());
@@ -49,6 +54,7 @@ export function createConnectomeService({store=null,profiles={},reason=null,capa
       ||(body.action==='restore'?typeof body.checkpointId!=='string':body.checkpointId!==null))fail('Invalid research command envelope.',400);
     if(!['pause','rest','home'].includes(body.action))checkHealthy();
     const state=record(id);
+    if(shared.owns(id))fail('Individual belongs to a shared research session; use the explicit shared controls.');
     if(body.sessionEpoch!==state.sessionEpoch||body.commandSequence!==state.commandSequence)fail('Stale research session or command sequence.');
     if(pending.has(id))fail('Research operation already in progress for this individual.');
     pending.add(id);
@@ -80,11 +86,13 @@ export function createConnectomeService({store=null,profiles={},reason=null,capa
   function enforcePressure(){
     if(!registry||population().pressure==='within-budget')return Promise.resolve();
     if(pressureWork)return pressureWork;
-    pressureWork=Promise.allSettled(registry.list().filter(state=>state.status==='running').map(state=>registry.command(state.individualId,{
+    const sharedWork=shared.pauseForPressure();
+    const direct=registry.list().filter(state=>state.status==='running'&&!shared.owns(state.individualId)).map(state=>registry.command(state.individualId,{
       protocolVersion:1,individualId:state.individualId,sessionEpoch:state.sessionEpoch,commandSequence:state.commandSequence,action:'pause',steps:null,
-    }))).finally(()=>{pressureWork=null;});return pressureWork;
+    }));
+    pressureWork=Promise.allSettled([sharedWork,...direct]).finally(()=>{pressureWork=null;});return pressureWork;
   }
-  return{view,snapshot,create,command,sample,history,list,withAdmission,enforcePressure,
+  return{view,snapshot,create,command,sample,history,list,withAdmission,enforcePressure,shared,
     reservations:()=>registry?registry.list().filter(state=>state.resident).map(state=>({individualId:state.individualId,status:state.status})):[],
-    close:async()=>{if(registry)await registry.close();store?.close();}};
+    close:async()=>{await shared.close();if(registry)await registry.close();store?.close();}};
 }

@@ -95,6 +95,83 @@ export function createConnectomeRegistry({ identities = [], capacity = createCap
     if (r.state?.status === 'fault') return;
     r.state = await call(r, 'pause'); r.lifecycle = 'paused';
   }
+  async function sharedControl(id, action) {
+    const r = record(id);
+    return enqueue(r, async () => {
+      if (!['start', 'pause', 'rest', 'resume'].includes(action)) throw new Error('Unknown shared research control action');
+      if (!r.backend) {
+        if (r.lifecycle === 'unavailable') return publicState(r);
+        throw new Error('Explicitly load a healthy research individual first');
+      }
+      if (r.state?.status === 'fault') {
+        await evict(r, 'Shared research worker faulted; durable checkpoint retained for explicit paused recovery.');
+        r.lifecycle = 'unavailable'; r.reason = 'Shared research worker faulted; durable checkpoint retained for explicit paused recovery.';
+        return publicState(r);
+      }
+      try {
+        if (action === 'start') {
+          r.state = await call(r, 'start'); r.lifecycle = 'running';
+        } else if (action === 'pause') {
+          r.state = await call(r, 'pause'); r.lifecycle = 'paused';
+        } else if (action === 'rest') {
+          r.state = await call(r, 'pause'); r.lifecycle = 'resting';
+        } else {
+          r.state = await call(r, 'start'); r.lifecycle = 'running';
+        }
+        r.reason = null;
+        return publicState(r);
+      } catch (error) {
+        if (r.backend) {
+          try { r.state = await call(r, 'pause'); r.lifecycle = 'paused'; } catch {}
+        }
+        r.reason = error.message;
+        throw error;
+      }
+    });
+  }
+  function invalidateCommands(ids) {
+    if (!Array.isArray(ids) || ids.length < 1 || ids.length > 64 || new Set(ids).size !== ids.length) throw new Error('Invalid shared research command invalidation membership');
+    const records = ids.map(record);
+    if (records.some(r => !Number.isSafeInteger(r.sequence + 1))) throw new Error('Research command sequence limit reached');
+    for (const r of records) r.sequence++;
+    return records.map(publicState);
+  }
+  async function barrier(ids, steps, expectedEpochs = {}) {
+    if (!Array.isArray(ids) || ids.length < 2 || ids.length > 64 || new Set(ids).size !== ids.length || !Number.isInteger(steps) || steps < 1 || steps > 1000) {
+      throw new Error('Invalid shared research barrier membership or step count');
+    }
+    const records = ids.map(record);
+    await Promise.all(records.map(r => r.queue));
+    for (const r of records) {
+      if (!r.backend || r.lifecycle !== 'running' || r.state?.status === 'fault'
+        || Object.hasOwn(expectedEpochs, r.individualId) && expectedEpochs[r.individualId] !== r.state?.sessionEpoch) {
+        throw new Error('Every shared research participant must be healthy, running and on the current session epoch');
+      }
+    }
+    let prepared = [];
+    try {
+      const candidates = await Promise.allSettled(records.map(r => call(r, 'prepareAdvance', steps)));
+      prepared = candidates.map(result => result.status === 'fulfilled' ? result.value : null);
+      if (candidates.some(result => result.status === 'rejected')) throw new Error('Research worker could not prepare a shared barrier candidate');
+      for (const value of prepared) {
+        if (typeof value?.token !== 'string' || !value.token || value.steps !== steps) throw new Error('Research worker returned an invalid shared barrier candidate');
+      }
+      const committed = await Promise.all(records.map((r, index) => call(r, 'commitAdvance', prepared[index].token)));
+      for (const [index, state] of committed.entries()) {
+        if (state?.individualId !== records[index].individualId || state?.status !== 'running') throw new Error('Research worker returned an invalid shared barrier commit');
+        records[index].state = state; records[index].lifecycle = state.status;
+      }
+      await Promise.all(records.map((r, index) => call(r, 'releaseAdvance', prepared[index].token)));
+      return records.map(publicState);
+    } catch (error) {
+      const rollback = await Promise.allSettled(records.map((r, index) => r.backend && prepared[index]?.token
+        ? call(r, 'rollbackAdvance', prepared[index].token).then(state => { r.state = state; r.lifecycle = 'paused'; })
+        : Promise.resolve()));
+      for (const [index, result] of rollback.entries()) if (result.status === 'rejected') await evict(records[index], 'Shared barrier rollback failed; durable checkpoint retained for explicit paused recovery.').catch(() => {});
+      await Promise.allSettled(records.map(r => r.backend ? call(r, 'pause').then(state => { r.state = state; r.lifecycle = 'paused'; }) : Promise.resolve()));
+      throw new Error('Shared research barrier failed; no participant advanced.');
+    }
+  }
   async function persist(r, checkpoint, operation, sourceCheckpointId = null) {
     // Writer must atomically persist payload and selected head, or leave both unchanged.
     let result;
@@ -226,7 +303,7 @@ export function createConnectomeRegistry({ identities = [], capacity = createCap
       return { ...value, status: r.lifecycle, commandSequence: r.sequence };
     });
   }
-  return { register, load, command, sample, list: () => [...records.values()].map(publicState), snapshot: id => publicState(record(id)),
+  return { register, load, command, sample, sharedControl, invalidateCommands, barrier, list: () => [...records.values()].map(publicState), snapshot: id => publicState(record(id)),
     close: async () => { if (closed || closing) return; closing = true; await Promise.all([...records.values()].map(r => r.queue)); closed = true;
       await Promise.all([...records.values()].map(r => evict(r, 'Registry closed; only previously committed checkpoints can recover.'))); } };
 }
