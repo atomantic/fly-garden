@@ -19,7 +19,7 @@ const graph = () => ({ ids: ['1', '2', '3', '4'], offsets: new Uint32Array([0, 1
 
 /** Transactional synthetic double: an explicit engineered map from declared channels to one
  * sparse input per substep, staged on a candidate kernel and committed only on request. */
-function tinyDouble(individualId, { delays = [], motor = true, stage: override, commit: commitFault, rollback: rollbackFault, partialCommit = false } = {}) {
+function tinyDouble(individualId, { delays = [], motor = true, stage: override, commit: commitFault, rollback: rollbackFault, discard: discardFault, partialCommit = false } = {}) {
   let kernel = createSparseLif(graph(), { individualId }), applied = null, staged = null, calls = 0;
   const requests = [], log = [];
   const key = ref => `${ref.worldEpoch}:${ref.worldTick}`;
@@ -52,7 +52,7 @@ function tinyDouble(individualId, { delays = [], motor = true, stage: override, 
       if (rollbackFault?.()) throw new Error('rollback failed');
       if (applied?.key === key(ref)) { kernel = applied.previous; applied = null; }
     },
-    async discard() { log.push(['discard', individualId]); staged = null; },
+    async discard() { log.push(['discard', individualId]); if (discardFault?.()) throw new Error('discard failed'); staged = null; },
   };
   return { backend, requests, log, kernel: () => kernel };
 }
@@ -239,6 +239,25 @@ test('a timed-out stage blocks resume until its late result is discarded', async
   context.run();
   assert.notEqual(context.adapter.view().worldEpoch, staleEpoch);
   assert.deepEqual((await context.adapter.step(context.batch())).traces.map(trace => trace.neural.tick), [5, 5]);
+});
+
+test('a candidate that cannot be discarded, even late, faults the session instead of allowing resume', async () => {
+  const immediate = setup({ doubles: { a: { discard: () => true }, b: { stage: () => { throw new Error('worker exited'); } } } });
+  immediate.run();
+  await assert.rejects(immediate.adapter.step(immediate.batch()), code('worker-fault'));
+  assert.equal(immediate.adapter.view().status, 'fault');
+  assert.throws(() => immediate.run(), code('fault'));
+
+  let release, discards = 0;
+  const gate = new Promise(resolve => { release = resolve; });
+  const late = setup({ doubles: { a: { stage: async (_request, call) => { if (call === 0) await gate; }, discard: () => ++discards > 1 } }, stageTimeoutMs: 20 });
+  late.run();
+  await assert.rejects(late.adapter.step(late.batch()), code('timeout'));
+  assert.equal(late.adapter.view().status, 'paused');
+  release();
+  await delay(5);
+  assert.deepEqual([late.adapter.view().status, discards], ['fault', 2]);
+  assert.throws(() => late.run(), code('fault'));
 });
 
 test('a commit failure rolls back already committed members; an unrecoverable rollback faults the session', async () => {

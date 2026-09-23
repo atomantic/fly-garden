@@ -42,7 +42,7 @@ A `connectome` backend may declare no channel. `connectomeDeclaration(state)` is
 2. **Freshness and completeness, which pause the session.** A stale world or member session epoch (`stale-epoch`) pauses the session. So do an observation for another tick, a capture more than 250 ms old or future-dated (`stale-observation`), and a missing active member (`partial-batch`). Pausing rotates the epoch, and an explicit resume is required.
 3. **Staging.** Each active backend gets a frozen request with only its own ID, session epoch, world epoch and tick, the fixed interval and substep count, and its own declared channels. Completion order is ignored. Each stage has a bounded deadline (2 s by default). A timed-out stage cannot be cancelled inside its backend, so resume is refused (`stage-pending`) until the late result settles and is discarded.
 4. **Response validation.** A response must name its own individual, session epoch and tick, and report exactly `tick + substeps` and `simTimeMs + intervalMs`. It may return a proposal only when it declared `motor-proposal`, and `null` otherwise. An extra field such as a partner's neural state is `invalid-response`, a non-finite value is `numerical-fault`, a wrong clock is `step-mismatch`, a rejected stage is `worker-fault` and a missed deadline is `timeout`. On any of these, every staged candidate is discarded and the session pauses. Nobody advances.
-5. **Commit in membership order.** If a commit fails, the failing member and every member already committed are rolled back in reverse order, and the rest are discarded. A backend's `rollback` restores the pre-batch state for that batch reference and does nothing if that batch was never applied, so a commit that applies and then throws is still undone. If a rollback fails, the session enters `fault`. Rest, wake and withdrawal do not clear it, and it cannot be resumed; it must be separated.
+5. **Commit in membership order.** If a commit fails, the failing member and every member already committed are rolled back in reverse order, and the rest are discarded. A backend's `rollback` restores the pre-batch state for that batch reference and does nothing if that batch was never applied, so a commit that applies and then throws is still undone. If a rollback or discard fails, including the late discard of a timed-out stage, the session enters `fault`. Rest, wake and withdrawal do not clear it, and it cannot be resumed; it must be separated.
 
 A committed batch returns traces in membership order. Each trace records the recipient, its session epoch, the world tick, the exact `[startMs, endMs)` interval, the channel names it received, its bounded proposal, and its clock after the batch.
 
@@ -61,7 +61,7 @@ A resting member receives no observation and is not staged. Its clock stays stil
 - recipient isolation: a visual change or contact proxy changes only its declared recipient, while a zero-input control stays at zero potential and no spikes, and no backend sees another participant's ID or payload;
 - partner-state and undeclared-output refusal;
 - stale, partial, timeout, numerical, step-mismatch and worker-fault pauses;
-- commit rollback and the unrecoverable-rollback fault;
+- commit rollback, the late discard of a timed-out stage, and the fault raised when a rollback or discard fails;
 - rest, withdrawal and the all-resting freeze;
 - the connectome session's uncoupled summary, and refusal of a participant whose capabilities are incomplete.
 

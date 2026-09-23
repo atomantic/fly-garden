@@ -148,9 +148,15 @@ export function createSharedEnvironmentAdapter({ sharedId = randomUUID(), member
   const find = id => participants.find(member => member.declaration.individualId === id);
   const rotate = () => { worldEpoch = randomUUID(); };
   const idle = () => { if (busy) reject('batch-in-progress', 'A shared adapter batch is already in progress.'); if (status === 'closed') reject('closed', 'Shared adapter is closed.'); };
+  /** A candidate that cannot be discarded or rolled back leaves backend state uncertain. */
+  function uncertain() {
+    status = 'fault'; fault = 'worker-fault';
+    reason = 'A participant could not discard or roll back a staged candidate; separate the session.';
+  }
+  const cleared = results => { if (results.some(result => result.status === 'rejected')) uncertain(); };
   function halt(code) {
     if (status !== 'fault') status = 'paused';
-    fault = code; reason = `${HALT_REASONS[code]} Explicit resume required.`; rotate();
+    fault = code; reason = status === 'fault' ? `${HALT_REASONS[code]} Backend state is uncertain; separate the session.` : `${HALT_REASONS[code]} Explicit resume required.`; rotate();
     throw new AdapterContractError(code, reason);
   }
   function view() {
@@ -233,9 +239,9 @@ export function createSharedEnvironmentAdapter({ sharedId = randomUUID(), member
           if (result.reason?.code !== 'timeout') continue;
           const member = recipients[index], late = ref(member), done = () => member.backend.discard(late);
           lingering.add(member);
-          stages[index].then(done, done).catch(() => {}).finally(() => lingering.delete(member));
+          stages[index].then(done, done).catch(uncertain).finally(() => lingering.delete(member));
         }
-        await Promise.allSettled(recipients.map(member => member.backend.discard(ref(member))));
+        cleared(await Promise.allSettled(recipients.map(member => member.backend.discard(ref(member)))));
         halt(problem);
       }
       const committed = [];
@@ -243,9 +249,8 @@ export function createSharedEnvironmentAdapter({ sharedId = randomUUID(), member
         try { await member.backend.commit(ref(member)); committed.push(member); }
         catch {
           const attempted = [...committed, member];
-          const undone = await Promise.allSettled(attempted.reverse().map(value => value.backend.rollback(ref(value))));
-          await Promise.allSettled(recipients.filter(value => !attempted.includes(value)).map(value => value.backend.discard(ref(value))));
-          if (undone.some(result => result.status === 'rejected')) status = 'fault';
+          cleared(await Promise.allSettled(attempted.reverse().map(value => value.backend.rollback(ref(value)))));
+          cleared(await Promise.allSettled(recipients.filter(value => !attempted.includes(value)).map(value => value.backend.discard(ref(value)))));
           halt('worker-fault');
         }
       }
