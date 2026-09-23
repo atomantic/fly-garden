@@ -425,3 +425,26 @@ test('a crash after an appending revert but before the journal records it is rec
   assert.equal(w.bancCatalog.state().members[w.ids.banc].history.length, 3);
   assert.deepEqual(w.contents(), priorContents);
 });
+
+test('a crash during operator rollback leaves an idempotently reconcilable record', async t => {
+  const w = world(t);
+  const priorContents = w.contents();
+  let writes = 0, failAt = Infinity;
+  const writeDocument = (path, bytes) => { writes++; if (writes >= failAt) throw new Error('disk gone'); writeFileSync(path, bytes); };
+  const first = w.open({ writeDocument });
+  w.bancCatalog.faults.commitUncertain = true;
+  const error = await first.coordinator.save(w.saveBody()).catch(value => value);
+  assert.equal(error.code, 'CROSS_CATALOG_RECOVERY_REQUIRED');
+  // Recovery writes: fixture reverting, BANC reverting, then the terminal record (fails after BANC appended its revert).
+  failAt = writes + 3;
+  await assert.rejects(first.coordinator.recover({ protocolVersion: 1, transactionId: error.recovery.transactionId, action: 'rollback' }), /disk gone/);
+  const appended = w.bancCatalog.member(w.ids.banc).head;
+  first.journal.close();
+  const second = w.open();
+  const pending = second.coordinator.status().recovery;
+  assert.equal(pending.catalogs.find(catalog => catalog.catalogId === 'connectome:banc').state, 'reverting');
+  const result = await second.coordinator.recover({ protocolVersion: 1, transactionId: pending.transactionId, action: 'rollback' });
+  assert.equal(result.state, 'rolled-back');
+  assert.equal(w.bancCatalog.member(w.ids.banc).head, appended);
+  assert.deepEqual(w.contents(), priorContents);
+});

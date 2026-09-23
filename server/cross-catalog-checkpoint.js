@@ -495,10 +495,13 @@ export function createCrossCatalogCoordinator({ journal, catalogs, now = Date.no
           const catalog = record.catalogs.find(value => value.catalogId === group.adapter.catalogId);
           const selected = group.members.filter(member => member.selectedHead === member.plannedHead);
           try {
-            if (selected.length) await revertGroup(record, group.adapter, selected);
-            else catalog.state = catalog.state === 'reverted' ? 'reverted' : 'cancelled';
+            if (selected.length) {
+              // Same intent-first rule as compensation: a crash during operator recovery stays reconcilable.
+              catalog.state = 'reverting'; persist(record); recovery = record;
+              await revertGroup(record, group.adapter, selected);
+            } else catalog.state = catalog.state === 'reverted' ? 'reverted' : 'cancelled';
             await group.adapter.cancel({ transactionId: record.transactionId });
-          } catch (error) { failures.push(error); catalog.state = 'uncertain'; }
+          } catch (error) { failures.push(error); if (catalog.state !== 'reverting') catalog.state = 'uncertain'; }
         }
         if (record.operation === 'restore' && !await evictAll(record)) failures.push(new Error('eviction'));
         if (failures.length) { recovery = record; try { persist(record); } catch { /* retained in memory */ } fail('Rollback incomplete; recovery remains pending.', 'CROSS_CATALOG_RECOVERY_REQUIRED', { recovery: recoveryView() }); }
