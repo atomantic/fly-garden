@@ -246,9 +246,10 @@ export function createConnectomeSharedSession({ snapshot, control, barrier, inva
     }
     if (expected.some(member => !body.members.some(value => value.individualId === member.individualId))) fail('Shared research restore requires the complete saved membership.');
     const memberIds = body.members.map(member => member.individualId);
+    const expectedSequences = Object.fromEntries(body.members.map(member => [member.individualId, member.commandSequence]));
     for (const id of memberIds) joining.add(id);
     try {
-      const prepared = await prepareRestore(body.jointCheckpointId);
+      const prepared = await prepareRestore(body.jointCheckpointId, expectedSequences);
       await commitRestore(prepared);
       const participants = expected.map(member => {
         const state = stateFor(member.individualId);

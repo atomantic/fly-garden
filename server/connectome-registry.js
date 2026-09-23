@@ -292,7 +292,7 @@ export function createConnectomeRegistry({ identities = [], capacity = createCap
     }
     return result;
   }
-  async function prepareSharedRestore(jointCheckpointId) {
+  async function prepareSharedRestore(jointCheckpointId, expectedSequences = {}) {
     if (typeof readJointCheckpoint !== 'function' || typeof prepareJointRestore !== 'function' || typeof commitJointRestore !== 'function'
       || typeof jointCheckpointId !== 'string') throw new Error('Shared checkpoint restore is unavailable');
     const joint = readJointCheckpoint(jointCheckpointId);
@@ -302,9 +302,13 @@ export function createConnectomeRegistry({ identities = [], capacity = createCap
     try {
       for (const member of prepared.members) {
         const r = record(member.individualId);
-        if (!r.backend || !r.owner || !r.state || r.state.status === 'fault' || r.checkpointId !== member.parentId) throw new Error('A shared restore participant is unavailable or stale');
+        const commandSequence = Object.hasOwn(expectedSequences, member.individualId) ? expectedSequences[member.individualId] : r.sequence;
+        if (!r.backend || !r.owner || !r.state || r.state.status === 'fault' || r.checkpointId !== member.parentId
+          || !Number.isSafeInteger(commandSequence) || r.sequence !== commandSequence) throw new Error('A shared restore participant is unavailable or stale');
+        const sessionEpoch = r.state.sessionEpoch;
         const token = await call(r, 'prepareRestore', member.checkpoint);
-        members.push({ ...member, restoreToken: token.token, sessionEpoch: r.state.sessionEpoch });
+        if (r.sequence !== commandSequence || r.state?.sessionEpoch !== sessionEpoch) throw new Error('A shared restore participant changed during preparation');
+        members.push({ ...member, restoreToken: token.token, sessionEpoch: r.state.sessionEpoch, commandSequence });
       }
       return { jointCheckpointId, token: prepared.token, members };
     } catch (error) {
@@ -319,7 +323,8 @@ export function createConnectomeRegistry({ identities = [], capacity = createCap
     try {
       for (const [index, member] of prepared.members.entries()) {
         const r = records[index], state = r.state;
-        if (!r.backend || !r.owner || r.checkpointId !== member.parentId || state?.status !== 'paused' || state.sessionEpoch !== member.sessionEpoch) throw new Error('A shared restore participant changed before commit');
+        if (!r.backend || !r.owner || r.checkpointId !== member.parentId || state?.status !== 'paused'
+          || state.sessionEpoch !== member.sessionEpoch || r.sequence !== member.commandSequence) throw new Error('A shared restore participant changed before commit');
       }
       invalidateCommands(records.map(r => r.individualId));
       mutationStarted = true;

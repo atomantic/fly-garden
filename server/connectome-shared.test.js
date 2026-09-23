@@ -130,6 +130,26 @@ test('shared session exposes fixed five-substep barriers, rest and withdrawal wi
   await service.close(); assert.equal(service.view().sessions.length, 0);
 });
 
+test('shared restore rejects a command sequence change during worker preparation', async t => {
+  let cancelled = null, registry;
+  const restoreMembers = [
+    { individualId: 'shared-a', parentId: null, checkpoint: createSparseLif(graph(datasets[0]), { dataset: datasets[0], individualId: 'shared-a' }).checkpoint() },
+    { individualId: 'shared-b', parentId: null, checkpoint: createSparseLif(graph(datasets[1]), { dataset: datasets[1], individualId: 'shared-b' }).checkpoint() }
+  ];
+  registry = createConnectomeRegistry({ identities, capacity: createCapacityPolicy({ settings }),
+    getResources: async ({ dataset }) => ({ aggregateMemoryBytes: 100, availableMemoryBytes: 10000,
+      measurement: { backend: 'connectome', dataset, includesCheckpointSerialization: true, incrementalMemoryBytes: 100 } }),
+    persistCheckpoint: async () => ({ checkpointId: randomUUID() }),
+    readJointCheckpoint: () => ({ payload: { members: restoreMembers } }),
+    prepareJointRestore: () => ({ token: 'sequence-token', members: restoreMembers }),
+    commitJointRestore: () => { throw new Error('not used'); }, cancelJointRestore: token => { cancelled = token; },
+    openBackend: async (_directory, options) => { const backend = backendFor(options); if (options.individualId !== 'shared-a') return backend; return { ...backend, prepareRestore: async value => { registry.invalidateCommands(['shared-a']); return backend.prepareRestore(value); } }; } });
+  t.after(() => registry.close());
+  await Promise.all([registry.load('shared-a'), registry.load('shared-b')]);
+  await assert.rejects(registry.prepareSharedRestore('joint', { 'shared-a': 0, 'shared-b': 0 }), /changed during preparation/);
+  assert.equal(cancelled, 'sequence-token');
+});
+
 test('restore reserves membership before an awaited preparation blocks a concurrent join', async () => {
   const states = new Map();
   for (const [index, id] of ['one', 'two'].entries()) states.set(id, { source: 'connectome', individualId: id, dataset: datasets[index], sessionEpoch: `epoch-${id}`, commandSequence: 0,
