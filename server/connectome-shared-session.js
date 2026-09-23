@@ -245,17 +245,23 @@ export function createConnectomeSharedSession({ snapshot, control, barrier, inva
         || state.capabilities?.chemistry !== false || state.capabilities?.embodiment !== false) fail('Every shared restore member must be an explicitly paused healthy resident.');
     }
     if (expected.some(member => !body.members.some(value => value.individualId === member.individualId))) fail('Shared research restore requires the complete saved membership.');
-    const prepared = await prepareRestore(body.jointCheckpointId);
-    await commitRestore(prepared);
-    const participants = expected.map(member => {
-      const state = stateFor(member.individualId);
-      return { individualId: member.individualId, sessionEpoch: state.sessionEpoch, mode: member.mode };
-    });
-    const session = { sharedId: randomUUID(), worldEpoch: randomUUID(), tick: joint.payload.tick, status: 'paused', reason: 'Explicit shared restore is paused.', commandSequence: 0,
-      pressureRequested: false, participants, events: [{ type: 'restore', tick: joint.payload.tick, jointCheckpointId: joint.jointCheckpointId }] };
-    sessions.set(session.sharedId, session);
-    for (const member of participants) owners.set(member.individualId, session.sharedId);
-    return bundle(session);
+    const memberIds = body.members.map(member => member.individualId);
+    for (const id of memberIds) joining.add(id);
+    try {
+      const prepared = await prepareRestore(body.jointCheckpointId);
+      await commitRestore(prepared);
+      const participants = expected.map(member => {
+        const state = stateFor(member.individualId);
+        return { individualId: member.individualId, sessionEpoch: state.sessionEpoch, mode: member.mode };
+      });
+      const session = { sharedId: randomUUID(), worldEpoch: randomUUID(), tick: joint.payload.tick, status: 'paused', reason: 'Explicit shared restore is paused.', commandSequence: 0,
+        pressureRequested: false, participants, events: [{ type: 'restore', tick: joint.payload.tick, jointCheckpointId: joint.jointCheckpointId }] };
+      sessions.set(session.sharedId, session);
+      for (const member of participants) owners.set(member.individualId, session.sharedId);
+      return bundle(session);
+    } finally {
+      for (const id of memberIds) joining.delete(id);
+    }
   }
   function checkpoints() {
     required();

@@ -130,6 +130,25 @@ test('shared session exposes fixed five-substep barriers, rest and withdrawal wi
   await service.close(); assert.equal(service.view().sessions.length, 0);
 });
 
+test('restore reserves membership before an awaited preparation blocks a concurrent join', async () => {
+  const states = new Map();
+  for (const [index, id] of ['one', 'two'].entries()) states.set(id, { source: 'connectome', individualId: id, dataset: datasets[index], sessionEpoch: `epoch-${id}`, commandSequence: 0,
+    resident: true, status: 'paused', neural: { tick: 0, simTimeMs: 0 }, graphSha256: `${index}`.repeat(64), model: { id: datasets[index] },
+    capabilities: { sensoryMotor: false, learning: false, chemistry: false, embodiment: false } });
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  const service = createConnectomeSharedSession({ snapshot: id => structuredClone(states.get(id)), control: async () => {}, barrier: async () => [],
+    readJointCheckpoint: () => ({ jointCheckpointId: 'joint', payload: { tick: 0, members: [{ individualId: 'one', mode: 'active' }, { individualId: 'two', mode: 'active' }] } }),
+    prepareRestore: async () => { await gate; return { members: [] }; }, commitRestore: async () => {} });
+  const members = ['one', 'two'].map(id => ({ protocolVersion: 1, individualId: id, sessionEpoch: states.get(id).sessionEpoch, commandSequence: 0 }));
+  const restoring = service.restore({ protocolVersion: 1, jointCheckpointId: 'joint', members });
+  await Promise.resolve();
+  await assert.rejects(service.join({ protocolVersion: 1, members }), /Stale or unavailable/);
+  release();
+  assert.equal((await restoring).shared.status, 'paused');
+  await service.close();
+});
+
 test('join refreshes participant epochs after queued lifecycle work before claiming ownership', async () => {
   const states = new Map();
   for (const [index, id] of ['one', 'two'].entries()) states.set(id, { source: 'connectome', individualId: id, dataset: datasets[index], sessionEpoch: `old-${id}`, commandSequence: 0,
