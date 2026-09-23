@@ -23,6 +23,8 @@ Encounter enablement/contact state is session-only and must not be automatically
 Six module tests cover no initial/disabled doses, overlapping contacts, long dwell habituation, withdrawal without refunds, repeated-entry recovery and aggregate caps, rest/epoch revocation, recipient isolation, failed durable admission and stale clock/sequence rejection. They use the actual shared stimulus policy, not a second budget implementation.
 
 
+The fixture environment controls render the latest twelve encounter transitions for the selected individual and session, with the current synthetic reservation budget and shared-policy cooldown. This is a simulation-time event trail, not a chemical concentration curve. A checkpoint retains spent reservations and cancels transient delivery, but does not restore the session event trail; the UI keeps persistent learning explicitly unavailable.
+
 ## Registry integration
 
 `encounterDynamicsControl(id, enabled)` and `encounterDynamicsSnapshot(id)` expose scoped control/status; individual snapshots also contain `encounterDynamics`. Enable requires an attached, running visual controller and remains bound to its current environment epoch. Disable never requires an active pulse. Every lifecycle command, controller takeover, stale observation, home, restore or unload revokes enablement. Starting again does not silently rearm encounters.
