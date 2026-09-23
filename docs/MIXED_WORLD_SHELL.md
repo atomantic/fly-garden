@@ -70,7 +70,7 @@ The existing Playwright accessibility suite has not been extended to this panel.
 
 This shell deliberately exposes no adapter authority. Before any full-connectome participant is drawn as a body, or before any sensory input reaches it, a later slice must provide all of the following:
 
-1. **Adapter.** A declared, versioned sensory/motor adapter with an enumerated, bounded input list and a documented readout. The visual causal campaign so far is a recorded negative ([visual causal validation](VISUAL_CAUSAL_VALIDATION.md)).
+1. **Adapter.** A declared, versioned sensory/motor adapter with an enumerated, bounded input list and a documented readout. The [shared environment adapter contract](SHARED_ENVIRONMENT_ADAPTER.md) now defines the boundary, but full-connectome workers still cannot declare any channel through it, and it has no documented full-graph readout. The visual causal campaign so far is a recorded negative ([visual causal validation](VISUAL_CAUSAL_VALIDATION.md)).
 2. **Coordinator.** A heterogeneous cross-catalog coordinator (#108) that owns one mixed membership, one world epoch and explicit per-backend substeps, instead of this shell's side-by-side display of independent sessions.
 3. **Contract version.** A new presentation contract version that adds a declared-adapter body kind, with a pose produced by that adapter, never by the renderer.
 4. **Measurements.** Active-pair resource and lag measurements (#103), and causal evidence that adapter input changes output, before any embodiment or behaviour claim.
