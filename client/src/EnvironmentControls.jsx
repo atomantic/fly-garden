@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { encounterTimelineModel } from './encounter-timeline.js';
 
 export default function EnvironmentControls({ state, disabled = false, onMutation = () => {} }) {
   const [busy, setBusy] = useState(false), [error, setError] = useState('');
@@ -12,6 +13,7 @@ export default function EnvironmentControls({ state, disabled = false, onMutatio
   const encounterReady = state?.status === 'running' && (shared
     ? shared.status === 'running' && Boolean(member) && member.mode !== 'resting'
     : attached);
+  const timeline = encounterTimelineModel(state);
   const unavailable = disabled || Boolean(state?.externalOwner) || !state?.persistence?.resident;
   async function change(action) {
     const garden = action === 'enable-encounters' || action === 'disable-encounters';
@@ -59,6 +61,34 @@ export default function EnvironmentControls({ state, disabled = false, onMutatio
           {flower.id}: {flower.effectId}; center ({flower.x.toFixed(2)}, {flower.z.toFixed(2)})
         </li>)}</ul>
       </details>
+      {timeline && <div className="encounter-timeline">
+        <h5>Recent synthetic encounter activity</h5>
+        {timeline.available ? <>
+          <p>Simulation time only. This per-individual, per-session trail records policy events; it is not a chemical concentration curve. Checkpoints retain spent reservations and cancel transient exposure, but do not restore this event trail.</p>
+          <p><strong>Active synthetic input:</strong> {timeline.activeUnavailable
+            ? 'unavailable from this encounter snapshot.'
+            : timeline.activePulse
+              ? `${timeline.activePulse.label}; ${timeline.activePulse.intensity} synthetic current per mapped neuron until t = ${timeline.activePulse.activeUntilMs} ms.`
+              : 'none.'}</p>
+          <p><strong>Shared policy budget:</strong> {timeline.budget
+            ? `${timeline.budget.reservedDose} of ${timeline.budget.maxDose} synthetic intensity-ms reserved; ${timeline.budget.reservedDurationMs} of ${timeline.budget.maxDurationMs} simulation ms in the ${timeline.budget.windowMs} ms window.`
+            : 'unavailable from this encounter snapshot.'}</p>
+          <p><strong>Longest shared-policy cooldown remaining:</strong> {timeline.recoveryRemainingMs === null
+            ? 'unavailable from this encounter snapshot.'
+            : `${timeline.recoveryRemainingMs} simulation ms. This is an engineering limit, not receptor kinetics.`}</p>
+          <p><strong>Persistent learning:</strong> {timeline.persistentLearning}</p>
+          {timeline.events.length
+            ? <ol aria-label="Recent synthetic encounter events">
+              {timeline.events.map(row => <li key={row.key}>
+                <strong>t = {row.simTimeMs} ms:</strong> {row.message}
+                {row.effect && <> {row.effect.label}{row.admitted && ` · ${row.effect.intensity} synthetic current per mapped neuron for at most ${row.effect.durationMs} simulation ms.`}</>}
+              </li>)}
+            </ol>
+            : <p>No encounter events are recorded for this session.</p>}
+          {timeline.omittedOlderEvents > 0 && <p>Showing the twelve most recent valid events.</p>}
+          {timeline.unavailableEventCount > 0 && <p>{timeline.unavailableEventCount} event record{timeline.unavailableEventCount === 1 ? '' : 's'} unavailable and omitted.</p>}
+        </> : <p role="status">{timeline.reason}</p>}
+      </div>}
     </div>
     {error && <p role="alert">{error}</p>}
   </section>;
