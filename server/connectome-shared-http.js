@@ -13,7 +13,7 @@ export function createConnectomeSharedHttp({ service, readBody, json, checkOrigi
     const checkpoints = url.pathname === '/api/connectomes/shared/checkpoints';
     const join = url.pathname === '/api/connectomes/shared/join';
     const restore = url.pathname === '/api/connectomes/shared/restore';
-    const match = /^\/api\/connectomes\/shared\/([0-9a-f-]+)(?:\/(control|barrier|member))?$/.exec(url.pathname);
+    const match = /^\/api\/connectomes\/shared\/([0-9a-f-]+)(?:\/(control|barrier|member|measure))?$/.exec(url.pathname);
     if (!collection && !checkpoints && !join && !restore && !match) fail('Shared research API route not found.', 404);
     if (request.method === 'GET' && collection) { json(response, 200, service.view()); return true; }
     if (request.method === 'GET' && checkpoints) { json(response, 200, { checkpoints: await service.checkpoints() }); return true; }
@@ -31,6 +31,8 @@ export function createConnectomeSharedHttp({ service, readBody, json, checkOrigi
         json(response, 200, await service.control(match[1], body));
       } else if (match?.[2] === 'barrier') {
         json(response, 200, await service.advance(match[1], body));
+      } else if (match?.[2] === 'measure') {
+        json(response, 200, await service.measure(match[1], body));
       } else if (match?.[2] === 'member') {
         json(response, 200, await service.member(match[1], body));
       } else fail('Shared research API route not found.', 404);

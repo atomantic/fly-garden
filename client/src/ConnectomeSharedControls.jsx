@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
 import { restoreSavedCheckpoint, savedRestoreMemberIds } from './connectome-shared-restore.js';
+import { measurementEnvelope } from './connectome-shared-telemetry.js';
+import ConnectomeSharedTelemetry from './ConnectomeSharedTelemetry.jsx';
 
 const LABELS = { 'male-cns:v1.0': 'MaleCNS v1.0', 'banc:v888': 'BANC v888' };
 async function request(path, body) {
@@ -64,6 +66,20 @@ export default function ConnectomeSharedControls({ individuals = [] }) {
     if (!shared) return;
     act(`/api/connectomes/shared/${shared.sharedId}/barrier`, { protocolVersion: 1, sharedId: shared.sharedId, worldEpoch: shared.worldEpoch, sequence: shared.commandSequence + 1, action: 'barrier' });
   }
+  function measure() {
+    if (!shared) return;
+    act(`/api/connectomes/shared/${shared.sharedId}/measure`, measurementEnvelope(shared));
+  }
+  async function refresh() {
+    if (!shared || busy) return;
+    setBusy(true); setError('');
+    try {
+      const value = await request(`/api/connectomes/shared/${shared.sharedId}`);
+      setShared(value.shared);
+      setView(old => ({ ...old, sessions: [...(old?.sessions ?? []).filter(item => item.sharedId !== value.shared.sharedId), value.shared] }));
+    } catch (reason) { setError(reason.message); }
+    finally { setBusy(false); }
+  }
   function member(member, action) {
     if (!shared) return;
     act(`/api/connectomes/shared/${shared.sharedId}/member`, { protocolVersion: 1, sharedId: shared.sharedId, worldEpoch: shared.worldEpoch, sequence: shared.commandSequence + 1, individualId: member.individualId, action });
@@ -109,6 +125,7 @@ export default function ConnectomeSharedControls({ individuals = [] }) {
       <fieldset disabled={busy}><legend>Per-member quiet state</legend>{shared.participants.map(item => <p key={item.individualId} style={{ overflowWrap: 'anywhere' }}>{LABELS[item.dataset] ?? item.dataset} · {item.individualId} · {item.mode} · {item.status}
         <button disabled={shared.status === 'resting' && item.mode === 'active'} onClick={() => member(item, item.mode === 'resting' ? 'resume' : 'rest')}>{item.mode === 'resting' ? 'Resume member' : 'Rest member'}</button>
         <button disabled={shared.participants.length < 3} onClick={() => member(item, 'withdraw')}>Withdraw member</button></p>)}</fieldset>
+      <ConnectomeSharedTelemetry shared={shared} busy={busy} onRefresh={refresh} onMeasure={measure} />
     </>}
     {error && <p role="alert">{error}</p>}
   </section>;
