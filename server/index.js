@@ -16,7 +16,7 @@ import { createOllamaLanguageProvider } from './ollama-language-provider.js';
 import { createManagedVisitorBridge } from './managed-visitor-bridge.js';
 import { visitorConfigurationOf } from './managed-visitor-transport.js';
 import { createSharedHttp } from './shared-http.js';
-import { createSharedCreativeSessions } from './shared-creative-session.js';
+import { createSharedCreativeSessions, fixtureActionBatch } from './shared-creative-session.js';
 import { createSharedCreativeHttp } from './shared-creative-http.js';
 import { createAtlasHttp } from './atlas-http.js';
 import { createAtlasConnectivityHttp } from './atlas-connectivity-http.js';
@@ -121,7 +121,8 @@ export function createServer({ runtime = createRuntime(), identities = null, dis
   const sharedHttp = createSharedHttp({ identities, snapshot, sequenceFor,
     consumeSequences: members => { for (const member of members) sequences.set(member.individualId, member.sequence); },
     afterTransition: (ids, action) => {
-      if (action !== 'save') sharedCreative.invalidateMembers(ids);
+      // Every lifecycle transition, including a checkpoint save, ends shared capture at a recorded boundary.
+      sharedCreative.invalidateMembers(ids, action);
       for (const id of ids) {
         if (action !== 'save') language?.lifecycle(id);
         creativeSessions.synchronize(stateFor(id));
@@ -131,7 +132,11 @@ export function createServer({ runtime = createRuntime(), identities = null, dis
         for (const source of activeRecordings.values()) if (ids.includes(source.individualId)) source.sessionId = null;
       }
     },
-    afterFrames: (traces, id) => { sharedCreative.capture(identities.sharedSnapshot(id), traces); },
+    // Recorded provenance avoids per-frame identity snapshots (O(members²)); save/restore/join end capture instead.
+    afterFrames: (traces, id) => {
+      const shared = identities.sharedSnapshot(id);
+      sharedCreative.capture(shared, declared => fixtureActionBatch(shared, traces, individualId => declared.get(individualId)));
+    },
   });
   const sampleRecordingHttp = createConnectomeRecordingHttp({service:sampleRecordings,readBody,json,checkOrigin});
   const sharedCreativeHttp = createSharedCreativeHttp({ identities, captures: sharedCreative, readBody, json });

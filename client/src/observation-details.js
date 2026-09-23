@@ -29,7 +29,7 @@ export function relatedObservations(state, event, artifact, language) {
   const garden = state.encounterDynamics;
   const chemistry = same(garden) ? (garden.events ?? []).filter(e => e.simTimeMs === time) : [];
   const actions = (artifact?.source?.actions ?? []).filter(a => same(a) && a.simulationTimeMs === time);
-  const actionIds = new Set(actions.map(a => a.id));
+  const actionIds = new Set(actions.map(a => a.sourceActionId ?? a.id));
   const artifacts = (artifact?.events ?? []).filter(e => same(e) && actionIds.has(e.sourceActionId));
   const interpretations = (language?.events ?? []).filter(e => same(e) && e.evidence?.startMs <= time && e.evidence?.endMs >= time);
   return { scope, event, timeWindow: {startMs:time,endMs:time}, sensoryMotor, chemistry, actions, artifacts, interpretations };

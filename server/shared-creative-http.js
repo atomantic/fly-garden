@@ -1,3 +1,4 @@
+import { fixtureTraceProvenance } from './shared-creative-session.js';
 /** Artifact operations have their own sequence and cannot command neural lifecycles. */
 export function createSharedCreativeHttp({ identities, captures, readBody, json }) {
   const shared = id => { try { return identities?.sharedSnapshot(id) ?? null; } catch { return null; } };
@@ -24,8 +25,9 @@ export function createSharedCreativeHttp({ identities, captures, readBody, json 
       const body = await readBody(request);
       // The world may pause, separate or advance while a request body arrives.
       const current = shared(id);
-      const states = body.action === 'start' && current ? current.participants.map(p => identities.snapshot(p.individualId)) : [];
-      json(response, 200, captures.command(id, body, current, states));
+      // Garden participants are fixtures; a research participant would need a declared adapter, never an inferred one.
+      const provenance = body?.action === 'start' && current ? current.participants.map(p => fixtureTraceProvenance(identities.snapshot(p.individualId))) : [];
+      json(response, 200, captures.command(id, body, current, provenance));
     } catch (error) { json(response, error.statusCode ?? 500, { error: error.statusCode ? error.message : 'Shared artifact operation failed; previous captured actions are preserved.' }); }
     return true;
   };

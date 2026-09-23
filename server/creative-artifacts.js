@@ -1,7 +1,23 @@
 /** Original procedural movement-derived artifacts. No learning or stimulation capability. */
 import { deflateSync } from 'node:zlib';
+import { SHARED_ACTION_TRACE, validateTraceProvenance, sameTraceProvenance } from '../shared/shared-action-trace.js';
 
 export const CREATIVE_LIMITS = Object.freeze({ actions: 1024, flowers: 32, participants: 64, durationMs: 3600000, outputBytes: 2 * 1024 * 1024, canvas: 256 });
+export const SHARED_SOURCE_KIND = 'shared-action-derived-source';
+/** Why a shared capture ended at its last complete batch. Only an explicit `stop` is complete. */
+export const SHARED_BOUNDARY_CAUSES = Object.freeze(['stop', 'pause', 'rest', 'withdraw', 'separate', 'membership', 'checkpoint', 'restore',
+  'epoch-change', 'invalid-batch', 'provenance-mismatch', 'bound']);
+const SHARED_CLAIM = 'Movement-derived or declared adapter-derived mapping of attributed actions onto a human arrangement; no learned creativity, intention, preference or subjective-expression claim.';
+function sharedDisclosures(source) {
+  const types = new Set(source.participants.map(p => p.sourceType));
+  return [
+    `Human arrangement ${source.arrangement.humanContributionId} chose flower positions, notes and pollen color; participants supplied only attributed actions.`,
+    'No generated narration or language interpretation is embedded; this artifact is not the fly\'s voice.',
+    'Capture and export send no reward, stimulation or command to any participant; silence and rest are valid.',
+    ...(types.has('fixture') ? ['Fixture actions come from an engineered shared controller on a synthetic 32-neuron circuit, not a biological motor readout.'] : []),
+    ...(types.has('connectome') ? ['Research actions were declared by a separately configured adapter; no full-connectome body or motor stream is inferred.'] : []),
+  ];
+}
 const invalid = () => { throw new Error('Invalid or incompatible movement-artifact source'); };
 const keys = (v, names) => v && typeof v === 'object' && !Array.isArray(v) && Object.keys(v).length === names.length && names.every(k => Object.hasOwn(v, k));
 const text = v => typeof v === 'string' && /^[A-Za-z0-9_.:-]{1,128}$/.test(v);
@@ -10,7 +26,78 @@ const integer = (v, min, max) => Number.isInteger(v) && number(v, min, max);
 const color = v => typeof v === 'string' && /^#[0-9a-fA-F]{6}$/.test(v);
 const exact = (v, names) => { if (!keys(v, names)) invalid(); };
 
+function validateArrangement(arrangement) {
+  exact(arrangement, ['id', 'humanContributionId', 'mappingVersion', 'flowers', 'pollen']);
+  if (![arrangement.id, arrangement.humanContributionId].every(text) || arrangement.mappingVersion !== 'flower-pollen-v1'
+    || !Array.isArray(arrangement.flowers) || arrangement.flowers.length > CREATIVE_LIMITS.flowers) invalid();
+  const ids = new Set();
+  for (const f of arrangement.flowers) {
+    exact(f, ['id', 'x', 'y', 'radius', 'midiNote', 'velocity', 'durationMs']);
+    if (!text(f.id) || ids.has(f.id) || ![f.x, f.y].every(v => number(v, 0, 1)) || !number(f.radius, 0.01, 0.25)
+      || !integer(f.midiNote, 0, 127) || !integer(f.velocity, 1, 100) || !integer(f.durationMs, 20, 2000)) invalid();
+    ids.add(f.id);
+  }
+  exact(arrangement.pollen, ['enabled', 'color', 'radius']);
+  if (typeof arrangement.pollen.enabled !== 'boolean' || !color(arrangement.pollen.color) || !integer(arrangement.pollen.radius, 1, 8)) invalid();
+}
+const point = v => { exact(v, ['x', 'y']); if (![v.x, v.y].every(n => number(n, 0, 1))) invalid(); };
+const samePoint = (a, b) => a.x === b.x && a.y === b.y;
+const safeTime = v => Number.isSafeInteger(v) && v >= 0;
+
+/** Schema 2: complete per-recipient batches from the versioned shared action-trace contract.
+ * Batch k holds exactly one action per declared participant, in participant order, at world
+ * tick startTick + k + 1. A recorded boundary names why capture ended at its last complete batch. */
+function validateSharedSource(input) {
+  exact(input, ['schemaVersion', 'kind', 'traceVersion', 'sessionId', 'worldId', 'worldEpoch', 'startTick', 'participants', 'arrangement', 'capture', 'actions']);
+  if (input.kind !== SHARED_SOURCE_KIND || input.traceVersion !== SHARED_ACTION_TRACE.version
+    || ![input.sessionId, input.worldId, input.worldEpoch].every(text) || !safeTime(input.startTick)
+    || !Array.isArray(input.participants) || input.participants.length < 1 || input.participants.length > CREATIVE_LIMITS.participants) invalid();
+  const participants = new Map();
+  for (const p of input.participants) {
+    if (!p || typeof p !== 'object' || Array.isArray(p)) invalid();
+    const { startPosition, ...provenance } = p;
+    try { validateTraceProvenance(provenance); } catch { invalid(); }
+    point(startPosition);
+    if (participants.has(p.individualId)) invalid();
+    participants.set(p.individualId, p);
+  }
+  validateArrangement(input.arrangement);
+  const n = input.participants.length, batches = input.actions?.length / n;
+  if (!Array.isArray(input.actions) || input.actions.length > CREATIVE_LIMITS.actions || !Number.isInteger(batches)) invalid();
+  exact(input.capture, ['complete', 'reason', 'boundary']);
+  const { complete, reason, boundary } = input.capture;
+  if (typeof complete !== 'boolean' || !(reason === null || (typeof reason === 'string' && reason.length <= 256)) || (complete && reason !== null)) invalid();
+  if (boundary !== null) {
+    exact(boundary, ['cause', 'worldEpoch', 'tick']);
+    if (!SHARED_BOUNDARY_CAUSES.includes(boundary.cause) || boundary.worldEpoch !== input.worldEpoch || boundary.tick !== input.startTick + batches) invalid();
+  }
+  if (complete !== (boundary?.cause === 'stop')) invalid();
+  const sourceActions = new Set(), previous = new Map();
+  let worldTime = null, wallTime = null;
+  for (const [index, a] of input.actions.entries()) {
+    const batch = Math.floor(index / n), p = input.participants[index % n];
+    exact(a, ['sourceActionId', 'individualId', 'sessionId', 'worldId', 'worldEpoch', 'tick', 'sourceType', 'derivation', 'adapterVersion',
+      'dataset', 'modelVersion', 'checkpointLineage', 'simulationTimeMs', 'worldTimeMs', 'wallTimeMs', 'kind', 'from', 'to']);
+    if (a.individualId !== p.individualId || !sameTraceProvenance(a, p) || a.worldId !== input.worldId || a.worldEpoch !== input.worldEpoch
+      || a.tick !== input.startTick + batch + 1 || !text(a.sourceActionId) || sourceActions.has(a.sourceActionId)
+      || !SHARED_ACTION_TRACE.actionKinds.includes(a.kind) || ![a.simulationTimeMs, a.worldTimeMs, a.wallTimeMs].every(safeTime)) invalid();
+    // Every action in one batch shares its world and wall clocks; batches never run backward.
+    if (index % n === 0) {
+      if (worldTime !== null && (a.worldTimeMs <= worldTime || a.wallTimeMs < wallTime)) invalid();
+      worldTime = a.worldTimeMs; wallTime = a.wallTimeMs;
+    } else if (a.worldTimeMs !== worldTime || a.wallTimeMs !== wallTime) invalid();
+    if (a.worldTimeMs - input.actions[0].worldTimeMs > CREATIVE_LIMITS.durationMs) invalid();
+    point(a.from); point(a.to);
+    const last = previous.get(a.individualId);
+    if (!samePoint(a.from, last ? last.to : p.startPosition) || (last && a.simulationTimeMs <= last.simulationTimeMs)
+      || (a.kind === 'rest' && !samePoint(a.from, a.to))) invalid();
+    sourceActions.add(a.sourceActionId); previous.set(a.individualId, a);
+  }
+  return structuredClone(input);
+}
+
 export function validateCreativeSource(input) {
+  if (input?.schemaVersion === 2) return validateSharedSource(input);
   exact(input, ['schemaVersion', 'kind', 'sessionId', 'worldId', 'modelVersion', 'checkpointId', 'participantIds', 'arrangement', 'actions', ...(Object.hasOwn(input ?? {}, 'capture') ? ['capture'] : []), ...(Object.hasOwn(input ?? {}, 'participantProvenance') ? ['participantProvenance'] : [])]);
   if (input.capture !== undefined) {
     exact(input.capture, ['complete', 'reason']);
@@ -33,19 +120,7 @@ export function validateCreativeSource(input) {
       seen.add(p.individualId);
     }
   }
-  const arrangement = input.arrangement;
-  exact(arrangement, ['id', 'humanContributionId', 'mappingVersion', 'flowers', 'pollen']);
-  if (![arrangement.id, arrangement.humanContributionId].every(text) || arrangement.mappingVersion !== 'flower-pollen-v1'
-    || !Array.isArray(arrangement.flowers) || arrangement.flowers.length > CREATIVE_LIMITS.flowers) invalid();
-  const ids = new Set();
-  for (const f of arrangement.flowers) {
-    exact(f, ['id', 'x', 'y', 'radius', 'midiNote', 'velocity', 'durationMs']);
-    if (!text(f.id) || ids.has(f.id) || ![f.x, f.y].every(v => number(v, 0, 1)) || !number(f.radius, 0.01, 0.25)
-      || !integer(f.midiNote, 0, 127) || !integer(f.velocity, 1, 100) || !integer(f.durationMs, 20, 2000)) invalid();
-    ids.add(f.id);
-  }
-  exact(arrangement.pollen, ['enabled', 'color', 'radius']);
-  if (typeof arrangement.pollen.enabled !== 'boolean' || !color(arrangement.pollen.color) || !integer(arrangement.pollen.radius, 1, 8)) invalid();
+  validateArrangement(input.arrangement);
   if (!Array.isArray(input.actions) || input.actions.length > CREATIVE_LIMITS.actions) invalid();
   const actionIds = new Set(), previous = new Map();
   let worldTime = -1;
@@ -67,24 +142,28 @@ export function validateCreativeSource(input) {
 }
 
 export function deriveCreativeEvents(input) {
-  const source = validateCreativeSource(input), events = [];
+  const source = validateCreativeSource(input), events = [], shared = source.schemaVersion === 2;
   const { arrangement } = source;
   const add = event => { if (events.length >= 8192) throw new Error('Artifact event limit exceeded'); events.push(event); };
   for (const action of source.actions) {
-    if (action.kind !== 'move' || (action.from.x === action.to.x && action.from.y === action.to.y)) continue;
-    const base = { sourceActionId: action.id, individualId: action.individualId, sessionId: action.sessionId,
-      worldId: action.worldId, simulationTimeMs: action.simulationTimeMs, worldTimeMs: action.worldTimeMs,
-      wallTimeMs: action.wallTimeMs, controllerVersion: action.controllerVersion, arrangementId: arrangement.id,
+    if (action.kind !== 'move' || samePoint(action.from, action.to)) continue;
+    const actionId = shared ? action.sourceActionId : action.id;
+    const base = { sourceActionId: actionId, individualId: action.individualId, sessionId: action.sessionId, worldId: action.worldId,
+      ...(shared ? { worldEpoch: action.worldEpoch, tick: action.tick, sourceType: action.sourceType, derivation: action.derivation } : {}),
+      simulationTimeMs: action.simulationTimeMs, worldTimeMs: action.worldTimeMs, wallTimeMs: action.wallTimeMs,
+      ...(shared ? { adapterVersion: action.adapterVersion } : { controllerVersion: action.controllerVersion }), arrangementId: arrangement.id,
       humanContributionId: arrangement.humanContributionId, mappingVersion: arrangement.mappingVersion };
     // A note occurs only on an outside-to-inside endpoint transition, never on residence or rest.
     for (const flower of arrangement.flowers) {
       const inside = p => Math.hypot(p.x - flower.x, p.y - flower.y) <= flower.radius;
-      if (!inside(action.from) && inside(action.to)) add({ ...base, id: `${action.id}:note:${flower.id}`, kind: 'note', flowerId: flower.id,
+      if (!inside(action.from) && inside(action.to)) add({ ...base, id: `${actionId}:note:${flower.id}`, kind: 'note', flowerId: flower.id,
         midiNote: flower.midiNote, velocity: flower.velocity, durationMs: flower.durationMs });
     }
-    if (arrangement.pollen.enabled) add({ ...base, id: `${action.id}:mark`, kind: 'mark', from: action.from, to: action.to,
+    if (arrangement.pollen.enabled) add({ ...base, id: `${actionId}:mark`, kind: 'mark', from: action.from, to: action.to,
       color: arrangement.pollen.color, radius: arrangement.pollen.radius });
   }
+  if (shared) return { schemaVersion: 2, kind: 'shared-action-derived-artifact', claim: SHARED_CLAIM,
+    derivations: [...new Set(source.participants.map(p => p.derivation))].sort(), disclosures: sharedDisclosures(source), source, events };
   return { schemaVersion: 1, kind: 'movement-derived-artifact', claim: 'Movement-derived; no learned-choice or biological creativity claim.', source, events };
 }
 const bounded = bytes => { if (bytes.length > CREATIVE_LIMITS.outputBytes) throw new Error('Artifact output byte limit exceeded'); return bytes; };
@@ -94,22 +173,29 @@ export function exportCreativeSVG(input) {
   const artifact = deriveCreativeEvents(input);
   const metadata = JSON.stringify({ ...artifact, events: undefined, source: { ...artifact.source, actions: undefined } })
     .replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
-  const paths = artifact.events.filter(e => e.kind === 'mark').map(e => `<path data-action="${e.sourceActionId}" data-individual="${e.individualId}" d="M${pixel(e.from.x)} ${pixel(e.from.y)} L${pixel(e.to.x)} ${pixel(e.to.y)}" stroke="${e.color}" stroke-width="${e.radius * 2}" stroke-linecap="round"/>`).join('');
+  const paths = artifact.events.filter(e => e.kind === 'mark').map(e => `<path data-action="${e.sourceActionId}" data-individual="${e.individualId}"${
+    artifact.schemaVersion === 2 ? ` data-tick="${e.tick}" data-derivation="${e.derivation}"` : ''} d="M${pixel(e.from.x)} ${pixel(e.from.y)} L${pixel(e.to.x)} ${pixel(e.to.y)}" stroke="${e.color}" stroke-width="${e.radius * 2}" stroke-linecap="round"/>`).join('');
   return bounded(Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256"><metadata>${metadata}</metadata><rect width="256" height="256" fill="#f8f6ee"/><g fill="none">${paths}</g></svg>`));
 }
 function vlq(n) { const result = [n & 127]; while ((n = Math.floor(n / 128))) result.unshift((n & 127) | 128); return Buffer.from(result); }
 function midiChunk(type, data) { const size = Buffer.alloc(4); size.writeUInt32BE(data.length); return Buffer.concat([Buffer.from(type), size, data]); }
 export function exportCreativeMIDI(input) {
-  const artifact = deriveCreativeEvents(input);
-  const metadata = Buffer.from(JSON.stringify({ kind: artifact.kind, sessionId: artifact.source.sessionId, worldId: artifact.source.worldId,
-    modelVersion: artifact.source.modelVersion, checkpointId: artifact.source.checkpointId, arrangement: artifact.source.arrangement, capture: artifact.source.capture ?? null,
-    ...(artifact.source.participantProvenance ? { participantProvenance: artifact.source.participantProvenance } : {}) }));
+  const artifact = deriveCreativeEvents(input), { source } = artifact;
+  // A shared capture may begin long after its world started; its timeline starts at its first action.
+  const origin = source.schemaVersion === 2 ? source.actions[0]?.worldTimeMs ?? 0 : 0;
+  const metadata = Buffer.from(JSON.stringify(source.schemaVersion === 2
+    ? { kind: artifact.kind, claim: artifact.claim, derivations: artifact.derivations, disclosures: artifact.disclosures, sessionId: source.sessionId,
+      worldId: source.worldId, worldEpoch: source.worldEpoch, startTick: source.startTick, timelineOriginWorldTimeMs: origin,
+      participants: source.participants, arrangement: source.arrangement, capture: source.capture }
+    : { kind: artifact.kind, sessionId: source.sessionId, worldId: source.worldId,
+      modelVersion: source.modelVersion, checkpointId: source.checkpointId, arrangement: source.arrangement, capture: source.capture ?? null,
+      ...(source.participantProvenance ? { participantProvenance: source.participantProvenance } : {}) }));
   const timeline = [];
   for (const e of artifact.events.filter(e => e.kind === 'note')) {
-    const attribution = Buffer.from(JSON.stringify(e));
-    timeline.push({ time: e.worldTimeMs, order: 1, bytes: Buffer.concat([Buffer.from([0xff, 0x01]), vlq(attribution.length), attribution]) });
-    timeline.push({ time: e.worldTimeMs, order: 2, bytes: Buffer.from([0x90, e.midiNote, e.velocity]) });
-    timeline.push({ time: e.worldTimeMs + e.durationMs, order: 0, bytes: Buffer.from([0x80, e.midiNote, 0]) });
+    const attribution = Buffer.from(JSON.stringify(e)), time = e.worldTimeMs - origin;
+    timeline.push({ time, order: 1, bytes: Buffer.concat([Buffer.from([0xff, 0x01]), vlq(attribution.length), attribution]) });
+    timeline.push({ time, order: 2, bytes: Buffer.from([0x90, e.midiNote, e.velocity]) });
+    timeline.push({ time: time + e.durationMs, order: 0, bytes: Buffer.from([0x80, e.midiNote, 0]) });
   }
   timeline.sort((a, b) => a.time - b.time || a.order - b.order);
   // 500 ticks/quarter with 500000 microseconds/quarter gives one tick per millisecond.

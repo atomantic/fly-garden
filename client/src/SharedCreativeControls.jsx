@@ -47,16 +47,20 @@ export default function SharedCreativeControls({ shared }) {
   const current = selected && selected === shared?.sharedId;
   return <section aria-label="Joint movement artifacts">
     <h4>Joint music and pollen artwork</h4>
-    <p>Capture accepted actions from all participating fixtures, including silent rest. Notes and marks have no reward feedback. JSON preserves the replay source; capture remains session-local until exported.</p>
-    {shared?.participants?.length > 0 && <p>Capture limit: 1,024 total actions, at most {Math.floor(1024 / shared.participants.length)} complete batches for this population. Reaching the limit preserves the complete captured prefix.</p>}
+    <p>Capture one attributed action per participant for each complete accepted batch, including silent stillness. Fixture actions are movement-derived from an engineered controller; the flower layout, notes and pollen color are a separate human arrangement. Notes and marks send no reward or command to any fly and are not learned creativity or the fly's voice. JSON preserves the replay source; capture remains session-local until exported.</p>
+    <p>Capture starts only while every member is active. Rest, withdrawal, pause, separation, a lost rendering context, a checkpoint save or a restore ends it at a recorded boundary; the participant is not penalized.</p>
+    {shared?.participants?.length > 0 && <p>Capture limit: 1,024 total actions and 2 MiB per export, at most {Math.floor(1024 / shared.participants.length)} complete batches for this population. Reaching the limit preserves the complete captured prefix.</p>}
     <label>Artifact source <select value={selected} disabled={busy} onChange={e => setSelected(e.target.value)}>
       <option value="">Select a shared session</option>{ids.map(id => <option key={id} value={id}>{id}{id === shared?.sharedId ? ' · current world' : ' · retained capture'}</option>)}
     </select></label>
-    <button disabled={busy || !!error || !status || !current || shared.status !== 'running' || !!status.captureId} onClick={() => act('start')}>Start joint movement capture</button>
+    <button disabled={busy || !!error || !status || !current || shared.status !== 'running' || shared.participants?.some(p => p.mode === 'resting') || !!status.captureId} onClick={() => act('start')}>Start joint movement capture</button>
     <button disabled={busy || !status?.active} onClick={() => act('stop')}>Stop joint capture</button>
     <button disabled={busy || !status?.captureId || status.active} onClick={() => act('discard')}>Discard exported joint capture</button>
     {status?.captureId && <><p role="status">{status.active ? 'Capturing' : 'Stopped'} · {status.actionCount} attributed actions · {status.partial ? 'partial' : status.active ? 'active snapshot' : 'complete captured interval'}. {status.reason}</p>
-      <p style={{ overflowWrap: 'anywhere' }}>Participants: {status.participantIds.join(', ')}</p>
+      {status.boundary && <p>Ended at world tick {status.boundary.tick} ({status.boundary.cause}).</p>}
+      <ul aria-label="Capture participant provenance" style={{ overflowWrap: 'anywhere' }}>{status.participants.map(p => <li key={p.individualId}>
+        {p.individualId} · {p.sourceType} · {p.derivation} · {p.dataset.namespace}/{p.dataset.release} {p.modelVersion} · checkpoint {p.checkpointId ?? 'none (unsaved)'}</li>)}</ul>
+      <p style={{ overflowWrap: 'anywhere' }}>Human arrangement: {status.humanContributionId}</p>
       <p>{['json', 'mid', 'svg', 'png'].map(format => <a key={format} style={{ marginRight: 12 }} href={`/api/shared/${selected}/artifacts/export/${format}`} download>Export {format.toUpperCase()}</a>)}</p></>}
     {error && <p role="alert">{error}</p>}
   </section>;

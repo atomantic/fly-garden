@@ -22,12 +22,15 @@ JSON envelope within that bound. Invalid count, duplicates, missing participants
 wrong clocks and stale controls reject the complete operation. Observer views do
 not allocate residents or receive controller credentials.
 
-Creative capture accepts 64 attributed participants while retaining the existing
-1,024-total-action and 2 MiB output limits. It stops before an incomplete batch:
-a 64-member population retains at most 16 complete barriers, a three-member one
-at most 341. Prior artifacts and smaller participant counts remain readable.
-Capture output labels individual/session provenance and the original human
-arrangement; it does not supply reward feedback.
+Creative capture accepts 64 attributed participants through the versioned shared
+action-trace contract ([shared action capture](CREATIVE_ARTIFACTS.md#shared-action-capture))
+while retaining the existing 1,024-total-action and 2 MiB output limits. It stops
+before an incomplete batch: a 64-member population retains at most 16 complete
+barriers, a three-member one at most 341. Rest, withdrawal, pause, separation,
+checkpoint save and restore end capture at a recorded boundary. Prior artifacts and
+smaller participant counts remain readable. Capture output labels individual,
+session, dataset, model, checkpoint, world epoch and tick provenance and the original
+human arrangement; it does not supply reward feedback.
 
 Rest freezes an individual's neural state. A version 1 group keeps the original
 Rest/Home separation and Pause-all semantics unchanged. A version 2 group, chosen
