@@ -93,9 +93,15 @@ export function createConnectomeSharedSession({ snapshot, control, barrier, inva
     for (const id of states.map(state => state.individualId)) joining.add(id);
     try {
       await Promise.all(states.map(state => control(state.individualId, 'pause')));
-      invalidate(states.map(state => state.individualId));
+      const refreshed = states.map(state => stateFor(state.individualId));
+      if (refreshed.some((state, index) => state.dataset !== states[index].dataset || state.graphSha256 !== states[index].graphSha256
+        || !state.resident || !state.neural || state.capabilities?.sensoryMotor !== false
+        || state.capabilities?.learning !== false || state.capabilities?.chemistry !== false || state.capabilities?.embodiment !== false)) {
+        fail('A shared research participant became unavailable while joining.');
+      }
+      invalidate(refreshed.map(state => state.individualId));
       const session = { sharedId: randomUUID(), worldEpoch: randomUUID(), tick: 0, status: 'paused', reason: 'Explicit shared start required.', commandSequence: 0, pressureRequested: false,
-        participants: states.map(state => ({ individualId: state.individualId, sessionEpoch: state.sessionEpoch, mode: 'active' })), events: [{ type: 'join', tick: 0 }] };
+        participants: refreshed.map(state => ({ individualId: state.individualId, sessionEpoch: state.sessionEpoch, mode: 'active' })), events: [{ type: 'join', tick: 0 }] };
       sessions.set(session.sharedId, session);
       for (const member of session.participants) owners.set(member.individualId, session.sharedId);
       return bundle(session);

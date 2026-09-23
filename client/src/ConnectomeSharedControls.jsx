@@ -10,16 +10,26 @@ async function request(path, body) {
 
 export default function ConnectomeSharedControls({ individuals = [] }) {
   const [view, setView] = useState(null), [shared, setShared] = useState(null), [chosen, setChosen] = useState([]);
+  const [selectedSharedId, setSelectedSharedId] = useState('');
   const [busy, setBusy] = useState(false), [error, setError] = useState('');
   useEffect(() => {
     let stopped = false;
-    request('/api/connectomes/shared').then(value => { if (!stopped) { setView(value); setShared(value.sessions?.[0] ?? null); } }).catch(reason => { if (!stopped) setError(reason.message); });
+    request('/api/connectomes/shared').then(value => { if (!stopped) { const first = value.sessions?.[0] ?? null; setView(value); setShared(first); setSelectedSharedId(first?.sharedId ?? ''); } }).catch(reason => { if (!stopped) setError(reason.message); });
     return () => { stopped = true; };
   }, []);
   async function act(path, body) {
     if (busy) return;
     setBusy(true); setError('');
-    try { const value = await request(path, body); const next = value.shared?.status === 'separated' ? null : value.shared ?? null; setShared(next); setView(old => ({ ...old, sessions: next ? [next] : [] })); }
+    try {
+      const value = await request(path, body);
+      const next = value.shared?.status === 'separated' ? null : value.shared ?? null;
+      setShared(next);
+      setSelectedSharedId(next?.sharedId ?? '');
+      setView(old => {
+        const sessions = old?.sessions ?? [];
+        return { ...old, sessions: next ? [...sessions.filter(item => item.sharedId !== next.sharedId), next] : sessions.filter(item => item.sharedId !== shared?.sharedId) };
+      });
+    }
     catch (reason) { setError(reason.message); }
     finally { setBusy(false); }
   }
@@ -29,7 +39,8 @@ export default function ConnectomeSharedControls({ individuals = [] }) {
     try {
       const states = await Promise.all(chosen.map(id => request(`/api/connectomes/${encodeURIComponent(id)}`)));
       const value = await request('/api/connectomes/shared/join', { protocolVersion: 1, members: states.map(state => ({ protocolVersion: 1, individualId: state.individualId, sessionEpoch: state.sessionEpoch, commandSequence: state.commandSequence })) });
-      setShared(value.shared); setView(old => ({ ...old, sessions: [value.shared] })); setChosen([]);
+      setShared(value.shared); setSelectedSharedId(value.shared.sharedId);
+      setView(old => ({ ...old, sessions: [...(old?.sessions ?? []).filter(item => item.sharedId !== value.shared.sharedId), value.shared] })); setChosen([]);
     } catch (reason) { setError(reason.message); }
     finally { setBusy(false); }
   }
@@ -49,6 +60,7 @@ export default function ConnectomeSharedControls({ individuals = [] }) {
   return <section className="lab-shared" aria-label="Full-connectome shared research barrier">
     <h3>Shared full-connectome research barrier</h3>
     <p>Explicitly join 2–64 already loaded MaleCNS/BANC individuals, then start and run one complete 5 ms world barrier. Each active graph advances exactly five 1 ms neural substeps. This path has no retinal input, motor output, body, learning, chemistry or biological sex comparison; it is not the illustrated fixture garden.</p>
+    {view?.sessions?.length > 1 && <label>Shared research session <select value={selectedSharedId} disabled={busy} onChange={event => { const next = view.sessions.find(item => item.sharedId === event.target.value); setSelectedSharedId(event.target.value); setShared(next ?? null); }}>{view.sessions.map(item => <option key={item.sharedId} value={item.sharedId}>{item.status} · tick {item.tick} · {item.participants.length} members</option>)}</select></label>}
     {!view?.available && <p role="status">Full-connectome shared research is unavailable until a verified local catalog and matching paused workers are available.</p>}
     {!shared ? <fieldset disabled={busy || !view?.available}><legend>Select loaded research participants</legend>
       {resident.map(item => <label key={item.individualId} style={{ display: 'block', overflowWrap: 'anywhere' }}><input type="checkbox" checked={chosen.includes(item.individualId)} onChange={event => setChosen(ids => event.target.checked ? [...ids, item.individualId] : ids.filter(id => id !== item.individualId))} />{LABELS[item.dataset] ?? item.dataset} · {item.individualId} · {item.status}</label>)}

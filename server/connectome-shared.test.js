@@ -110,6 +110,21 @@ test('shared session exposes fixed five-substep barriers, rest and withdrawal wi
   await service.close(); assert.equal(service.view().sessions.length, 0);
 });
 
+test('join refreshes participant epochs after queued lifecycle work before claiming ownership', async () => {
+  const states = new Map();
+  for (const [index, id] of ['one', 'two'].entries()) states.set(id, { source: 'connectome', individualId: id, dataset: datasets[index], sessionEpoch: `old-${id}`, commandSequence: 0,
+    resident: true, status: 'paused', neural: { tick: 0, simTimeMs: 0 }, graphSha256: `${index}`.repeat(64), model: { id: datasets[index] },
+    capabilities: { sensoryMotor: false, learning: false, chemistry: false, embodiment: false } });
+  const control = async (id, action) => { const state = states.get(id); if (action === 'pause') state.sessionEpoch = `new-${id}`; state.status = action === 'start' ? 'running' : 'paused'; return structuredClone(state); };
+  const service = createConnectomeSharedSession({ snapshot: id => structuredClone(states.get(id)), control, barrier: async ids => ids.map(id => { const state = states.get(id); state.neural.tick += 5; state.neural.simTimeMs += 5; return structuredClone(state); }) });
+  const joined = await service.join({ protocolVersion: 1, members: ['one', 'two'].map(id => ({ protocolVersion: 1, individualId: id, sessionEpoch: `old-${id}`, commandSequence: 0 })) });
+  assert.deepEqual(joined.shared.participants.map(member => member.sessionEpoch), ['new-one', 'new-two']);
+  await service.control(joined.shared.sharedId, { protocolVersion: 1, sharedId: joined.shared.sharedId, worldEpoch: joined.shared.worldEpoch, sequence: 1, action: 'start' });
+  const barrier = await service.advance(joined.shared.sharedId, { protocolVersion: 1, sharedId: joined.shared.sharedId, worldEpoch: service.snapshot(joined.shared.sharedId).shared.worldEpoch, sequence: 2, action: 'barrier' });
+  assert.equal(barrier.traces.every(trace => trace.substeps === 5), true);
+  await service.close();
+});
+
 async function httpSetup(t) {
   const directory = mkdtempSync(join(tmpdir(), 'shared-connectome-http-'));
   const identities = openIdentityStore(join(directory, 'fixtures'));
