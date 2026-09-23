@@ -27,7 +27,12 @@ export function createConnectomeService({store=null,profiles={},reason=null,capa
     barrier:async(ids,steps,expected)=>{try{return await registry.barrier(ids,steps,expected);}finally{ids.forEach(id=>onLifecycle(id));}},
      checkpoint:request=>boundary(()=>registry.sharedCheckpoint(request.ids,request)),
      readJointCheckpoint:id=>storageBoundarySync(()=>store.readJointCheckpoint(id)),listJoints:()=>storageBoundarySync(()=>store.jointCheckpoints()),
-     prepareRestore:(id,expectedSequences)=>boundary(()=>registry.prepareSharedRestore(id,expectedSequences)),commitRestore:prepared=>boundary(()=>registry.commitSharedRestore(prepared))});
+     prepareRestore:(id,expectedSequences)=>boundary(()=>registry.prepareSharedRestore(id,expectedSequences)),
+     commitRestore:async prepared => {
+       const result = await boundary(()=>registry.commitSharedRestore(prepared));
+       for (const member of prepared.members) onLifecycle(member.individualId);
+       return result;
+     }});
   const required=()=>{if(!registry)fail(reason??'No verified local research catalog is available.');return registry;};
   function withAdmission(operation){const result=admissions.then(operation);admissions=result.catch(()=>{});return result;}
   const population=()=>capacity.snapshot(getResources());

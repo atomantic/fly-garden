@@ -239,12 +239,12 @@ export function createConnectomeRegistry({ identities = [], capacity = createCap
   async function rollbackWorkerRestore(r, member) {
     if (typeof r.backend?.rollbackRestore === 'function') {
       const state = await call(r, 'rollbackRestore', { token: member.restoreToken, checkpoint: member.rollbackCheckpoint }, { allowReserved: true });
-      if (state?.status) { r.state = state; r.lifecycle = state.status; }
+      if (state?.status) { r.state = state; r.lifecycle = member.rollbackLifecycle ?? state.status; }
       return;
     }
     const prepared = await call(r, 'prepareRestore', member.rollbackCheckpoint, { allowReserved: true });
     const state = await call(r, 'commitRestore', prepared.token, { allowReserved: true });
-    r.state = state; r.lifecycle = 'paused';
+    r.state = state; r.lifecycle = member.rollbackLifecycle ?? 'paused';
   }
   async function cancelPreparedRestore(prepared, skipIds = new Set()) {
     if (typeof cancelJointRestore === 'function' && prepared?.token) {
@@ -388,7 +388,7 @@ export function createConnectomeRegistry({ identities = [], capacity = createCap
         if (rollbackCheckpoint?.individualId !== r.individualId || rollbackCheckpoint?.dataset !== r.dataset) throw new Error('A shared restore participant returned an invalid rollback checkpoint');
         const token = await call(r, 'prepareRestore', member.checkpoint, { allowReserved: true });
         if (!token?.token || r.sequence !== commandSequence || r.state?.sessionEpoch !== sessionEpoch) throw new Error('A shared restore participant changed during preparation');
-        members.push({ ...member, restoreToken: token.token, sessionEpoch: r.state.sessionEpoch, commandSequence, rollbackCheckpoint: structuredClone(rollbackCheckpoint) });
+        members.push({ ...member, restoreToken: token.token, sessionEpoch: r.state.sessionEpoch, commandSequence, rollbackCheckpoint: structuredClone(rollbackCheckpoint), rollbackLifecycle: r.lifecycle });
       }
       return { jointCheckpointId, token: prepared.token, members, reservation };
     } catch (error) {
@@ -492,7 +492,7 @@ export function createConnectomeRegistry({ identities = [], capacity = createCap
             } catch (error) {
               if (runtimeCommitted && error?.code !== 'CONNECTOME_DURABILITY_UNCERTAIN') {
                 try {
-                  await rollbackWorkerRestore(r, { restoreToken, rollbackCheckpoint });
+                  await rollbackWorkerRestore(r, { restoreToken, rollbackCheckpoint, rollbackLifecycle:'paused' });
                 } catch { await evict(r, 'Restore rollback failed; durable checkpoint retained for explicit paused recovery.').catch(() => {}); }
               }
               throw error;

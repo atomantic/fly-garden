@@ -224,29 +224,107 @@ test('HTTP shared full-connectome barrier is explicit, fixed-step and owner-scop
   assert.equal((await h.post(`/api/connectomes/${a.individualId}/commands`, { protocolVersion: 1, individualId: a.individualId, sessionEpoch: states[0].sessionEpoch, commandSequence: states[0].commandSequence, action: 'pause', steps: null, checkpointId: null })).status, 409);
 });
 
-test('shared restore rolls runtime back when durable catalog commit fails before selection', async t => {
+test('shared restore restores distinct nonzero live ticks, modes and epochs after a second-worker commit failure', async t => {
   const target = [
     { individualId: 'shared-a', checkpoint: createSparseLif(graph(datasets[0]), { dataset: datasets[0], individualId: 'shared-a' }).checkpoint() },
     { individualId: 'shared-b', checkpoint: createSparseLif(graph(datasets[1]), { dataset: datasets[1], individualId: 'shared-b' }).checkpoint() }
   ];
-  let cancelled = 0;
+  let firstCommits = 0, secondCommits = 0, durableCommits = 0, cancelled = 0;
   const registry = createConnectomeRegistry({ identities, capacity: createCapacityPolicy({ settings }),
     getResources: async ({ dataset }) => ({ aggregateMemoryBytes: 100, availableMemoryBytes: 10000,
       measurement: { backend: 'connectome', dataset, includesCheckpointSerialization: true, incrementalMemoryBytes: 100 } }),
     persistCheckpoint: async () => ({ checkpointId: randomUUID() }),
     readJointCheckpoint: () => ({ jointCheckpointId: 'joint', payload: { members: target } }),
     prepareJointRestore: () => ({ token: 'rollback-token', members: target.map(member => ({ ...member, parentId: null })) }),
-    commitJointRestore: () => { throw new Error('catalog unavailable'); },
+    commitJointRestore: () => { durableCommits++; throw new Error('catalog unavailable'); },
     cancelJointRestore: () => { cancelled++; },
-    openBackend: async (_directory, options) => backendFor(options) });
+    openBackend: async (_directory, options) => {
+      const backend = backendFor(options);
+      if (options.individualId === 'shared-a') return { ...backend, commitRestore: async value => { firstCommits++; return backend.commitRestore(value); } };
+      return { ...backend, commitRestore: async () => { secondCommits++; throw new Error('second commit failed'); } };
+    } });
   t.after(() => registry.close());
   await Promise.all([registry.load('shared-a'), registry.load('shared-b')]);
+  const advance = async (id, steps) => {
+    let state = registry.snapshot(id);
+    await registry.command(id, { protocolVersion: 1, individualId: id, sessionEpoch: state.sessionEpoch, commandSequence: state.commandSequence, action: 'start', steps: null });
+    state = registry.snapshot(id);
+    await registry.command(id, { protocolVersion: 1, individualId: id, sessionEpoch: state.sessionEpoch, commandSequence: state.commandSequence, action: 'advance', steps });
+    await registry.sharedControl(id, 'pause');
+  };
+  await advance('shared-a', 3); await advance('shared-b', 7); await registry.sharedControl('shared-a', 'rest');
+  const before = registry.list();
+  assert.deepEqual(before.map(state => state.neural.tick), [3, 7]);
+  assert.deepEqual(before.map(state => state.status), ['resting', 'paused']);
+  assert.equal(new Set(before.map(state => state.sessionEpoch)).size, 2);
   const prepared = await registry.prepareSharedRestore('joint');
-  await assert.rejects(registry.commitSharedRestore(prepared), /catalog unavailable/);
-  assert.deepEqual(registry.list().map(state => state.neural.tick), [0, 0]);
-  assert.deepEqual(registry.list().map(state => state.status), ['paused', 'paused']);
-  assert.equal(registry.list().every(state => state.resident), true);
-  assert.equal(cancelled, 1);
+  await assert.rejects(registry.commitSharedRestore(prepared), /second commit failed/);
+  const after = registry.list();
+  assert.deepEqual(after.map(state => state.neural.tick), before.map(state => state.neural.tick));
+  assert.deepEqual(after.map(state => state.status), before.map(state => state.status));
+  assert.deepEqual(after.map(state => state.sessionEpoch), before.map(state => state.sessionEpoch));
+  assert.deepEqual(after.map(state => state.checkpointId), before.map(state => state.checkpointId));
+  assert.equal(firstCommits, 1); assert.equal(secondCommits, 1); assert.equal(durableCommits, 0); assert.equal(cancelled, 1);
+});
+
+test('shared restore rejects extra, duplicate and cross-namespace membership before preparation', async () => {
+  const expected = [
+    { individualId: 'one', dataset: datasets[0], graphSha256: '1'.repeat(64), modelId: 'malecns-traced-lif-v1', mode: 'active' },
+    { individualId: 'two', dataset: datasets[1], graphSha256: '2'.repeat(64), modelId: 'banc-proofread-lif-v1', mode: 'active' }
+  ];
+  const states = new Map([
+    ['one', { source: 'connectome', individualId: 'one', dataset: datasets[0], sessionEpoch: 'epoch-one', commandSequence: 0, resident: true, status: 'paused', neural: { tick: 0, simTimeMs: 0 }, graphSha256: '1'.repeat(64), model: { id: 'malecns-traced-lif-v1' }, capabilities: { sensoryMotor: false, learning: false, chemistry: false, embodiment: false } }],
+    ['two', { source: 'connectome', individualId: 'two', dataset: datasets[1], sessionEpoch: 'epoch-two', commandSequence: 0, resident: true, status: 'paused', neural: { tick: 0, simTimeMs: 0 }, graphSha256: '2'.repeat(64), model: { id: 'banc-proofread-lif-v1' }, capabilities: { sensoryMotor: false, learning: false, chemistry: false, embodiment: false } }]
+  ]);
+  const envelopes = ids => ids.map(id => ({ protocolVersion: 1, individualId: id, sessionEpoch: states.get(id).sessionEpoch, commandSequence: 0 }));
+  const cases = [
+    ['extra', [...envelopes(['one', 'two']), { protocolVersion: 1, individualId: 'extra', sessionEpoch: 'epoch-extra', commandSequence: 0 }]],
+    ['duplicate', envelopes(['one', 'one'])],
+    ['cross-namespace', envelopes(['one', 'two'])]
+  ];
+  for (const [label, members] of cases) {
+    const local = new Map([...states].map(([id, state]) => [id, structuredClone(state)]));
+    if (label === 'cross-namespace') local.get('one').dataset = datasets[1];
+    let preparations = 0;
+    const service = createConnectomeSharedSession({ snapshot: id => structuredClone(local.get(id)), control: async () => {}, barrier: async () => [],
+      readJointCheckpoint: () => ({ jointCheckpointId: 'joint', payload: { tick: 0, members: expected } }),
+      prepareRestore: async () => { preparations++; return { members: [] }; }, commitRestore: async () => {} });
+    await assert.rejects(service.restore({ protocolVersion: 1, jointCheckpointId: 'joint', members }), /membership|namespace|stale|unavailable|Invalid/);
+    assert.equal(preparations, 0);
+    await service.close();
+  }
+});
+
+test('persisted restore retains rest and withdrawal membership and reports all-resting status', async () => {
+  const ids = ['one', 'two', 'three'];
+  const states = new Map(ids.map((id, index) => [id, { source: 'connectome', individualId: id, dataset: datasets[index % 2], sessionEpoch: `epoch-${id}`, commandSequence: 0, resident: true, status: 'paused', neural: { tick: index, simTimeMs: index }, graphSha256: `${index + 1}`.repeat(64), model: { id: index === 1 ? 'banc-proofread-lif-v1' : 'malecns-traced-lif-v1' }, capabilities: { sensoryMotor: false, learning: false, chemistry: false, embodiment: false } }]));
+  const saved = new Map();
+  const control = async (id, action) => { const state = states.get(id); state.status = action === 'start' ? 'running' : 'paused'; return structuredClone(state); };
+  const service = createConnectomeSharedSession({ snapshot: id => structuredClone(states.get(id)), control, barrier: async ids => ids.map(id => structuredClone(states.get(id))),
+    invalidate: () => {}, checkpoint: async ({ ids: memberIds, tick, modes }) => {
+      const result = { jointCheckpointId: `saved-${saved.size}`, payload: { tick, members: memberIds.map(id => ({ individualId: id, mode: modes[id] })) } };
+      saved.set(result.jointCheckpointId, result); return result;
+    }, readJointCheckpoint: id => structuredClone(saved.get(id)), listJoints: () => [...saved.values()],
+    prepareRestore: async id => ({ jointCheckpointId: id, members: [] }), commitRestore: async () => {} });
+  const envelopes = memberIds => memberIds.map(id => ({ protocolVersion: 1, individualId: id, sessionEpoch: states.get(id).sessionEpoch, commandSequence: states.get(id).commandSequence }));
+  const joined = await service.join({ protocolVersion: 1, members: envelopes(ids) });
+  const rest = await service.member(joined.shared.sharedId, { protocolVersion: 1, sharedId: joined.shared.sharedId, worldEpoch: service.snapshot(joined.shared.sharedId).shared.worldEpoch, sequence: 1, individualId: 'two', action: 'rest' });
+  const savedResponse = await service.control(joined.shared.sharedId, { protocolVersion: 1, sharedId: joined.shared.sharedId, worldEpoch: rest.shared.worldEpoch, sequence: 2, action: 'save' });
+  const withWithdrawal = structuredClone(saved.get(savedResponse.shared.events.at(-1).jointCheckpointId));
+  const withdrawn = await service.member(joined.shared.sharedId, { protocolVersion: 1, sharedId: joined.shared.sharedId, worldEpoch: savedResponse.shared.worldEpoch, sequence: 3, individualId: 'three', action: 'withdraw' });
+  const separated = await service.control(joined.shared.sharedId, { protocolVersion: 1, sharedId: joined.shared.sharedId, worldEpoch: withdrawn.shared.worldEpoch, sequence: 4, action: 'separate' });
+  assert.equal(separated.shared.status, 'separated');
+  const restored = await service.restore({ protocolVersion: 1, jointCheckpointId: withWithdrawal.jointCheckpointId, members: envelopes(ids) });
+  assert.deepEqual(restored.shared.participants.map(member => [member.individualId, member.mode]), [['one', 'active'], ['two', 'resting'], ['three', 'active']]);
+  await service.control(restored.shared.sharedId, { protocolVersion: 1, sharedId: restored.shared.sharedId, worldEpoch: restored.shared.worldEpoch, sequence: 1, action: 'separate' });
+  const allResting = { jointCheckpointId: 'all-resting', payload: { tick: 4, members: ids.map(id => ({ individualId: id, mode: 'resting' })) } };
+  saved.set(allResting.jointCheckpointId, allResting);
+  const resting = await service.restore({ protocolVersion: 1, jointCheckpointId: allResting.jointCheckpointId, members: envelopes(ids) });
+  assert.equal(resting.shared.status, 'resting');
+  assert.equal(resting.shared.participants.every(member => member.mode === 'resting'), true);
+  await assert.rejects(service.control(resting.shared.sharedId, { protocolVersion: 1, sharedId: resting.shared.sharedId, worldEpoch: resting.shared.worldEpoch, sequence: 1, action: 'start' }), /Every shared research participant is resting/);
+  await assert.rejects(service.advance(resting.shared.sharedId, { protocolVersion: 1, sharedId: resting.shared.sharedId, worldEpoch: resting.shared.worldEpoch, sequence: 1, action: 'barrier' }), /Explicit shared start|Every shared research participant is resting/);
+  await service.close();
 });
 
 test('joint post-rename uncertainty reconciles every selected head and evicts cached workers', async t => {
@@ -320,6 +398,28 @@ test('shared restore reservation rejects direct lifecycle and sample work before
   assert.deepEqual(registry.list().map(value => value.status), ['paused', 'paused']);
 });
 
+test('reserved restore rejects concurrent withdrawal and barrier attempts without membership mutation', async t => {
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  const three = [...identities, { individualId: 'shared-c', dataset: datasets[0], directory: '/trusted/shared-c' }];
+  const target = three.map(identity => ({ individualId: identity.individualId, checkpoint: createSparseLif(graph(identity.dataset), { dataset: identity.dataset, individualId: identity.individualId }).checkpoint() }));
+  const registry = createConnectomeRegistry({ identities: three, capacity: createCapacityPolicy({ settings: { ...settings, maxResidentFlies: 3 } }),
+    getResources: async ({ dataset }) => ({ aggregateMemoryBytes: 100, availableMemoryBytes: 10000, measurement: { backend: 'connectome', dataset, includesCheckpointSerialization: true, incrementalMemoryBytes: 100 } }),
+    persistCheckpoint: async () => ({ checkpointId: randomUUID() }), readJointCheckpoint: () => ({ jointCheckpointId: 'joint', payload: { members: target } }),
+    prepareJointRestore: () => ({ token: 'reserved-token', members: target.map(member => ({ ...member, parentId: null })) }), commitJointRestore: () => ({ jointCheckpointId: 'joint', members: target.map(member => ({ individualId: member.individualId, checkpointId: randomUUID() })) }), cancelJointRestore: () => {},
+    openBackend: async (_directory, options) => { const backend = backendFor(options); if (options.individualId === 'shared-a') return { ...backend, prepareRestore: async value => { await gate; return backend.prepareRestore(value); } }; return backend; } });
+  t.after(() => registry.close());
+  await Promise.all(three.map(identity => registry.load(identity.individualId)));
+  const shared = createConnectomeSharedSession({ snapshot: id => registry.snapshot(id), control: (id, action) => registry.sharedControl(id, action), barrier: (ids, steps, expected) => registry.barrier(ids, steps, expected), invalidate: ids => registry.invalidateCommands(ids) });
+  const joined = await shared.join({ protocolVersion: 1, members: three.map(identity => { const state = registry.snapshot(identity.individualId); return { protocolVersion: 1, individualId: identity.individualId, sessionEpoch: state.sessionEpoch, commandSequence: state.commandSequence }; }) });
+  const restoring = registry.prepareSharedRestore('joint');
+  await new Promise(resolve => setImmediate(resolve));
+  await assert.rejects(shared.member(joined.shared.sharedId, { protocolVersion: 1, sharedId: joined.shared.sharedId, worldEpoch: shared.snapshot(joined.shared.sharedId).shared.worldEpoch, sequence: 1, individualId: 'shared-c', action: 'withdraw' }), /reserved/);
+  await assert.rejects(registry.barrier(three.map(identity => identity.individualId), 5), /reserved/);
+  assert.equal(shared.snapshot(joined.shared.sharedId).shared.participants.length, 3);
+  release(); await restoring; await shared.close();
+});
+
 test('worker restore preparation cannot be invalidated by sampling or lifecycle actions', () => {
   const session = createConnectomeSession({ graph: graph(datasets[0]), dataset: datasets[0], individualId: 'worker' });
   const prepared = session.dispatch({ action: 'prepareRestore', value: createSparseLif(graph(datasets[0]), { dataset: datasets[0], individualId: 'worker' }).checkpoint(), sessionEpoch: session.snapshot().sessionEpoch });
@@ -355,6 +455,36 @@ test('joint durability failure makes shared and service views fail closed', asyn
   assert.equal(service.view().available, false);
   assert.equal(service.shared.view().available, false);
   assert.throws(() => service.shared.checkpoints(), /unavailable/i);
+});
+
+test('successful shared restore invalidates every member through the lifecycle callback', async t => {
+  const events = [], root = mkdtempSync(join(tmpdir(), 'shared-connectome-recording-'));
+  const descriptors = Object.fromEntries(datasets.map(dataset => [dataset, { directory: join(root, dataset), graphSha256: createSparseLif(graph(dataset), { dataset }).graphSha256,
+    manifestSha256: 'ab'.repeat(32), neuronCount: 2, edgeCount: 2 }]));
+  const catalog = openConnectomeStore(join(root, 'catalog'), { profiles: descriptors });
+  const a = catalog.create(datasets[0]), b = catalog.create(datasets[1]);
+  const ka = createSparseLif(graph(datasets[0]), { dataset: datasets[0], individualId: a.individualId });
+  const kb = createSparseLif(graph(datasets[1]), { dataset: datasets[1], individualId: b.individualId });
+  catalog.persistCheckpoint({ individualId: a.individualId, dataset: a.dataset, parentId: null, checkpoint: ka.checkpoint(), operation: 'save' });
+  catalog.persistCheckpoint({ individualId: b.individualId, dataset: b.dataset, parentId: null, checkpoint: kb.checkpoint(), operation: 'save' });
+  const profiles = Object.fromEntries(datasets.map(dataset => [dataset, { descriptor: descriptors[dataset], measurement: { available: true, backend: 'connectome', dataset, includesCheckpointSerialization: true, incrementalMemoryBytes: 100 } }]));
+  const service = createConnectomeService({ store: catalog, profiles, capacity: createCapacityPolicy({ settings: { maxResidentFlies: 3, maxAggregateMemoryBytes: 100000, minFreeMemoryBytes: 100 } }),
+    getResources: () => ({ aggregateMemoryBytes: 100, availableMemoryBytes: 10000 }), openBackend: async (_directory, options) => backendFor(options), onLifecycle: id => events.push(id) });
+  t.after(async () => { await service.close(); rmSync(root, { recursive: true, force: true }); });
+  for (const identity of [a, b]) {
+    const state = service.snapshot(identity.individualId);
+    await service.command(identity.individualId, { protocolVersion: 1, individualId: identity.individualId, sessionEpoch: state.sessionEpoch, commandSequence: state.commandSequence, action: 'load', steps: null, checkpointId: null });
+  }
+  const states = [service.snapshot(a.individualId), service.snapshot(b.individualId)];
+  const joined = await service.shared.join({ protocolVersion: 1, members: states.map(state => ({ protocolVersion: 1, individualId: state.individualId, sessionEpoch: state.sessionEpoch, commandSequence: state.commandSequence })) });
+  const saved = await service.shared.control(joined.shared.sharedId, { protocolVersion: 1, sharedId: joined.shared.sharedId, worldEpoch: joined.shared.worldEpoch, sequence: 1, action: 'save' });
+  const separated = await service.shared.control(joined.shared.sharedId, { protocolVersion: 1, sharedId: joined.shared.sharedId, worldEpoch: saved.shared.worldEpoch, sequence: 2, action: 'separate' });
+  assert.equal(separated.shared.status, 'separated'); events.length = 0;
+  const current = [service.snapshot(a.individualId), service.snapshot(b.individualId)];
+  const restored = await service.shared.restore({ protocolVersion: 1, jointCheckpointId: (await service.shared.checkpoints())[0].jointCheckpointId,
+    members: current.map(state => ({ protocolVersion: 1, individualId: state.individualId, sessionEpoch: state.sessionEpoch, commandSequence: state.commandSequence })) });
+  assert.equal(restored.shared.status, 'paused');
+  assert.deepEqual(events.sort(), [a.individualId, b.individualId].sort());
 });
 
 test('registry shutdown cancels an in-flight restore reservation without waiting for its worker gate', async () => {

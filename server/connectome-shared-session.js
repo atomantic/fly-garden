@@ -237,15 +237,17 @@ export function createConnectomeSharedSession({ snapshot, control, barrier, inva
     const joint = readJointCheckpoint(body.jointCheckpointId);
     const expected = joint?.payload?.members;
     if (!joint || joint.jointCheckpointId !== body.jointCheckpointId || !Array.isArray(expected) || expected.length !== body.members.length) fail('Shared research joint checkpoint membership is unavailable.');
-    const expectedIds = new Set(expected.map(member => member.individualId));
-    for (const member of body.members) {
-      if (!exact(member, ['protocolVersion', 'individualId', 'sessionEpoch', 'commandSequence']) || member.protocolVersion !== 1
-        || !expectedIds.has(member.individualId) || owns(member.individualId) || joining.has(member.individualId)) fail('Stale or unavailable shared research restore member.');
-      const state = stateFor(member.individualId);
-      if (state.sessionEpoch !== member.sessionEpoch || state.commandSequence !== member.commandSequence || state.status !== 'paused'
-        || state.resident !== true || state.capabilities?.sensoryMotor !== false || state.capabilities?.learning !== false
-        || state.capabilities?.chemistry !== false || state.capabilities?.embodiment !== false) fail('Every shared restore member must be an explicitly paused healthy resident.');
-    }
+     const expectedIds = new Set(expected.map(member => member.individualId));
+     const expectedById = new Map(expected.map(member => [member.individualId, member]));
+     for (const member of body.members) {
+       if (!exact(member, ['protocolVersion', 'individualId', 'sessionEpoch', 'commandSequence']) || member.protocolVersion !== 1
+         || !expectedIds.has(member.individualId) || owns(member.individualId) || joining.has(member.individualId)) fail('Stale or unavailable shared research restore member.');
+       const state = stateFor(member.individualId), expectedMember = expectedById.get(member.individualId);
+       if ((expectedMember.dataset && state.dataset !== expectedMember.dataset) || (expectedMember.graphSha256 && state.graphSha256 !== expectedMember.graphSha256) || (expectedMember.modelId && state.model?.id !== expectedMember.modelId)) fail('Shared restore member namespace does not match the saved checkpoint.');
+       if (state.sessionEpoch !== member.sessionEpoch || state.commandSequence !== member.commandSequence || state.status !== 'paused'
+         || state.resident !== true || state.capabilities?.sensoryMotor !== false || state.capabilities?.learning !== false
+         || state.capabilities?.chemistry !== false || state.capabilities?.embodiment !== false) fail('Every shared restore member must be an explicitly paused healthy resident.');
+     }
     if (expected.some(member => !body.members.some(value => value.individualId === member.individualId))) fail('Shared research restore requires the complete saved membership.');
     const memberIds = body.members.map(member => member.individualId);
     const expectedSequences = Object.fromEntries(body.members.map(member => [member.individualId, member.commandSequence]));
@@ -258,8 +260,9 @@ export function createConnectomeSharedSession({ snapshot, control, barrier, inva
         const state = stateFor(member.individualId);
         return { individualId: member.individualId, sessionEpoch: state.sessionEpoch, mode: member.mode };
       });
-      const session = { sharedId: randomUUID(), worldEpoch: randomUUID(), tick: joint.payload.tick, status: 'paused', reason: 'Explicit shared restore is paused.', commandSequence: 0,
-        pressureRequested: false, participants, events: [{ type: 'restore', tick: joint.payload.tick, jointCheckpointId: joint.jointCheckpointId }] };
+       const allResting = participants.every(member => member.mode === 'resting');
+       const session = { sharedId: randomUUID(), worldEpoch: randomUUID(), tick: joint.payload.tick, status: allResting ? 'resting' : 'paused', reason: allResting ? 'Every participant is resting; the world clock is frozen.' : 'Explicit shared restore is paused.', commandSequence: 0,
+         pressureRequested: false, participants, events: [{ type: 'restore', tick: joint.payload.tick, jointCheckpointId: joint.jointCheckpointId }] };
       sessions.set(session.sharedId, session);
       for (const member of participants) owners.set(member.individualId, session.sharedId);
       return bundle(session);
