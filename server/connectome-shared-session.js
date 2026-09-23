@@ -22,7 +22,7 @@ function envelope(value) {
 }
 function participantFrom(state, mode = 'active') {
   safeState(state);
-  if (state.status === 'unavailable' && state.resident === false) return { individualId: state.individualId, sessionEpoch: state.sessionEpoch, dataset: state.dataset,
+  if (state.resident === false && ['unavailable', 'saved-unloaded'].includes(state.status)) return { individualId: state.individualId, sessionEpoch: state.sessionEpoch, dataset: state.dataset,
     mode, status: 'unavailable', tick: null, simTimeMs: null, graphSha256: state.graphSha256 ?? null,
     model: state.model ?? null, capabilities: state.capabilities };
   if (!state.resident || !state.neural || !Number.isSafeInteger(state.neural.tick) || state.neural.tick < 0
@@ -34,15 +34,19 @@ function participantFrom(state, mode = 'active') {
     model: state.model ?? null, capabilities: state.capabilities };
 }
 
-export function createConnectomeSharedSession({ snapshot, control, barrier, invalidate = () => {}, available = () => true } = {}) {
-  if (typeof snapshot !== 'function' || typeof control !== 'function' || typeof barrier !== 'function' || typeof invalidate !== 'function') throw new Error('Invalid shared connectome service configuration');
+export function createConnectomeSharedSession({ snapshot, control, barrier, invalidate = () => {}, checkpoint, readJointCheckpoint, listJoints, prepareRestore, commitRestore, available = () => true } = {}) {
+  if (typeof snapshot !== 'function' || typeof control !== 'function' || typeof barrier !== 'function' || typeof invalidate !== 'function'
+    || (checkpoint !== undefined && typeof checkpoint !== 'function') || (readJointCheckpoint !== undefined && typeof readJointCheckpoint !== 'function')
+    || (listJoints !== undefined && typeof listJoints !== 'function') || (prepareRestore !== undefined && typeof prepareRestore !== 'function')
+    || (commitRestore !== undefined && typeof commitRestore !== 'function')) throw new Error('Invalid shared connectome service configuration');
   const sessions = new Map();
   const owners = new Map();
   const joining = new Set();
   const pending = new Set();
+  let closing = false;
   const owns = id => owners.has(id) || joining.has(id);
   const reserve = id => { if (pending.has(id)) fail('Shared research operation already in progress.'); pending.add(id); };
-  const required = () => { if (!available()) fail('Full-connectome shared research is unavailable.', 409); };
+  const required = () => { if (closing || !available()) fail('Full-connectome shared research is unavailable.', 409); };
   const sessionFor = id => { required(); const value = sessions.get(id); if (!value) fail('Shared research session not found.', 404); return value; };
   const stateFor = id => safeState(snapshot(id));
   const event = (session, type, extra = {}) => { session.events.push({ type, tick: session.tick, ...extra }); session.events = session.events.slice(-64); };
@@ -92,8 +96,9 @@ export function createConnectomeSharedSession({ snapshot, control, barrier, inva
     });
     for (const id of states.map(state => state.individualId)) joining.add(id);
     try {
-      await Promise.all(states.map(state => control(state.individualId, 'pause')));
-      const refreshed = states.map(state => stateFor(state.individualId));
+       await Promise.all(states.map(state => control(state.individualId, 'pause')));
+       if (closing) fail('Full-connectome shared research is unavailable.');
+       const refreshed = states.map(state => stateFor(state.individualId));
       if (refreshed.some((state, index) => state.dataset !== states[index].dataset || state.graphSha256 !== states[index].graphSha256
         || !state.resident || !state.neural || state.capabilities?.sensoryMotor !== false
         || state.capabilities?.learning !== false || state.capabilities?.chemistry !== false || state.capabilities?.embodiment !== false)) {
@@ -121,7 +126,7 @@ export function createConnectomeSharedSession({ snapshot, control, barrier, inva
   }
   async function runControl(sharedId, body) {
     const session = sessionFor(sharedId);
-    if (!exact(body, ['protocolVersion', 'sharedId', 'worldEpoch', 'sequence', 'action']) || !['start', 'pause', 'separate'].includes(body.action)) fail('Invalid shared research action.');
+    if (!exact(body, ['protocolVersion', 'sharedId', 'worldEpoch', 'sequence', 'action']) || !['start', 'pause', 'save', 'separate'].includes(body.action)) fail('Invalid shared research action.');
     validateControl(session, body, ['protocolVersion', 'sharedId', 'worldEpoch', 'sequence', 'action']);
     if (body.action === 'start') {
       const active = session.participants.filter(member => member.mode === 'active');
@@ -139,6 +144,14 @@ export function createConnectomeSharedSession({ snapshot, control, barrier, inva
         fail(session.reason);
       }
       session.status = 'paused'; session.reason = 'Shared research session paused.'; session.worldEpoch = randomUUID(); event(session, 'pause');
+    } else if (body.action === 'save') {
+      if (session.status === 'running') fail('Pause the shared research session before saving a joint checkpoint.');
+      if (typeof checkpoint !== 'function') fail('Shared research checkpoint persistence is unavailable.');
+      assertParticipantEpochs(session);
+      const result = await checkpoint({ ids: session.participants.map(member => member.individualId), intervalMs: WORLD_INTERVAL_MS, tick: session.tick,
+        modes: Object.fromEntries(session.participants.map(member => [member.individualId, member.mode])) });
+      if (!result || typeof result.jointCheckpointId !== 'string' || result.payload?.members?.length !== session.participants.length) fail('Shared research checkpoint persistence returned an incomplete transaction.');
+      event(session, 'save', { jointCheckpointId: result.jointCheckpointId });
     } else {
       const paused = await pauseAll(session);
       if (paused.some(result => result.status === 'rejected')) {
@@ -215,6 +228,52 @@ export function createConnectomeSharedSession({ snapshot, control, barrier, inva
     session.commandSequence++;
     return bundle(session);
   }
+  async function restore(body) {
+    required();
+    if (typeof readJointCheckpoint !== 'function' || typeof prepareRestore !== 'function' || typeof commitRestore !== 'function'
+      || !exact(body, ['protocolVersion', 'jointCheckpointId', 'members']) || body.protocolVersion !== 1
+      || typeof body.jointCheckpointId !== 'string' || !Array.isArray(body.members) || body.members.length < 2 || body.members.length > MAX_MEMBERS
+      || new Set(body.members.map(member => member?.individualId)).size !== body.members.length) fail('Invalid shared research restore envelope.');
+    const joint = readJointCheckpoint(body.jointCheckpointId);
+    const expected = joint?.payload?.members;
+    if (!joint || joint.jointCheckpointId !== body.jointCheckpointId || !Array.isArray(expected) || expected.length !== body.members.length) fail('Shared research joint checkpoint membership is unavailable.');
+     const expectedIds = new Set(expected.map(member => member.individualId));
+     const expectedById = new Map(expected.map(member => [member.individualId, member]));
+     for (const member of body.members) {
+       if (!exact(member, ['protocolVersion', 'individualId', 'sessionEpoch', 'commandSequence']) || member.protocolVersion !== 1
+         || !expectedIds.has(member.individualId) || owns(member.individualId) || joining.has(member.individualId)) fail('Stale or unavailable shared research restore member.');
+       const state = stateFor(member.individualId), expectedMember = expectedById.get(member.individualId);
+       if ((expectedMember.dataset && state.dataset !== expectedMember.dataset) || (expectedMember.graphSha256 && state.graphSha256 !== expectedMember.graphSha256) || (expectedMember.modelId && state.model?.id !== expectedMember.modelId)) fail('Shared restore member namespace does not match the saved checkpoint.');
+       if (state.sessionEpoch !== member.sessionEpoch || state.commandSequence !== member.commandSequence || state.status !== 'paused'
+         || state.resident !== true || state.capabilities?.sensoryMotor !== false || state.capabilities?.learning !== false
+         || state.capabilities?.chemistry !== false || state.capabilities?.embodiment !== false) fail('Every shared restore member must be an explicitly paused healthy resident.');
+     }
+    if (expected.some(member => !body.members.some(value => value.individualId === member.individualId))) fail('Shared research restore requires the complete saved membership.');
+    const memberIds = body.members.map(member => member.individualId);
+    const expectedSequences = Object.fromEntries(body.members.map(member => [member.individualId, member.commandSequence]));
+    for (const id of memberIds) joining.add(id);
+    try {
+       const prepared = await prepareRestore(body.jointCheckpointId, expectedSequences);
+       await commitRestore(prepared);
+       if (closing) fail('Full-connectome shared research is unavailable.');
+       const participants = expected.map(member => {
+        const state = stateFor(member.individualId);
+        return { individualId: member.individualId, sessionEpoch: state.sessionEpoch, mode: member.mode };
+      });
+       const allResting = participants.every(member => member.mode === 'resting');
+       const session = { sharedId: randomUUID(), worldEpoch: randomUUID(), tick: joint.payload.tick, status: allResting ? 'resting' : 'paused', reason: allResting ? 'Every participant is resting; the world clock is frozen.' : 'Explicit shared restore is paused.', commandSequence: 0,
+         pressureRequested: false, participants, events: [{ type: 'restore', tick: joint.payload.tick, jointCheckpointId: joint.jointCheckpointId }] };
+      sessions.set(session.sharedId, session);
+      for (const member of participants) owners.set(member.individualId, session.sharedId);
+      return bundle(session);
+    } finally {
+      for (const id of memberIds) joining.delete(id);
+    }
+  }
+  function checkpoints() {
+    required();
+    return typeof listJoints === 'function' ? listJoints() : [];
+  }
   async function finishOperation(sharedId) {
     pending.delete(sharedId);
     const session = sessions.get(sharedId);
@@ -240,9 +299,10 @@ export function createConnectomeSharedSession({ snapshot, control, barrier, inva
     }
   }
   async function close() {
+    closing = true;
     for (const session of sessions.values()) await pauseAll(session);
     for (const session of sessions.values()) for (const member of session.participants) owners.delete(member.individualId);
     sessions.clear(); joining.clear();
   }
-  return { view, join, control: controlShared, advance, member: memberControl, owns, pauseForPressure, snapshot: id => bundle(sessionFor(id)), close };
+  return { view, join, control: controlShared, advance, member: memberControl, restore, checkpoints, owns, pauseForPressure, snapshot: id => bundle(sessionFor(id)), close };
 }

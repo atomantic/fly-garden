@@ -8,7 +8,7 @@ import { connectomeProfile } from './connectome-profiles.js';
 /** Explicit controller factory also permits small numerical fixtures in tests. */
 export function createConnectomeSession({ graph, dataset, individualId = randomUUID(), checkpoint = null, provenance = null, loadWallMs = 0 }) {
   const kernel = createSparseLif(graph, { dataset, individualId, checkpoint });
-  let status = 'paused', reason = null, sessionEpoch = randomUUID(), pendingRestore = null, pendingAdvance = null;
+  let status = 'paused', reason = null, sessionEpoch = randomUUID(), pendingRestore = null, pendingAdvance = null, lastRestore = null;
   const snapshot = () => ({ protocolVersion: 1, source: 'connectome', status, available: status !== 'fault',
     reason, individualId, sessionEpoch, dataset, model: kernel.model, graphSha256: kernel.graphSha256, provenance, loadWallMs,
     neural: kernel.summary(), memory: process.memoryUsage(), retainedWeightState: kernel.retainedWeightState(),
@@ -16,12 +16,26 @@ export function createConnectomeSession({ graph, dataset, individualId = randomU
   function dispatch({ action, value, sessionEpoch: suppliedEpoch }) {
     if (action === 'snapshot') return snapshot();
     if (suppliedEpoch !== sessionEpoch) throw new Error('Stale connectome session epoch');
-    if (action === 'sample') {
-      if (status === 'fault') throw new Error('Connectome is unavailable or faulted');
-      return { ...kernel.sample(value), sessionEpoch, status, provenance };
+     if (action === 'discardRestore') {
+       if (value !== undefined && (!pendingRestore || pendingRestore.token !== value)) throw new Error('Stale prepared restore token');
+       pendingRestore = null; lastRestore = null;
+       return snapshot();
+     }
+     if (action === 'rollbackRestore') {
+       if (!lastRestore || value?.token !== lastRestore.token || !value?.checkpoint) throw new Error('Stale committed restore token');
+       kernel.restore(value.checkpoint); sessionEpoch = lastRestore.previousEpoch; lastRestore = null; status = 'paused'; reason = null;
+       return snapshot();
+     }
+     if (action === 'sample') {
+      if (pendingRestore) throw new Error('Restore preparation pending; discard it before sampling.');
+       if (status === 'fault') throw new Error('Connectome is unavailable or faulted');
+       lastRestore = null;
+       return { ...kernel.sample(value), sessionEpoch, status, provenance };
     }
-    if (action === 'prepareRestore') {
-      if (pendingAdvance) { kernel.releaseAdvance(pendingAdvance.candidate); pendingAdvance = null; }
+     if (action === 'prepareRestore') {
+       if (pendingRestore) throw new Error('Restore preparation already pending; discard it before preparing another.');
+       if (pendingAdvance) { kernel.releaseAdvance(pendingAdvance.candidate); pendingAdvance = null; }
+       lastRestore = null;
     }
     if (action === 'prepareRestore') {
       const candidate = kernel.prepareRestore(value), token = randomUUID();
@@ -29,11 +43,13 @@ export function createConnectomeSession({ graph, dataset, individualId = randomU
       return { token, sessionEpoch };
     }
     if (action === 'commitRestore') {
-      if (!pendingRestore || value !== pendingRestore.token) throw new Error('Stale prepared restore token');
-      kernel.commitRestore(pendingRestore.candidate); pendingRestore = null;
-      status = 'paused'; reason = null; sessionEpoch = randomUUID();
+       if (!pendingRestore || value !== pendingRestore.token) throw new Error('Stale prepared restore token');
+       const previousEpoch = sessionEpoch;
+       kernel.commitRestore(pendingRestore.candidate); pendingRestore = null; lastRestore = { token: value, previousEpoch };
+       status = 'paused'; reason = null; sessionEpoch = randomUUID();
       return snapshot();
     }
+    if (action === 'prepareAdvance' && pendingRestore) throw new Error('Restore preparation pending; discard it before preparing advancement.');
     if (action === 'prepareAdvance') {
       if (status !== 'running') throw new Error('Explicit start required before advancement');
       if (pendingAdvance) kernel.releaseAdvance(pendingAdvance.candidate);
@@ -74,8 +90,9 @@ export function createConnectomeSession({ graph, dataset, individualId = randomU
       kernel.releaseAdvance(pendingAdvance.candidate); pendingAdvance = null;
       return snapshot();
     }
-    if (!['snapshot', 'prepareAdvance', 'commitAdvance', 'rollbackAdvance', 'releaseAdvance'].includes(action)) pendingAdvance = null;
-    if (!['checkpoint', 'snapshot'].includes(action)) pendingRestore = null;
+     if (!['snapshot', 'prepareAdvance', 'commitAdvance', 'rollbackAdvance', 'releaseAdvance'].includes(action)) pendingAdvance = null;
+     if (!['snapshot', 'checkpoint', 'rollbackRestore'].includes(action)) lastRestore = null;
+     if (pendingRestore && !['checkpoint', 'snapshot', 'commitRestore', 'discardRestore'].includes(action)) throw new Error('Restore preparation pending; commit or discard it first.');
     if (action === 'restore') {
       kernel.restore(value);
       status = 'paused'; reason = null; sessionEpoch = randomUUID();

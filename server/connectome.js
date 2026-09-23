@@ -46,6 +46,7 @@ export function openConnectomeBackend(directory, { dataset = 'male-cns:v1.0', in
     commitAdvance: token => request('commitAdvance', token), rollbackAdvance: token => request('rollbackAdvance', token),
     releaseAdvance: token => request('releaseAdvance', token), probe: indices => request('probe', indices), checkpoint: () => request('checkpoint'),
     restore: checkpoint => request('restore', checkpoint), prepareRestore: checkpoint => request('prepareRestore', checkpoint),
-    commitRestore: token => request('commitRestore', token), close, terminated }));
+    commitRestore: token => request('commitRestore', token), discardRestore: token => request('discardRestore', token),
+    rollbackRestore: value => request('rollbackRestore', value), close, terminated }));
   return Object.assign(opening, { terminate: close, terminated });
 }

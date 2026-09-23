@@ -14,11 +14,25 @@ export function createConnectomeService({store=null,profiles={},reason=null,capa
   const pending=new Set(), pendingSamples=new Set();
   const registry=store?createConnectomeRegistry({identities:store.identities(),capacity,getResources:async({dataset})=>({...getResources(),measurement:profiles[dataset]?.measurement}),
     loadCheckpoint:({individualId,checkpointId})=>store.readCheckpoint(individualId,checkpointId),
-    persistCheckpoint:request=>store.persistCheckpoint(request),openBackend:(directory,options)=>(openBackend??openConnectomeBackend)(directory,{...options,onExit:()=>{options.onExit();onLifecycle(options.individualId);}})}):null;
+    persistCheckpoint:request=>store.persistCheckpoint(request),
+    persistJointCheckpoint:request=>store.persistJointCheckpoint(request),
+    readJointCheckpoint:id=>store.readJointCheckpoint(id),
+    prepareJointRestore:id=>store.prepareJointRestore(id),
+    commitJointRestore:token=>store.commitJointRestore(token),
+    cancelJointRestore:token=>store.cancelJointRestore(token),
+    openBackend:(directory,options)=>(openBackend??openConnectomeBackend)(directory,{...options,onExit:()=>{options.onExit();onLifecycle(options.individualId);}})}):null;
   const shared=createConnectomeSharedSession({available:()=>!!registry&&!storageFault,
     snapshot:id=>registry.snapshot(id),invalidate:ids=>registry.invalidateCommands(ids),
     control:async(id,action)=>{try{return await registry.sharedControl(id,action);}finally{onLifecycle(id);}},
-    barrier:async(ids,steps,expected)=>{try{return await registry.barrier(ids,steps,expected);}finally{ids.forEach(id=>onLifecycle(id));}}});
+    barrier:async(ids,steps,expected)=>{try{return await registry.barrier(ids,steps,expected);}finally{ids.forEach(id=>onLifecycle(id));}},
+     checkpoint:request=>boundary(()=>registry.sharedCheckpoint(request.ids,request)),
+     readJointCheckpoint:id=>storageBoundarySync(()=>store.readJointCheckpoint(id)),listJoints:()=>storageBoundarySync(()=>store.jointCheckpoints()),
+     prepareRestore:(id,expectedSequences)=>boundary(()=>registry.prepareSharedRestore(id,expectedSequences)),
+     commitRestore:async prepared => {
+       const result = await boundary(()=>registry.commitSharedRestore(prepared));
+       for (const member of prepared.members) onLifecycle(member.individualId);
+       return result;
+     }});
   const required=()=>{if(!registry)fail(reason??'No verified local research catalog is available.');return registry;};
   function withAdmission(operation){const result=admissions.then(operation);admissions=result.catch(()=>{});return result;}
   const population=()=>capacity.snapshot(getResources());
@@ -34,6 +48,11 @@ export function createConnectomeService({store=null,profiles={},reason=null,capa
   const snapshot=id=>plainState(record(id));
   function checkHealthy(){if(storageFault)fail('Catalog recovery is required before new loads or mutations.');}
   async function boundary(operation){try{return await operation();}catch(error){
+    if(error.code==='CONNECTOME_DURABILITY_UNCERTAIN'||error.code==='CONNECTOME_STORE_RECOVERY_REQUIRED')storageFault=true;
+    if(error instanceof RuntimeError || error instanceof CapacityAdmissionError)throw error;
+    fail(storageFault?'Catalog selection durability is uncertain; recover storage before explicit paused reload.':'Research operation failed. Refresh current state before retrying.');
+  }}
+  function storageBoundarySync(operation){try{return operation();}catch(error){
     if(error.code==='CONNECTOME_DURABILITY_UNCERTAIN'||error.code==='CONNECTOME_STORE_RECOVERY_REQUIRED')storageFault=true;
     if(error instanceof RuntimeError || error instanceof CapacityAdmissionError)throw error;
     fail(storageFault?'Catalog selection durability is uncertain; recover storage before explicit paused reload.':'Research operation failed. Refresh current state before retrying.');
@@ -82,7 +101,7 @@ export function createConnectomeService({store=null,profiles={},reason=null,capa
     try {return await boundary(()=>current.sample(id,body));}
     finally {pendingSamples.delete(id);}
   }
-  function history(id){record(id);return{individualId:id,checkpoints:store.checkpoints(id)};}
+  function history(id){record(id);return{individualId:id,checkpoints:storageBoundarySync(()=>store.checkpoints(id))};}
   function enforcePressure(){
     if(!registry||population().pressure==='within-budget')return Promise.resolve();
     if(pressureWork)return pressureWork;

@@ -67,21 +67,23 @@ test('invalid cross-profile restore cannot write durable heads or mutate either 
   await assert.rejects(f.command('a','restore',null,target), /identity/);
   assert.equal(f.writes.length,1); assert.deepEqual(f.registry.snapshot('b'),before);
 });
-test('prepared restore tokens are invalidated by intervening worker mutation', () => {
+test('prepared restore tokens require explicit discard before lifecycle mutation', () => {
   const session = createConnectomeSession({ individualId:'a', dataset:'male-cns:v1.0', graph:graph('male-cns:v1.0') });
   const epoch = session.snapshot().sessionEpoch;
   const send = (action,value) => session.dispatch({ action,value,sessionEpoch:epoch });
-  const prepared = send('prepareRestore',send('checkpoint')); send('start');
-  assert.throws(() => send('commitRestore',prepared.token),/Stale/); assert.equal(session.snapshot().neural.tick,0);
+  const prepared = send('prepareRestore',send('checkpoint'));
+  assert.throws(() => send('start'),/Restore preparation pending/);
+  send('discardRestore',prepared.token);
+  assert.doesNotThrow(() => send('start'));
+  assert.equal(session.snapshot().neural.tick,0);
 });
-test('worker loss after durable restore commit evicts live state and recovers selected head paused', async t => {
+test('worker loss before durable restore selection preserves the prior live state and head', async t => {
   const f = setup(); t.after(() => f.registry.close()); await f.registry.load('a');
   await f.command('a','save'); const target = f.writes[0].checkpoint;
   await f.command('a','start'); await f.command('a','advance',5);
   f.opened[0].commitRestore = async () => { throw new Error('worker stopped'); };
   await assert.rejects(f.command('a','restore',null,target), /worker stopped/);
-  assert.equal(f.registry.snapshot('a').resident,false); assert.equal(f.registry.snapshot('a').checkpointId,'save-2');
-  const recovered = await f.registry.load('a'); assert.equal(recovered.status,'paused'); assert.equal(recovered.neural.tick,0);
+  assert.equal(f.registry.snapshot('a').resident,true); assert.equal(f.registry.snapshot('a').checkpointId,'save-1'); assert.equal(f.registry.snapshot('a').neural.tick,5);
 });
 test('a late worker load beyond its deadline is closed and never published', async t => {
   let resolve, closed = false;
