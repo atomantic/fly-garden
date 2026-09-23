@@ -71,9 +71,9 @@ function validateTransaction(record) {
     if (!exact(member, TRANSACTION_MEMBER_KEYS) || !uuid(member.individualId) || ids.has(member.individualId) || !catalogs.has(member.catalogId)
       || record.catalogs.find(catalog => catalog.catalogId === member.catalogId).catalogType !== member.catalogType
       || !text(member.dataset) || !nullable(member.graphSha256, shaValid) || !nullable(member.modelId, text) || !['active', 'resting'].includes(member.mode)
-      || !nullable(member.priorHead, uuid) || !uuid(member.plannedHead) || !nullable(member.selectedHead, uuid)
+      || !nullable(member.priorHead, uuid) || !nullable(member.plannedHead, uuid) || !nullable(member.selectedHead, uuid)
       || !nullable(member.sourceCheckpointId, uuid) || (record.operation === 'restore') !== (member.sourceCheckpointId !== null)
-      || !shaValid(member.checkpointSha256) || !integer(member.simTimeMs)) corrupt();
+      || !nullable(member.checkpointSha256, shaValid) || !integer(member.simTimeMs)) corrupt();
     ids.add(member.individualId);
   }
 }
@@ -114,7 +114,9 @@ export function openCrossCatalogJournal(directory, { writeDocument = atomicRepla
   mkdirSync(directory, { recursive: true, mode: 0o700 });
   const stat = lstatSync(directory); if (!stat.isDirectory() || stat.isSymbolicLink()) corrupt();
   const path = join(directory, 'journal.json'), files = readdirSync(directory);
-  if (!files.includes('journal.json') && files.length !== 0) throw new Error('Refusing to initialize a nonempty cross-catalog journal directory');
+  // A crash during first initialization can leave only this journal's own lock database or temp file; anything else is foreign.
+  const own = name => /^writer\.sqlite(-journal)?$/.test(name) || /^journal\.json\.[0-9a-f-]{36}\.tmp$/.test(name);
+  if (!files.includes('journal.json') && !files.every(own)) throw new Error('Refusing to initialize a nonempty cross-catalog journal directory');
   const lock = new DatabaseSync(join(directory, 'writer.sqlite'));
   try { lock.exec('CREATE TABLE IF NOT EXISTS writer (id INTEGER PRIMARY KEY); BEGIN EXCLUSIVE'); }
   catch { lock.close(); throw new Error('Cross-catalog journal is already open or its writer lock is unavailable'); }
@@ -217,12 +219,15 @@ export function createCrossCatalogCoordinator({ journal, catalogs, now = Date.no
     catch (error) { record.state = 'recovery-required'; record.reason = 'Journal write failed during a cross-catalog transaction.'; recovery = record; throw withRecovery(error); }
   }
   function withRecovery(error) { return Object.assign(error, { code: error.code ?? 'CROSS_CATALOG_RECOVERY_REQUIRED', recovery: recoveryView() }); }
+  /** Returns false when any transaction-owned staging could not be cancelled; callers must then keep the transaction recoverable. */
   async function cancelStaged(record, stagedGroups) {
+    let complete = true;
     for (const group of stagedGroups) {
       const catalog = record.catalogs.find(value => value.catalogId === group.adapter.catalogId);
       if (!['staged', 'failed'].includes(catalog.state)) continue;
-      try { await group.adapter.cancel({ transactionId: record.transactionId }); catalog.state = 'cancelled'; } catch { catalog.state = 'failed'; }
+      try { await group.adapter.cancel({ transactionId: record.transactionId }); catalog.state = 'cancelled'; } catch { catalog.state = 'failed'; complete = false; }
     }
+    return complete;
   }
   async function verifyUnchanged(record, snapshot) {
     for (const group of groups(record.members)) {
@@ -257,8 +262,9 @@ export function createCrossCatalogCoordinator({ journal, catalogs, now = Date.no
         }
         catalog.state = 'failed';
         const reverted = await compensate(record, committed);
-        await cancelStaged(record, groups(record.members));
+        const cancelled = await cancelStaged(record, groups(record.members));
         if (!reverted) return enterRecovery(record, 'Compensation of an already committed catalog failed.', error);
+        if (!cancelled) return enterRecovery(record, 'Committed catalogs were compensated, but transaction-owned staging could not be cancelled.', error);
         record.state = 'rolled-back'; record.reason = 'A catalog refused its commit; every committed catalog was compensated to its prior content.';
         persistOrRecover(record);
         fail(record.reason, 'CROSS_CATALOG_ROLLED_BACK', { cause: error, affectedHeads: affected(record.members) });
@@ -343,8 +349,12 @@ export function createCrossCatalogCoordinator({ journal, catalogs, now = Date.no
       await verifyUnchanged(record, snapshot);
       return releases;
     } catch (error) {
-      await cancelStaged(record, staged);
-      if (journaled) {
+      const cancelled = await cancelStaged(record, staged);
+      if (!cancelled) {
+        // Staging that could not be cancelled stays visible: block new work and keep members reserved until explicit rollback.
+        record.state = 'recovery-required'; record.reason = 'Transaction-owned staging could not be cancelled; nothing was selected.'; recovery = record;
+        try { persist(record); } catch { /* the in-memory record remains the recovery authority */ }
+      } else if (journaled) {
         // Journaled but not selected: close the record so the journal stays resolvable.
         record.state = 'aborted'; record.reason = String(error.message || 'Transaction aborted before selection.').slice(0, 512);
         try { persist(record); } catch { record.state = 'recovery-required'; recovery = record; }
@@ -476,7 +486,7 @@ export function createCrossCatalogCoordinator({ journal, catalogs, now = Date.no
         member.selectedHead = view.head;
       }
       if (body.action === 'complete') {
-        if (record.members.some(member => member.selectedHead !== member.plannedHead)) fail('Completion requires every catalog to select the planned head.', 'CROSS_CATALOG_DISAGREEMENT', { recovery: recoveryView() });
+        if (record.members.some(member => member.plannedHead === null || member.selectedHead !== member.plannedHead)) fail('Completion requires every catalog to select the planned head.', 'CROSS_CATALOG_DISAGREEMENT', { recovery: recoveryView() });
         if (record.operation === 'restore' && !await evictAll(record)) fail('Runtime eviction could not be verified; recovery remains pending.', 'CROSS_CATALOG_RECOVERY_REQUIRED', { recovery: recoveryView() });
         let joint;
         if (record.operation === 'save') {
@@ -493,7 +503,7 @@ export function createCrossCatalogCoordinator({ journal, catalogs, now = Date.no
         const failures = [];
         for (const group of groups(record.members)) {
           const catalog = record.catalogs.find(value => value.catalogId === group.adapter.catalogId);
-          const selected = group.members.filter(member => member.selectedHead === member.plannedHead);
+          const selected = group.members.filter(member => member.plannedHead !== null && member.selectedHead === member.plannedHead);
           try {
             if (selected.length) {
               // Same intent-first rule as compensation: a crash during operator recovery stays reconcilable.

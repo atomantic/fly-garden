@@ -448,3 +448,32 @@ test('a crash during operator rollback leaves an idempotently reconcilable recor
   assert.equal(w.bancCatalog.member(w.ids.banc).head, appended);
   assert.deepEqual(w.contents(), priorContents);
 });
+
+test('staging that cannot be cancelled stays recoverable instead of being hidden behind an abort', async t => {
+  const w = world(t);
+  const { coordinator, journal } = w.open();
+  const prior = w.heads();
+  w.maleCatalog.faults.stage = () => new Error('male staging refused');
+  w.fixture.faults.cancel = () => new Error('fixture cancel failed');
+  await assert.rejects(coordinator.save(w.saveBody()), /male staging refused/);
+  const pending = coordinator.status().recovery;
+  assert.equal(pending.state, 'recovery-required');
+  assert.equal(pending.catalogs.find(catalog => catalog.catalogId === 'fixture').state, 'failed');
+  assert.equal(Object.keys(w.fixture.state().staged).length, 1, 'the uncancelled staging is still owned by the transaction');
+  assert.equal(journal.document().transactions.at(-1).state, 'recovery-required');
+  assert.equal(coordinator.reserved(w.ids.fixtureA), true);
+  await assert.rejects(coordinator.save(w.saveBody()), /recovery is required/);
+  await assert.rejects(coordinator.recover({ protocolVersion: 1, transactionId: pending.transactionId, action: 'complete' }), /planned head/);
+  const result = await coordinator.recover({ protocolVersion: 1, transactionId: pending.transactionId, action: 'rollback' });
+  assert.equal(result.state, 'rolled-back');
+  assert.equal(Object.keys(w.fixture.state().staged).length, 0);
+  assert.deepEqual(w.heads(), prior);
+});
+
+test('an interrupted first initialization leaves only the journal lock and can be initialized again', async t => {
+  const path = directory(t);
+  assert.throws(() => openCrossCatalogJournal(path, { writeDocument: () => { throw new Error('crash'); } }), /crash/);
+  assert.equal(existsSync(join(path, 'journal.json')), false);
+  const journal = openCrossCatalogJournal(path); t.after(() => journal.close());
+  assert.deepEqual(journal.document().transactions, []);
+});
