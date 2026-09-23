@@ -21,10 +21,14 @@ export function createConnectomeService({store=null,profiles={},reason=null,capa
     commitJointRestore:token=>store.commitJointRestore(token),
     cancelJointRestore:token=>store.cancelJointRestore(token),
     openBackend:(directory,options)=>(openBackend??openConnectomeBackend)(directory,{...options,onExit:()=>{options.onExit();onLifecycle(options.individualId);}})}):null;
-  const shared=createConnectomeSharedSession({available:()=>!!registry&&!storageFault,
+  // Safe aggregate counts/bytes and trusted per-profile memory evidence only; never directories or graph arrays.
+  const sharedResources=()=>{const current=population();return{residentCount:current.residentCount,runningCount:current.runningCount,maxResidentFlies:current.settings.maxResidentFlies,
+    aggregateMemoryBytes:current.aggregateMemoryBytes,availableMemoryBytes:current.availableMemoryBytes,pressure:current.pressure,
+    memberMemoryBytes:Object.fromEntries(Object.keys(CONNECTOME_PROFILES).map(dataset=>[dataset,profiles[dataset]?.measurement?.available?profiles[dataset].measurement.incrementalMemoryBytes:null]))};};
+  const shared=createConnectomeSharedSession({available:()=>!!registry&&!storageFault,resources:sharedResources,
     snapshot:id=>registry.snapshot(id),invalidate:ids=>registry.invalidateCommands(ids),
     control:async(id,action)=>{try{return await registry.sharedControl(id,action);}finally{onLifecycle(id);}},
-    barrier:async(ids,steps,expected)=>{try{return await registry.barrier(ids,steps,expected);}finally{ids.forEach(id=>onLifecycle(id));}},
+    barrier:async(ids,steps,expected,observe)=>{try{return await registry.barrier(ids,steps,expected,observe);}finally{ids.forEach(id=>onLifecycle(id));}},
      checkpoint:request=>boundary(()=>registry.sharedCheckpoint(request.ids,request)),
      readJointCheckpoint:id=>storageBoundarySync(()=>store.readJointCheckpoint(id)),listJoints:()=>storageBoundarySync(()=>store.jointCheckpoints()),
      prepareRestore:(id,expectedSequences)=>boundary(()=>registry.prepareSharedRestore(id,expectedSequences)),
