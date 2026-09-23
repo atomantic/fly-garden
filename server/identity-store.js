@@ -568,6 +568,11 @@ export function openIdentityStore(directory, { write = atomicWrite, loadPrimary 
   }
   return { claimExternal, sharedJoin, sharedLeave, sharedControl, sharedMemberControl, sharedFrame, sharedSave, sharedRestore,
     sharedSnapshot: sharedId => sharedFor(sharedId).snapshot(),
+    /** Read-only list of committed public snapshots for every live fixture shared session. No token or runtime handle. */
+    sharedSnapshots: () => {
+      if (closed) throw new RuntimeError('Identity store is closed.', 503);
+      return [...sharedSessions.values()].map(session => session.snapshot());
+    },
     sharedCheckpoints: () => structuredClone(saved.jointCheckpoints ?? []),
     encounterDynamicsSnapshot, encounterDynamicsControl, environmentSnapshot, environmentControl, environmentFrame, create, createIndividual: create, load, unload, primaryId: saved.primaryId, snapshot, save, restore, replica,
     list: () => saved.individuals.map(record => ({ individualId: record.individualId, branchOf: structuredClone(record.branchOf),
