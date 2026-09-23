@@ -260,35 +260,38 @@ export function openConnectomeStore(directory, { profiles = {}, writeCatalog = a
       pendingJointRestores.set(token, { jointCheckpointId, expectedHeads: Object.fromEntries(members.map(member => [member.individualId, member.parentId])), members });
       return { token, jointCheckpointId, members: structuredClone(members) };
     },
+    cancelJointRestore(token) { ensureOpen(); return pendingJointRestores.delete(token); },
     commitJointRestore(token) {
       ensureDurable();
       const pending = pendingJointRestores.get(token);
       if (!pending) throw new Error('Unknown or stale joint restore token');
-      const joint = (catalog.jointCheckpoints ?? []).find(value => value.jointCheckpointId === pending.jointCheckpointId);
-      if (!joint) throw new Error('Joint checkpoint not found');
-      const planned = []; let total = storageBytes();
-      for (const member of pending.members) {
-        const record = recordFor(member.individualId);
-        if (record.head !== pending.expectedHeads[member.individualId] || record.checkpoints.length >= LIMITS.history) throw new Error('Stale joint restore membership');
-        const source = itemFor(record, member.checkpointId), bytes = verifyPayload(directory, record, source).bytes;
-        if (total + bytes.length > LIMITS.totalCheckpointBytes) throw new Error('Joint restore byte ceiling exceeded');
-        const item = { checkpointId: randomUUID(), parentId: record.head, restoredFrom: source.checkpointId, operation: 'restore', createdAt: Date.now(), sha256: source.sha256, bytes: bytes.length, tick: source.tick };
-        planned.push({ recordId: record.individualId, item, bytes }); total += bytes.length;
-      }
-      const next = structuredClone(catalog);
-      for (const value of planned) {
-        const target = next.individuals.find(record => record.individualId === value.recordId);
-        target.checkpoints.push(value.item); target.head = value.item.checkpointId;
-        writeExclusive(join(checkpointDirectory,`${value.item.checkpointId}.json`), value.bytes);
-      }
-      syncDirectory(checkpointDirectory);
       try {
+        const joint = (catalog.jointCheckpoints ?? []).find(value => value.jointCheckpointId === pending.jointCheckpointId);
+        if (!joint) throw new Error('Joint checkpoint not found');
+        const planned = []; let total = storageBytes();
+        for (const member of pending.members) {
+          const record = recordFor(member.individualId);
+          if (record.head !== pending.expectedHeads[member.individualId] || record.checkpoints.length >= LIMITS.history) throw new Error('Stale joint restore membership');
+          const source = itemFor(record, member.checkpointId), bytes = verifyPayload(directory, record, source).bytes;
+          if (total + bytes.length > LIMITS.totalCheckpointBytes) throw new Error('Joint restore byte ceiling exceeded');
+          const item = { checkpointId: randomUUID(), parentId: record.head, restoredFrom: source.checkpointId, operation: 'restore', createdAt: Date.now(), sha256: source.sha256, bytes: bytes.length, tick: source.tick };
+          planned.push({ recordId: record.individualId, item, bytes }); total += bytes.length;
+        }
+        const next = structuredClone(catalog);
+        for (const value of planned) {
+          const target = next.individuals.find(record => record.individualId === value.recordId);
+          target.checkpoints.push(value.item); target.head = value.item.checkpointId;
+          writeExclusive(join(checkpointDirectory,`${value.item.checkpointId}.json`), value.bytes);
+        }
+        syncDirectory(checkpointDirectory);
         persist(next, { individualId: planned[0].recordId, checkpointId: planned[0].item.checkpointId });
+        return { jointCheckpointId: pending.jointCheckpointId, members: planned.map(value => ({ individualId: value.recordId, checkpointId: value.item.checkpointId })) };
       } catch (error) {
-        pendingJointRestores.delete(token); throw error;
+        pendingJointRestores.delete(token);
+        throw error;
+      } finally {
+        pendingJointRestores.delete(token);
       }
-      pendingJointRestores.delete(token);
-      return { jointCheckpointId: pending.jointCheckpointId, members: planned.map(value => ({ individualId: value.recordId, checkpointId: value.item.checkpointId })) };
     },
     persistCheckpoint({individualId,dataset,parentId,checkpoint,operation,sourceCheckpointId=null}) {
       ensureDurable();

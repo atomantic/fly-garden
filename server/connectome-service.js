@@ -19,6 +19,7 @@ export function createConnectomeService({store=null,profiles={},reason=null,capa
     readJointCheckpoint:id=>store.readJointCheckpoint(id),
     prepareJointRestore:id=>store.prepareJointRestore(id),
     commitJointRestore:token=>store.commitJointRestore(token),
+    cancelJointRestore:token=>store.cancelJointRestore(token),
     openBackend:(directory,options)=>(openBackend??openConnectomeBackend)(directory,{...options,onExit:()=>{options.onExit();onLifecycle(options.individualId);}})}):null;
   const shared=createConnectomeSharedSession({available:()=>!!registry&&!storageFault,
     snapshot:id=>registry.snapshot(id),invalidate:ids=>registry.invalidateCommands(ids),

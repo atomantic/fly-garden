@@ -88,6 +88,18 @@ test('joint checkpoint writes and restores every member head as one catalog tran
   assert.equal(reopened.readJointCheckpoint(first.jointCheckpointId).payload.members.length, 2);
 });
 
+test('prepared joint restore tokens can be cancelled without retaining checkpoint payloads', t => {
+  const { store } = open(t), a = store.create(datasets[0]), b = store.create(datasets[1]), ka = kernel(a), kb = kernel(b);
+  save(store, a, ka.checkpoint()); save(store, b, kb.checkpoint());
+  const members = store.identities().map(identity => ({ individualId: identity.individualId, dataset: identity.dataset,
+    parentId: identity.checkpointId, checkpoint: identity.individualId === a.individualId ? ka.checkpoint() : kb.checkpoint(), mode: 'active' }));
+  const joint = store.persistJointCheckpoint({ jointCheckpointId: randomUUID(), intervalMs: 5, tick: 0, members });
+  const prepared = store.prepareJointRestore(joint.jointCheckpointId);
+  assert.equal(store.cancelJointRestore(prepared.token), true);
+  assert.throws(() => store.commitJointRestore(prepared.token), /Unknown or stale/);
+  assert.equal(store.cancelJointRestore(prepared.token), false);
+});
+
 test('joint post-rename directory sync failure exposes the selected transaction and blocks activation', t => {
   let fail = false;
   const { path, store } = open(t, { syncCatalogDirectory: () => { if (fail) throw new Error('directory fsync failed'); } });

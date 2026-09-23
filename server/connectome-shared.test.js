@@ -78,6 +78,25 @@ test('registry barrier waits for all workers, preserves order-independent clocks
   assert.deepEqual(t2.registry.list().map(value => value.status), ['paused', 'paused']);
 });
 
+test('registry cancels a shared restore preparation when a worker rejects its candidate', async t => {
+  let cancelled = null;
+  const registry = createConnectomeRegistry({ identities, capacity: createCapacityPolicy({ settings }),
+    getResources: async ({ dataset }) => ({ aggregateMemoryBytes: 100, availableMemoryBytes: 10000,
+      measurement: { backend: 'connectome', dataset, includesCheckpointSerialization: true, incrementalMemoryBytes: 100 } }),
+    persistCheckpoint: async () => ({ checkpointId: randomUUID() }),
+    readJointCheckpoint: () => ({ payload: { members: [{ individualId: 'shared-a' }, { individualId: 'shared-b' }] } }),
+    prepareJointRestore: () => ({ token: 'prepared-token', members: [
+      { individualId: 'shared-a', parentId: null, checkpoint: createSparseLif(graph(datasets[0]), { dataset: datasets[0], individualId: 'shared-a' }).checkpoint() },
+      { individualId: 'shared-b', parentId: null, checkpoint: createSparseLif(graph(datasets[1]), { dataset: datasets[1], individualId: 'shared-b' }).checkpoint() }
+    ] }),
+    commitJointRestore: () => { throw new Error('not used'); }, cancelJointRestore: token => { cancelled = token; },
+    openBackend: async (_directory, options) => { const backend = backendFor(options); if (options.individualId === 'shared-b') return { ...backend, prepareRestore: async () => { throw new Error('candidate rejected'); } }; return backend; } });
+  t.after(() => registry.close());
+  await Promise.all([registry.load('shared-a'), registry.load('shared-b')]);
+  await assert.rejects(registry.prepareSharedRestore('joint'), /candidate rejected/);
+  assert.equal(cancelled, 'prepared-token');
+});
+
 test('shared session exposes fixed five-substep barriers, rest and withdrawal without private input', async () => {
   const states = new Map();
   for (const [index, id] of ['one', 'two'].entries()) states.set(id, { source: 'connectome', individualId: id, dataset: datasets[index], sessionEpoch: `epoch-${id}`, commandSequence: 0,
