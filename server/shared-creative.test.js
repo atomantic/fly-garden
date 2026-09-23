@@ -203,6 +203,7 @@ test('schema 2 sources reject reordered, relabeled or inconsistent batches; sche
     s => { s.participants[0].sourceType = 'connectome'; },
     s => { s.actions[0].tick = 5; },
     s => { s.arrangement.humanContributionId = undefined; },
+    s => { s.participants[1].sessionId = s.participants[0].sessionId; for (const a of s.actions.filter(a => a.individualId === 'two')) a.sessionId = s.participants[0].sessionId; },
   ];
   for (const [index, alter] of variants.entries()) { const copy = structuredClone(source); alter(copy); assert.throws(() => validateCreativeSource(copy), undefined, `variant ${index}`); }
   const v1 = { schemaVersion: 1, kind: 'movement-derived-source', sessionId: 's', worldId: 'home', modelVersion: 'synthetic-lif-v1', checkpointId: null,

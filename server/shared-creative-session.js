@@ -102,7 +102,7 @@ export function createSharedCreativeSessions() {
       for (const item of provenance) {
         let value;
         try { value = validateTraceProvenance(item); } catch { throw failure('Every participant needs complete declared action provenance.'); }
-        if (declared.has(value.individualId)) throw failure('Duplicate participant provenance.');
+        if (declared.has(value.individualId) || [...declared.values()].some(p => p.sessionId === value.sessionId)) throw failure('Duplicate participant provenance.');
         declared.set(value.individualId, value);
       }
       const participants = shared.participants.map(p => {

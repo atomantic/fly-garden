@@ -52,14 +52,15 @@ function validateSharedSource(input) {
   if (input.kind !== SHARED_SOURCE_KIND || input.traceVersion !== SHARED_ACTION_TRACE.version
     || ![input.sessionId, input.worldId, input.worldEpoch].every(text) || !safeTime(input.startTick)
     || !Array.isArray(input.participants) || input.participants.length < 1 || input.participants.length > CREATIVE_LIMITS.participants) invalid();
-  const participants = new Map();
+  const participants = new Map(), sessions = new Set();
   for (const p of input.participants) {
     if (!p || typeof p !== 'object' || Array.isArray(p)) invalid();
     const { startPosition, ...provenance } = p;
     try { validateTraceProvenance(provenance); } catch { invalid(); }
     point(startPosition);
-    if (participants.has(p.individualId)) invalid();
-    participants.set(p.individualId, p);
+    // One session per individual: a shared session ID would make attribution ambiguous.
+    if (participants.has(p.individualId) || sessions.has(p.sessionId)) invalid();
+    participants.set(p.individualId, p); sessions.add(p.sessionId);
   }
   validateArrangement(input.arrangement);
   const n = input.participants.length, batches = input.actions?.length / n;
