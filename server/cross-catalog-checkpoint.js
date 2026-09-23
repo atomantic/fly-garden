@@ -18,7 +18,7 @@ export const CROSS_CATALOG_TYPES = Object.freeze(['fixture-identity', 'full-conn
 export const CROSS_CATALOG_LIMITS = Object.freeze({ members: 64, catalogs: 8, jointHistory: 64, transactionHistory: 256, journalBytes: 2 * 1024 * 1024 });
 const OPEN_STATES = Object.freeze(['staged', 'committing', 'activating', 'recovery-required']);
 const TERMINAL_STATES = Object.freeze(['committed', 'rolled-back', 'aborted', 'unloaded']);
-const CATALOG_STATES = Object.freeze(['staged', 'committed', 'failed', 'uncertain', 'reverted', 'cancelled']);
+const CATALOG_STATES = Object.freeze(['staged', 'committed', 'failed', 'uncertain', 'reverting', 'reverted', 'cancelled']);
 const ADAPTER_METHODS = Object.freeze(['epoch', 'member', 'reserve', 'preflight', 'stage', 'commit', 'cancel', 'revert', 'activate', 'evict']);
 const JOINT_KEYS = Object.freeze(['jointCheckpointId', 'createdAt', 'payload', 'sha256']);
 const PAYLOAD_KEYS = Object.freeze(['version', 'kind', 'intervalMs', 'tick', 'members']);
@@ -265,18 +265,24 @@ export function createCrossCatalogCoordinator({ journal, catalogs, now = Date.no
       }
     }
   }
+  /** Revert is idempotent per transaction ID: a repeat after a crash reports the heads the first call selected. */
+  async function revertGroup(record, adapter, members) {
+    if (members.some(member => member.priorHead === null)) fail('A member had no prior head to revert to.');
+    const result = await adapter.revert({ transactionId: record.transactionId, heads: Object.fromEntries(members.map(member => [member.individualId, member.priorHead])) });
+    if (!exact(result, ['heads']) || !exact(result.heads, members.map(member => member.individualId)) || members.some(member => !uuid(result.heads[member.individualId]))) fail('Invalid revert result.');
+    // A revert may append a restore lineage entry whose payload equals the prior head; history is never deleted.
+    for (const member of members) member.selectedHead = result.heads[member.individualId];
+    record.catalogs.find(value => value.catalogId === adapter.catalogId).state = 'reverted';
+  }
   async function compensate(record, committed) {
     let complete = true;
     for (const group of [...committed].reverse()) {
       const catalog = record.catalogs.find(value => value.catalogId === group.adapter.catalogId);
       try {
-        if (group.members.some(member => member.priorHead === null)) fail('A member had no prior head to compensate to.');
-        const result = await group.adapter.revert({ transactionId: record.transactionId, heads: Object.fromEntries(group.members.map(member => [member.individualId, member.priorHead])) });
-        if (!exact(result, ['heads']) || !exact(result.heads, group.members.map(member => member.individualId)) || group.members.some(member => !uuid(result.heads[member.individualId]))) fail('Invalid compensation result.');
-        // Compensation may append a restore lineage entry whose payload equals the prior head; history is never deleted.
-        for (const member of group.members) member.selectedHead = result.heads[member.individualId];
-        catalog.state = 'reverted';
-      } catch { complete = false; catalog.state = 'uncertain'; }
+        // Journal the intent first, so a crash mid-revert leaves a record that recovery can reconcile idempotently.
+        catalog.state = 'reverting'; persist(record);
+        await revertGroup(record, group.adapter, group.members);
+      } catch { complete = false; if (catalog.state !== 'reverting') catalog.state = 'uncertain'; }
     }
     return complete;
   }
@@ -454,6 +460,13 @@ export function createCrossCatalogCoordinator({ journal, catalogs, now = Date.no
       if (!exact(body, ['protocolVersion', 'transactionId', 'action']) || body.protocolVersion !== 1 || body.transactionId !== recovery.transactionId
         || !['rollback', 'complete'].includes(body.action)) fail('Invalid or stale cross-catalog recovery envelope.');
       const record = structuredClone(recovery);
+      const reverting = groups(record.members).filter(group => record.catalogs.find(value => value.catalogId === group.adapter.catalogId).state === 'reverting');
+      if (reverting.length && body.action === 'complete') fail('A compensation was in progress; only rollback can resolve this transaction.', 'CROSS_CATALOG_DISAGREEMENT', { recovery: recoveryView() });
+      // Re-issue interrupted reverts first; idempotence makes their resulting heads explainable.
+      for (const group of reverting) {
+        try { await revertGroup(record, group.adapter, group.members); }
+        catch (error) { fail('An interrupted compensation could not be reconciled; recovery remains pending.', 'CROSS_CATALOG_RECOVERY_REQUIRED', { cause: error, recovery: recoveryView() }); }
+      }
       for (const member of record.members) {
         const adapter = byId.get(member.catalogId);
         if (!adapter || adapter.catalogType !== member.catalogType) fail('A catalog named by the recovery record is not configured.', 'CROSS_CATALOG_DISAGREEMENT', { recovery: recoveryView() });
@@ -482,13 +495,8 @@ export function createCrossCatalogCoordinator({ journal, catalogs, now = Date.no
           const catalog = record.catalogs.find(value => value.catalogId === group.adapter.catalogId);
           const selected = group.members.filter(member => member.selectedHead === member.plannedHead);
           try {
-            if (selected.length) {
-              if (selected.some(member => member.priorHead === null)) fail('A member had no prior head to roll back to.');
-              const result = await group.adapter.revert({ transactionId: record.transactionId, heads: Object.fromEntries(selected.map(member => [member.individualId, member.priorHead])) });
-              if (!exact(result, ['heads']) || !exact(result.heads, selected.map(member => member.individualId)) || selected.some(member => !uuid(result.heads[member.individualId]))) fail('Invalid rollback result.');
-              for (const member of selected) member.selectedHead = result.heads[member.individualId];
-              catalog.state = 'reverted';
-            } else catalog.state = catalog.state === 'reverted' ? 'reverted' : 'cancelled';
+            if (selected.length) await revertGroup(record, group.adapter, selected);
+            else catalog.state = catalog.state === 'reverted' ? 'reverted' : 'cancelled';
             await group.adapter.cancel({ transactionId: record.transactionId });
           } catch (error) { failures.push(error); catalog.state = 'uncertain'; }
         }

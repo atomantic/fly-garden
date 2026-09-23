@@ -20,7 +20,7 @@ function openCatalog(path, { catalogType, catalogId, members = [] } = {}) {
   let state;
   if (existsSync(file)) state = JSON.parse(readFileSync(file, 'utf8'));
   else {
-    state = { members: {}, payloads: {}, staged: {} };
+    state = { members: {}, payloads: {}, staged: {}, reverts: {} };
     for (const member of members) {
       const head = member.head === undefined ? randomUUID() : member.head;
       if (head) state.payloads[head] = { sha: hash(`${member.individualId}:${head}`), simTimeMs: member.simTimeMs ?? 0 };
@@ -66,8 +66,9 @@ function openCatalog(path, { catalogType, catalogId, members = [] } = {}) {
       return { heads: Object.fromEntries(planned.map(value => [value.individualId, value.checkpointId])) };
     },
     cancel: ({ transactionId }) => { trip('cancel'); delete state.staged[transactionId]; save(); },
-    revert: ({ heads }) => {
+    revert: ({ transactionId, heads }) => {
       trip('revert');
+      if (state.reverts[transactionId]) return { heads: { ...state.reverts[transactionId] } };
       const result = {};
       for (const [id, prior] of Object.entries(heads)) {
         const member = state.members[id];
@@ -75,7 +76,7 @@ function openCatalog(path, { catalogType, catalogId, members = [] } = {}) {
         else { const restored = randomUUID(); state.payloads[restored] = { ...state.payloads[prior] }; member.history.push(restored); member.head = restored; }
         result[id] = member.head;
       }
-      save(); return { heads: result };
+      state.reverts[transactionId] = result; save(); return { heads: { ...result } };
     },
     activate: ({ members }) => {
       trip('activate');
@@ -396,4 +397,31 @@ test('journal capacity is projected before any catalog stages and refusal delete
   for (const catalog of [w.fixture, w.maleCatalog, w.bancCatalog]) assert.equal(catalog.calls.includes('stage'), false);
   assert.equal(journal.document().transactions.length, 0);
   assert.equal(coordinator.status().recovery, null);
+});
+
+test('a crash after an appending revert but before the journal records it is reconciled by an idempotent rollback', async t => {
+  const w = world(t);
+  const priorContents = w.contents();
+  let writes = 0, failAt = Infinity;
+  // Every write from failAt on fails, like a process that stops before journaling anything else.
+  const writeDocument = (path, bytes) => { writes++; if (writes >= failAt) throw new Error('disk gone'); writeFileSync(path, bytes); };
+  const first = w.open({ writeDocument });
+  w.maleCatalog.faults.commit = () => new Error('male catalog write refused');
+  // Writes: staged, committing, fixture committed, BANC committed, BANC reverting; BANC then appends its revert and the journal stops.
+  failAt = writes + 6;
+  await assert.rejects(first.coordinator.save(w.saveBody()), error => error.code === 'CROSS_CATALOG_RECOVERY_REQUIRED');
+  const appended = w.bancCatalog.member(w.ids.banc).head;
+  first.journal.close();
+  const second = w.open();
+  const pending = second.coordinator.status().recovery;
+  assert.equal(pending.state, 'committing');
+  assert.equal(pending.catalogs.find(catalog => catalog.catalogId === 'connectome:banc').state, 'reverting');
+  // The appended restore-lineage head is not in the journal, yet only rollback may resolve it.
+  assert.ok(!pending.affectedHeads.some(value => [value.priorHead, value.plannedHead, value.selectedHead].includes(appended)));
+  await assert.rejects(second.coordinator.recover({ protocolVersion: 1, transactionId: pending.transactionId, action: 'complete' }), /only rollback/);
+  const result = await second.coordinator.recover({ protocolVersion: 1, transactionId: pending.transactionId, action: 'rollback' });
+  assert.equal(result.state, 'rolled-back');
+  assert.equal(w.bancCatalog.member(w.ids.banc).head, appended, 'the idempotent revert did not append a second lineage entry');
+  assert.equal(w.bancCatalog.state().members[w.ids.banc].history.length, 3);
+  assert.deepEqual(w.contents(), priorContents);
 });
