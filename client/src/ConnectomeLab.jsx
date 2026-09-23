@@ -3,6 +3,7 @@ import { DATASETS, currentLabRequest, labCommand, mergeConnectomeState, readConn
 import './connectome-lab.css';
 import ConnectomeRecordings from './ConnectomeRecordings.jsx';
 import { runtimeAdminValues } from './runtime-admin-values.js';
+import ConnectomeSharedControls from './ConnectomeSharedControls.jsx';
 import './observatory-accessibility.css';
 
 const LABELS = {'male-cns:v1.0':'MaleCNS v1.0','banc:v888':'BANC v888'};
@@ -131,6 +132,7 @@ export default function ConnectomeLab({ selectedIndividualId, onSelectIndividual
           <p>Selection reads summaries and history. It never loads or starts a worker.</p>
         </fieldset>
       </div>
+      <ConnectomeSharedControls individuals={catalog.individuals} />
       {catalog.population && <section aria-label="Connectome resource admission"><h3>Resource admission</h3>
         <dl className="lab-metrics"><div><dt>Resident / configured ceiling</dt><dd>{number(catalog.population.residentCount)} / {number(catalog.population.settings?.maxResidentFlies)}</dd></div>
           <div><dt>Aggregate memory</dt><dd>{memory(catalog.population.aggregateMemoryBytes)}</dd></div><div><dt>Available host memory</dt><dd>{memory(catalog.population.availableMemoryBytes)}</dd></div>

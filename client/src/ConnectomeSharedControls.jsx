@@ -1,0 +1,68 @@
+import { useEffect, useState } from 'react';
+
+const LABELS = { 'male-cns:v1.0': 'MaleCNS v1.0', 'banc:v888': 'BANC v888' };
+async function request(path, body) {
+  const response = await fetch(path, body === undefined ? {} : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const value = await response.json();
+  if (!response.ok) throw new Error(typeof value.error === 'string' ? value.error : 'Shared research request failed.');
+  return value;
+}
+
+export default function ConnectomeSharedControls({ individuals = [] }) {
+  const [view, setView] = useState(null), [shared, setShared] = useState(null), [chosen, setChosen] = useState([]);
+  const [busy, setBusy] = useState(false), [error, setError] = useState('');
+  useEffect(() => {
+    let stopped = false;
+    request('/api/connectomes/shared').then(value => { if (!stopped) { setView(value); setShared(value.sessions?.[0] ?? null); } }).catch(reason => { if (!stopped) setError(reason.message); });
+    return () => { stopped = true; };
+  }, []);
+  async function act(path, body) {
+    if (busy) return;
+    setBusy(true); setError('');
+    try { const value = await request(path, body); const next = value.shared?.status === 'separated' ? null : value.shared ?? null; setShared(next); setView(old => ({ ...old, sessions: next ? [next] : [] })); }
+    catch (reason) { setError(reason.message); }
+    finally { setBusy(false); }
+  }
+  async function join() {
+    if (busy) return;
+    setBusy(true); setError('');
+    try {
+      const states = await Promise.all(chosen.map(id => request(`/api/connectomes/${encodeURIComponent(id)}`)));
+      const value = await request('/api/connectomes/shared/join', { protocolVersion: 1, members: states.map(state => ({ protocolVersion: 1, individualId: state.individualId, sessionEpoch: state.sessionEpoch, commandSequence: state.commandSequence })) });
+      setShared(value.shared); setView(old => ({ ...old, sessions: [value.shared] })); setChosen([]);
+    } catch (reason) { setError(reason.message); }
+    finally { setBusy(false); }
+  }
+  function control(action) {
+    if (!shared) return;
+    act(`/api/connectomes/shared/${shared.sharedId}/control`, { protocolVersion: 1, sharedId: shared.sharedId, worldEpoch: shared.worldEpoch, sequence: shared.commandSequence + 1, action });
+  }
+  function barrier() {
+    if (!shared) return;
+    act(`/api/connectomes/shared/${shared.sharedId}/barrier`, { protocolVersion: 1, sharedId: shared.sharedId, worldEpoch: shared.worldEpoch, sequence: shared.commandSequence + 1, action: 'barrier' });
+  }
+  function member(member, action) {
+    if (!shared) return;
+    act(`/api/connectomes/shared/${shared.sharedId}/member`, { protocolVersion: 1, sharedId: shared.sharedId, worldEpoch: shared.worldEpoch, sequence: shared.commandSequence + 1, individualId: member.individualId, action });
+  }
+  const resident = individuals.filter(item => item.resident && !['fault', 'loading', 'stopping'].includes(item.status));
+  return <section className="lab-shared" aria-label="Full-connectome shared research barrier">
+    <h3>Shared full-connectome research barrier</h3>
+    <p>Explicitly join 2–64 already loaded MaleCNS/BANC individuals, then start and run one complete 5 ms world barrier. Each active graph advances exactly five 1 ms neural substeps. This path has no retinal input, motor output, body, learning, chemistry or biological sex comparison; it is not the illustrated fixture garden.</p>
+    {!view?.available && <p role="status">Full-connectome shared research is unavailable until a verified local catalog and matching paused workers are available.</p>}
+    {!shared ? <fieldset disabled={busy || !view?.available}><legend>Select loaded research participants</legend>
+      {resident.map(item => <label key={item.individualId} style={{ display: 'block', overflowWrap: 'anywhere' }}><input type="checkbox" checked={chosen.includes(item.individualId)} onChange={event => setChosen(ids => event.target.checked ? [...ids, item.individualId] : ids.filter(id => id !== item.individualId))} />{LABELS[item.dataset] ?? item.dataset} · {item.individualId} · {item.status}</label>)}
+      <button disabled={busy || chosen.length < 2} onClick={join}>Join research population (paused)</button>
+    </fieldset> : <>
+      <p role="status">{shared.status} · world tick {shared.tick} · substeps {shared.substeps} · {shared.reason || 'No automatic execution.'}</p>
+      <div className="lab-actions"><button disabled={busy || shared.status === 'running' || shared.participants.every(item => item.mode === 'resting')} onClick={() => control('start')}>Start research barrier</button>
+        <button disabled={busy || shared.status !== 'running'} onClick={barrier}>Run one complete barrier</button>
+        <button disabled={busy || shared.status !== 'running'} onClick={() => control('pause')}>Pause all</button>
+        <button disabled={busy} onClick={() => control('separate')}>Separate (all paused)</button></div>
+      <fieldset disabled={busy}><legend>Per-member quiet state</legend>{shared.participants.map(item => <p key={item.individualId} style={{ overflowWrap: 'anywhere' }}>{LABELS[item.dataset] ?? item.dataset} · {item.individualId} · {item.mode} · {item.status}
+        <button disabled={shared.status === 'resting' && item.mode === 'active'} onClick={() => member(item, item.mode === 'resting' ? 'resume' : 'rest')}>{item.mode === 'resting' ? 'Resume member' : 'Rest member'}</button>
+        <button disabled={shared.participants.length < 3} onClick={() => member(item, 'withdraw')}>Withdraw member</button></p>)}</fieldset>
+    </>}
+    {error && <p role="alert">{error}</p>}
+  </section>;
+}

@@ -8,7 +8,7 @@ import { connectomeProfile } from './connectome-profiles.js';
 /** Explicit controller factory also permits small numerical fixtures in tests. */
 export function createConnectomeSession({ graph, dataset, individualId = randomUUID(), checkpoint = null, provenance = null, loadWallMs = 0 }) {
   const kernel = createSparseLif(graph, { dataset, individualId, checkpoint });
-  let status = 'paused', reason = null, sessionEpoch = randomUUID(), pendingRestore = null;
+  let status = 'paused', reason = null, sessionEpoch = randomUUID(), pendingRestore = null, pendingAdvance = null;
   const snapshot = () => ({ protocolVersion: 1, source: 'connectome', status, available: status !== 'fault',
     reason, individualId, sessionEpoch, dataset, model: kernel.model, graphSha256: kernel.graphSha256, provenance, loadWallMs,
     neural: kernel.summary(), memory: process.memoryUsage(), retainedWeightState: kernel.retainedWeightState(),
@@ -21,6 +21,9 @@ export function createConnectomeSession({ graph, dataset, individualId = randomU
       return { ...kernel.sample(value), sessionEpoch, status, provenance };
     }
     if (action === 'prepareRestore') {
+      if (pendingAdvance) { kernel.releaseAdvance(pendingAdvance.candidate); pendingAdvance = null; }
+    }
+    if (action === 'prepareRestore') {
       const candidate = kernel.prepareRestore(value), token = randomUUID();
       pendingRestore = { token, candidate };
       return { token, sessionEpoch };
@@ -31,6 +34,47 @@ export function createConnectomeSession({ graph, dataset, individualId = randomU
       status = 'paused'; reason = null; sessionEpoch = randomUUID();
       return snapshot();
     }
+    if (action === 'prepareAdvance') {
+      if (status !== 'running') throw new Error('Explicit start required before advancement');
+      if (pendingAdvance) kernel.releaseAdvance(pendingAdvance.candidate);
+      pendingAdvance = null; pendingRestore = null;
+      try {
+        const candidate = kernel.prepareAdvance(value), token = randomUUID();
+        pendingAdvance = { token, candidate };
+        return { token, steps: value, sessionEpoch };
+      } catch {
+        status = 'fault'; reason = 'Numerical fault; last valid state retained and advancement stopped.';
+        throw new Error(reason);
+      }
+    }
+    if (action === 'commitAdvance') {
+      if (!pendingAdvance || value !== pendingAdvance.token) throw new Error('Stale prepared advance token');
+      try {
+        kernel.commitAdvance(pendingAdvance.candidate); pendingAdvance.committed = true;
+        return snapshot();
+      } catch {
+        status = 'fault'; reason = 'Numerical fault; last valid state retained and advancement stopped.';
+        throw new Error(reason);
+      }
+    }
+    if (action === 'rollbackAdvance') {
+      if (!pendingAdvance || value !== pendingAdvance.token) throw new Error('Stale prepared advance token');
+      try {
+        if (pendingAdvance.committed) kernel.rollbackAdvance(pendingAdvance.candidate);
+        else kernel.releaseAdvance(pendingAdvance.candidate);
+        pendingAdvance = null; status = 'paused'; reason = null;
+        return snapshot();
+      } catch (error) {
+        pendingAdvance = null; status = 'fault'; reason = 'Shared barrier rollback failed; durable checkpoint retained for explicit recovery.';
+        throw error;
+      }
+    }
+    if (action === 'releaseAdvance') {
+      if (!pendingAdvance || value !== pendingAdvance.token) throw new Error('Stale prepared advance token');
+      kernel.releaseAdvance(pendingAdvance.candidate); pendingAdvance = null;
+      return snapshot();
+    }
+    if (!['snapshot', 'prepareAdvance', 'commitAdvance', 'rollbackAdvance', 'releaseAdvance'].includes(action)) pendingAdvance = null;
     if (!['checkpoint', 'snapshot'].includes(action)) pendingRestore = null;
     if (action === 'restore') {
       kernel.restore(value);
