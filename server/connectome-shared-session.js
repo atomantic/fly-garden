@@ -200,7 +200,7 @@ export function createConnectomeSharedSession({ snapshot, control, barrier, inva
       event(session, 'withdraw', { individualId: member.individualId });
     } else {
       if (body.action === 'rest' && member.mode === 'resting' || body.action === 'resume' && member.mode === 'active') fail('Member is already in the requested mode.');
-      await control(member.individualId, body.action === 'resume' && session.status === 'running' ? 'start' : body.action);
+      await control(member.individualId, body.action === 'resume' ? (session.status === 'running' ? 'start' : 'pause') : body.action);
       member.mode = body.action === 'rest' ? 'resting' : 'active';
       if (session.participants.every(value => value.mode === 'resting')) { session.status = 'resting'; session.reason = 'Every participant is resting; the world clock is frozen.'; }
       else if (session.status === 'resting') { session.status = 'paused'; session.reason = 'A participant resumed; explicit shared start required.'; }

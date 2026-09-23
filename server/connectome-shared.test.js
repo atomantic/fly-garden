@@ -68,6 +68,8 @@ test('registry barrier waits for all workers, preserves order-independent clocks
   const result = await f.registry.barrier(['shared-b', 'shared-a'], 5, { 'shared-a': f.registry.snapshot('shared-a').sessionEpoch, 'shared-b': f.registry.snapshot('shared-b').sessionEpoch });
   assert.deepEqual(result.map(value => value.neural.tick), [5, 5]);
   assert.deepEqual(f.registry.list().map(value => value.neural.tick), [5, 5]);
+  await f.registry.sharedControl('shared-a', 'rest'); await f.registry.sharedControl('shared-a', 'resume');
+  assert.equal(f.registry.snapshot('shared-a').status, 'running');
   await Promise.all([t2.registry.load('shared-a'), t2.registry.load('shared-b')]);
   await Promise.all([t2.registry.sharedControl('shared-a', 'start'), t2.registry.sharedControl('shared-b', 'start')]);
   await assert.rejects(t2.registry.barrier(['shared-a', 'shared-b'], 5), /no participant advanced/);

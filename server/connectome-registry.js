@@ -116,8 +116,7 @@ export function createConnectomeRegistry({ identities = [], capacity = createCap
         } else if (action === 'rest') {
           r.state = await call(r, 'pause'); r.lifecycle = 'resting';
         } else {
-          const operation = r.lifecycle === 'running' ? 'start' : 'pause';
-          r.state = await call(r, operation); r.lifecycle = operation === 'start' ? 'running' : 'paused';
+          r.state = await call(r, 'start'); r.lifecycle = 'running';
         }
         r.reason = null;
         return publicState(r);
