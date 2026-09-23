@@ -262,10 +262,10 @@ export function openConnectomeStore(directory, { profiles = {}, writeCatalog = a
     },
     cancelJointRestore(token) { ensureOpen(); return pendingJointRestores.delete(token); },
     commitJointRestore(token) {
-      ensureDurable();
       const pending = pendingJointRestores.get(token);
-      if (!pending) throw new Error('Unknown or stale joint restore token');
       try {
+        ensureDurable();
+        if (!pending) throw new Error('Unknown or stale joint restore token');
         const joint = (catalog.jointCheckpoints ?? []).find(value => value.jointCheckpointId === pending.jointCheckpointId);
         if (!joint) throw new Error('Joint checkpoint not found');
         const planned = []; let total = storageBytes();
@@ -286,9 +286,6 @@ export function openConnectomeStore(directory, { profiles = {}, writeCatalog = a
         syncDirectory(checkpointDirectory);
         persist(next, { individualId: planned[0].recordId, checkpointId: planned[0].item.checkpointId });
         return { jointCheckpointId: pending.jointCheckpointId, members: planned.map(value => ({ individualId: value.recordId, checkpointId: value.item.checkpointId })) };
-      } catch (error) {
-        pendingJointRestores.delete(token);
-        throw error;
       } finally {
         pendingJointRestores.delete(token);
       }
