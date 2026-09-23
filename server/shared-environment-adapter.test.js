@@ -27,7 +27,7 @@ function tinyDouble(individualId, { delays = [], motor = true, stage: override, 
     async stage(request) {
       requests.push(request); const call = calls++;
       await delay(delays[call] ?? 0);
-      if (override) { const value = override(request, call); if (value !== undefined) return value; }
+      if (override) { const value = await override(request, call); if (value !== undefined) return value; }
       const candidate = createSparseLif(graph(), { individualId, checkpoint: kernel.checkpoint() });
       const luminance = request.channels['visual-frame']?.luminance ?? [];
       const drive = luminance.reduce((sum, value) => sum + value, 0) / (32 * 255);
@@ -225,6 +225,22 @@ test('stale inputs, partial batches, timeouts, numerical faults and step mismatc
   }
 });
 
+test('a timed-out stage blocks resume until its late result is discarded', async () => {
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  const context = setup({ doubles: { a: { stage: async (_request, call) => { if (call === 0) await gate; } } }, stageTimeoutMs: 20 });
+  context.run();
+  const staleEpoch = context.adapter.view().worldEpoch;
+  await assert.rejects(context.adapter.step(context.batch()), code('timeout'));
+  assert.throws(() => context.run(), code('stage-pending'));
+  release();
+  await delay(5);
+  assert.deepEqual(context.doubles.a.log.filter(entry => entry[0] === 'discard').length, 2, 'the late stage is discarded after it settles');
+  context.run();
+  assert.notEqual(context.adapter.view().worldEpoch, staleEpoch);
+  assert.deepEqual((await context.adapter.step(context.batch())).traces.map(trace => trace.neural.tick), [5, 5]);
+});
+
 test('a commit failure rolls back already committed members; an unrecoverable rollback faults the session', async () => {
   let failCommit = true;
   const context = setup({ ids: ['a', 'b', 'c'], doubles: { b: { commit: () => failCommit } } });
@@ -249,6 +265,11 @@ test('a commit failure rolls back already committed members; an unrecoverable ro
   broken.run();
   await assert.rejects(broken.adapter.step(broken.batch()), code('worker-fault'));
   assert.equal(broken.adapter.view().status, 'fault');
+  assert.throws(() => broken.run(), code('fault'));
+  // Rest, wake and withdrawal cannot launder a fault back into a resumable state.
+  broken.adapter.rest('a'); broken.adapter.rest('b');
+  assert.equal(broken.adapter.view().status, 'fault');
+  broken.adapter.wake('a');
   assert.throws(() => broken.run(), code('fault'));
 });
 

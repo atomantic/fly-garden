@@ -142,6 +142,8 @@ export function createSharedEnvironmentAdapter({ sharedId = randomUUID(), member
   });
   if (new Set(participants.map(member => member.declaration.individualId)).size !== participants.length) throw new Error('Shared adapter participants must be distinct');
   let worldEpoch = randomUUID(), worldTick = 0, status = 'paused', reason = 'Explicit resume required.', fault = null, busy = false;
+  // Timed-out stages keep running in their backend; resume waits until each late result is discarded.
+  const lingering = new Set();
   const active = () => participants.filter(member => member.mode === 'active');
   const find = id => participants.find(member => member.declaration.individualId === id);
   const rotate = () => { worldEpoch = randomUUID(); };
@@ -160,6 +162,7 @@ export function createSharedEnvironmentAdapter({ sharedId = randomUUID(), member
     idle();
     if (!exact(body, ['worldEpoch']) || body.worldEpoch !== worldEpoch) reject('stale-epoch', 'Stale shared adapter resume envelope.');
     if (status === 'fault') reject('fault', 'A participant could not be rolled back; separate the session.');
+    if (lingering.size) reject('stage-pending', 'A timed-out participant stage has not settled yet; resume after it is discarded.');
     if (status !== 'paused') reject('not-paused', 'Only a paused shared adapter can be explicitly resumed.');
     status = 'running'; reason = null; fault = null; rotate();
     return view();
@@ -219,12 +222,19 @@ export function createSharedEnvironmentAdapter({ sharedId = randomUUID(), member
     const recipients = active(), ref = member => ({ individualId: member.declaration.individualId, worldEpoch, worldTick });
     try {
       // Each backend receives only its own recipient-scoped copy; completion order is ignored.
-      const settled = await Promise.allSettled(recipients.map(member => bounded(Promise.resolve().then(() => member.backend.stage(Object.freeze({
+      const stages = recipients.map(member => Promise.resolve().then(() => member.backend.stage(Object.freeze({
         contractVersion: SHARED_ADAPTER_CONTRACT.version, individualId: member.declaration.individualId, sessionEpoch: member.declaration.sessionEpoch,
-        worldEpoch, worldTick, intervalMs, substeps, channels: observations.get(member.declaration.individualId).channels }))))));
+        worldEpoch, worldTick, intervalMs, substeps, channels: observations.get(member.declaration.individualId).channels }))));
+      const settled = await Promise.allSettled(stages.map(bounded));
       const problem = settled.map((result, index) => result.status === 'rejected' ? (result.reason?.code === 'timeout' ? 'timeout' : 'worker-fault')
         : responseProblem(recipients[index], result.value)).find(Boolean);
       if (problem) {
+        for (const [index, result] of settled.entries()) {
+          if (result.reason?.code !== 'timeout') continue;
+          const member = recipients[index], late = ref(member), done = () => member.backend.discard(late);
+          lingering.add(member);
+          stages[index].then(done, done).catch(() => {}).finally(() => lingering.delete(member));
+        }
         await Promise.allSettled(recipients.map(member => member.backend.discard(ref(member))));
         halt(problem);
       }
@@ -258,9 +268,11 @@ export function createSharedEnvironmentAdapter({ sharedId = randomUUID(), member
     if (!member) reject('cross-session', 'Individual is not a member of this shared adapter session.');
     if (member.mode === 'resting') reject('same-mode', 'Participant is already resting.');
     member.mode = 'resting';
-    if (!active().length) { status = 'resting'; reason = 'Every participant is resting; the world clock is frozen.'; }
+    if (!active().length && status !== 'fault') { status = 'resting'; reason = 'Every participant is resting; the world clock is frozen.'; }
     return view();
   }
+  /** As in the shared-session contract, a member woken while the world runs joins the next
+   * batch; a batch captured without it is partial and pauses the session. */
   function wake(id) {
     idle();
     const member = find(id);
@@ -277,7 +289,7 @@ export function createSharedEnvironmentAdapter({ sharedId = randomUUID(), member
     if (!member) reject('cross-session', 'Individual is not a member of this shared adapter session.');
     if (participants.length <= 2) reject('population-floor', 'Withdrawal would drop the population below two; separate the session instead.');
     participants.splice(participants.indexOf(member), 1);
-    if (!active().length) { status = 'resting'; reason = 'Every remaining participant is resting; the world clock is frozen.'; }
+    if (!active().length && status !== 'fault') { status = 'resting'; reason = 'Every remaining participant is resting; the world clock is frozen.'; }
     return view();
   }
   function close() { idle(); status = 'closed'; reason = 'Shared adapter closed.'; return view(); }
