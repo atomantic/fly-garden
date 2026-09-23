@@ -11,12 +11,22 @@ async function request(path, body) {
 export default function ConnectomeSharedControls({ individuals = [] }) {
   const [view, setView] = useState(null), [shared, setShared] = useState(null), [chosen, setChosen] = useState([]);
   const [selectedSharedId, setSelectedSharedId] = useState('');
+  const [checkpoints, setCheckpoints] = useState([]), [selectedCheckpoint, setSelectedCheckpoint] = useState('');
   const [busy, setBusy] = useState(false), [error, setError] = useState('');
   useEffect(() => {
     let stopped = false;
-    request('/api/connectomes/shared').then(value => { if (!stopped) { const first = value.sessions?.[0] ?? null; setView(value); setShared(first); setSelectedSharedId(first?.sharedId ?? ''); } }).catch(reason => { if (!stopped) setError(reason.message); });
+    Promise.all([request('/api/connectomes/shared'), request('/api/connectomes/shared/checkpoints')]).then(([value, saved]) => {
+      if (stopped) return;
+      const first = value.sessions?.[0] ?? null;
+      setView(value); setShared(first); setSelectedSharedId(first?.sharedId ?? ''); setCheckpoints(saved.checkpoints ?? []);
+      setSelectedCheckpoint(saved.checkpoints?.[0]?.jointCheckpointId ?? '');
+    }).catch(reason => { if (!stopped) setError(reason.message); });
     return () => { stopped = true; };
   }, []);
+  async function refreshCheckpoints() {
+    const value = await request('/api/connectomes/shared/checkpoints');
+    setCheckpoints(value.checkpoints ?? []); setSelectedCheckpoint(current => value.checkpoints?.some(item => item.jointCheckpointId === current) ? current : value.checkpoints?.[0]?.jointCheckpointId ?? '');
+  }
   async function act(path, body) {
     if (busy) return;
     setBusy(true); setError('');
@@ -29,6 +39,7 @@ export default function ConnectomeSharedControls({ individuals = [] }) {
         const sessions = old?.sessions ?? [];
         return { ...old, sessions: next ? [...sessions.filter(item => item.sharedId !== next.sharedId), next] : sessions.filter(item => item.sharedId !== shared?.sharedId) };
       });
+      if (body?.action === 'save') await refreshCheckpoints();
     }
     catch (reason) { setError(reason.message); }
     finally { setBusy(false); }
@@ -56,6 +67,18 @@ export default function ConnectomeSharedControls({ individuals = [] }) {
     if (!shared) return;
     act(`/api/connectomes/shared/${shared.sharedId}/member`, { protocolVersion: 1, sharedId: shared.sharedId, worldEpoch: shared.worldEpoch, sequence: shared.commandSequence + 1, individualId: member.individualId, action });
   }
+  async function restore() {
+    if (!shared || !selectedCheckpoint || busy) return;
+    setBusy(true); setError('');
+    try {
+      const states = await Promise.all(shared.participants.map(member => request(`/api/connectomes/${encodeURIComponent(member.individualId)}`)));
+      const value = await request('/api/connectomes/shared/restore', { protocolVersion: 1, jointCheckpointId: selectedCheckpoint,
+        members: states.map(state => ({ protocolVersion: 1, individualId: state.individualId, sessionEpoch: state.sessionEpoch, commandSequence: state.commandSequence })) });
+      setShared(value.shared); setSelectedSharedId(value.shared.sharedId); setView(old => ({ ...old, sessions: [...(old?.sessions ?? []).filter(item => item.sharedId !== value.shared.sharedId), value.shared] }));
+      await refreshCheckpoints();
+    } catch (reason) { setError(reason.message); }
+    finally { setBusy(false); }
+  }
   const resident = individuals.filter(item => item.resident && !['fault', 'loading', 'stopping'].includes(item.status));
   return <section className="lab-shared" aria-label="Full-connectome shared research barrier">
     <h3>Shared full-connectome research barrier</h3>
@@ -70,7 +93,10 @@ export default function ConnectomeSharedControls({ individuals = [] }) {
       <div className="lab-actions"><button disabled={busy || shared.status === 'running' || shared.participants.every(item => item.mode === 'resting')} onClick={() => control('start')}>Start research barrier</button>
         <button disabled={busy || shared.status !== 'running'} onClick={barrier}>Run one complete barrier</button>
         <button disabled={busy || shared.status !== 'running'} onClick={() => control('pause')}>Pause all</button>
+        <button disabled={busy || shared.status === 'running'} onClick={() => control('save')}>Save joint checkpoint</button>
         <button disabled={busy} onClick={() => control('separate')}>Separate (all paused)</button></div>
+      <label>Restore saved joint checkpoint <select aria-label="Saved joint checkpoint" value={selectedCheckpoint} disabled={busy || shared.status !== 'paused'} onChange={event => setSelectedCheckpoint(event.target.value)}>{checkpoints.map(item => <option key={item.jointCheckpointId} value={item.jointCheckpointId}>{item.jointCheckpointId} · tick {item.payload.tick}</option>)}</select></label>
+      <button disabled={busy || shared.status !== 'paused' || !selectedCheckpoint} onClick={restore}>Restore paused joint checkpoint</button>
       <fieldset disabled={busy}><legend>Per-member quiet state</legend>{shared.participants.map(item => <p key={item.individualId} style={{ overflowWrap: 'anywhere' }}>{LABELS[item.dataset] ?? item.dataset} · {item.individualId} · {item.mode} · {item.status}
         <button disabled={shared.status === 'resting' && item.mode === 'active'} onClick={() => member(item, item.mode === 'resting' ? 'resume' : 'rest')}>{item.mode === 'resting' ? 'Resume member' : 'Rest member'}</button>
         <button disabled={shared.participants.length < 3} onClick={() => member(item, 'withdraw')}>Withdraw member</button></p>)}</fieldset>

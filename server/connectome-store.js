@@ -5,15 +5,42 @@ import { DatabaseSync } from 'node:sqlite';
 import { connectomeProfile } from './connectome-profiles.js';
 import { LIF_MODEL } from './sparse-lif.js';
 
-const LIMITS = Object.freeze({ identities: 64, history: 64, catalogBytes: 2 * 1024 * 1024, checkpointBytes: 16 * 1024 * 1024, totalCheckpointBytes: 1024 * 1024 * 1024, files: 8192 });
+const LIMITS = Object.freeze({ identities: 64, history: 64, jointHistory: 64, catalogBytes: 2 * 1024 * 1024, checkpointBytes: 16 * 1024 * 1024, totalCheckpointBytes: 1024 * 1024 * 1024, files: 8192 });
 const exact = (v, keys) => v && typeof v === 'object' && !Array.isArray(v) && Object.keys(v).length === keys.length && keys.every(k => Object.hasOwn(v, k));
 const uuid = v => typeof v === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(v);
 const sha = value => createHash('sha256').update(value).digest('hex');
 const shaValid = value => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
 const integer = value => Number.isSafeInteger(value) && value >= 0;
 const invalid = () => { throw new Error('Connectome store corrupt or incompatible; existing files preserved'); };
-const catalogDigest = catalog => sha(JSON.stringify({schemaVersion:catalog.schemaVersion,kind:catalog.kind,individuals:catalog.individuals}));
+const catalogDigest = catalog => sha(JSON.stringify({schemaVersion:catalog.schemaVersion,kind:catalog.kind,individuals:catalog.individuals,...(catalog.schemaVersion === 2 ? {jointCheckpoints:catalog.jointCheckpoints} : {})}));
 const same = (a, b) => exact(a, Object.keys(b)) && Object.entries(b).every(([key, value]) => a[key] === value);
+const jointDigest = payload => sha(JSON.stringify(payload));
+const JOINT_MEMBER_KEYS = Object.freeze(['individualId','dataset','graphSha256','modelId','checkpointId','checkpointSha256','simTimeMs','mode']);
+const JOINT_PAYLOAD_KEYS = Object.freeze(['version','intervalMs','tick','members']);
+const JOINT_RECORD_KEYS = Object.freeze(['jointCheckpointId','createdAt','payload','sha256']);
+function validateJointPayload(payload, individuals) {
+  if (!exact(payload, JOINT_PAYLOAD_KEYS) || payload.version !== 1 || payload.intervalMs !== 5 || !integer(payload.tick)
+    || !Array.isArray(payload.members) || payload.members.length < 2 || payload.members.length > LIMITS.identities) invalid();
+  const ids = new Set();
+  for (const member of payload.members) {
+    const record = individuals instanceof Map ? individuals.get(member.individualId) : individuals[member.individualId];
+    if (!exact(member, JOINT_MEMBER_KEYS) || typeof member.individualId !== 'string' || ids.has(member.individualId)
+      || !record || !shaValid(member.graphSha256) || !shaValid(member.checkpointSha256)
+      || !integer(member.simTimeMs) || !['active','resting'].includes(member.mode)) invalid();
+    const item = record.checkpoints.find(checkpoint => checkpoint.checkpointId === member.checkpointId);
+    if (!item || item.sha256 !== member.checkpointSha256 || record.descriptor.dataset !== member.dataset
+      || record.descriptor.graphSha256 !== member.graphSha256 || record.descriptor.modelId !== member.modelId
+      || member.simTimeMs !== item.tick * LIF_MODEL.dtMs) invalid();
+    ids.add(member.individualId);
+  }
+  return payload;
+}
+function validateJointRecord(joint, individuals) {
+  if (!exact(joint, JOINT_RECORD_KEYS) || !uuid(joint.jointCheckpointId) || !integer(joint.createdAt) || !shaValid(joint.sha256)
+    || joint.sha256 !== jointDigest(joint.payload)) invalid();
+  validateJointPayload(joint.payload, individuals);
+  return joint;
+}
 function descriptor(dataset, input) {
   connectomeProfile(dataset);
   if (!input || typeof input.directory !== 'string' || !input.directory || !shaValid(input.graphSha256)
@@ -73,14 +100,17 @@ function noSymlinkDirectory(path) {
   const stat = lstatSync(path); if (!stat.isDirectory() || stat.isSymbolicLink()) invalid();
 }
 function validateCatalog(catalog, profiles) {
-  if (!exact(catalog, ['schemaVersion','kind','individuals','sha256']) || catalog.sha256 !== catalogDigest(catalog) || catalog.schemaVersion !== 1 || catalog.kind !== 'connectome-catalog'
-    || !Array.isArray(catalog.individuals) || catalog.individuals.length > LIMITS.identities) invalid();
-  const ids = new Set(), checkpointIds = new Set();
+  const schemaVersion = catalog?.schemaVersion;
+  const keys = schemaVersion === 2 ? ['schemaVersion','kind','individuals','jointCheckpoints','sha256'] : ['schemaVersion','kind','individuals','sha256'];
+  if (![1, 2].includes(schemaVersion) || !exact(catalog, keys) || catalog.sha256 !== catalogDigest(catalog) || catalog.kind !== 'connectome-catalog'
+    || !Array.isArray(catalog.individuals) || catalog.individuals.length > LIMITS.identities
+    || (schemaVersion === 2 && (!Array.isArray(catalog.jointCheckpoints) || catalog.jointCheckpoints.length > LIMITS.jointHistory))) invalid();
+  const ids = new Set(), checkpointIds = new Set(), byId = new Map();
   for (const record of catalog.individuals) {
     if (!exact(record,['individualId','descriptor','createdAt','head','checkpoints']) || !uuid(record.individualId) || ids.has(record.individualId)
       || !integer(record.createdAt) || !Array.isArray(record.checkpoints) || record.checkpoints.length > LIMITS.history
       || !same(record.descriptor, descriptor(record.descriptor?.dataset, profiles[record.descriptor?.dataset]))) invalid();
-    ids.add(record.individualId); const prior = new Map(); let previous = null;
+    ids.add(record.individualId); byId.set(record.individualId, record); const prior = new Map(); let previous = null;
     for (const item of record.checkpoints) {
       if (!exact(item,['checkpointId','parentId','restoredFrom','operation','createdAt','sha256','bytes','tick']) || !uuid(item.checkpointId) || checkpointIds.has(item.checkpointId)
         || item.parentId !== previous || (item.restoredFrom !== null && !prior.has(item.restoredFrom))
@@ -93,6 +123,13 @@ function validateCatalog(catalog, profiles) {
       prior.set(item.checkpointId, item); checkpointIds.add(item.checkpointId); previous=item.checkpointId;
     }
     if (record.head !== previous) invalid();
+  }
+  if (schemaVersion === 2) {
+    const jointIds = new Set();
+    for (const joint of catalog.jointCheckpoints) {
+      if (!uuid(joint.jointCheckpointId) || jointIds.has(joint.jointCheckpointId)) invalid();
+      validateJointRecord(joint, byId); jointIds.add(joint.jointCheckpointId);
+    }
   }
   return catalog;
 }
@@ -117,6 +154,7 @@ export function openConnectomeStore(directory, { profiles = {}, writeCatalog = a
   try { lock.exec('CREATE TABLE IF NOT EXISTS writer (id INTEGER PRIMARY KEY); BEGIN EXCLUSIVE'); }
   catch { lock.close(); throw new Error('Connectome store is already open or writer lock unavailable'); }
   let catalog, closed=false, durabilityUncertain=false;
+  const pendingJointRestores = new Map();
   const ensureOpen = () => { if (closed) throw new Error('Connectome store closed'); };
   function ensureDurable() {
     ensureOpen();
@@ -151,7 +189,7 @@ export function openConnectomeStore(directory, { profiles = {}, writeCatalog = a
       for (const record of catalog.individuals) for (const item of record.checkpoints) verifyPayload(directory,record,item);
       syncCatalogDirectory(directory);
     } else {
-      mkdirSync(checkpointDirectory,{mode:0o700}); persist({schemaVersion:1,kind:'connectome-catalog',individuals:[]});
+      mkdirSync(checkpointDirectory,{mode:0o700}); persist({schemaVersion:2,kind:'connectome-catalog',individuals:[],jointCheckpoints:[]});
     }
   } catch(error) { lock.close(); throw error; }
   function recordFor(id) { ensureOpen(); const record=catalog.individuals.find(r=>r.individualId===id); if (!record) throw new Error('Connectome identity not found'); return record; }
@@ -167,6 +205,91 @@ export function openConnectomeStore(directory, { profiles = {}, writeCatalog = a
     },
     checkpoints(id) { return structuredClone(recordFor(id).checkpoints); },
     readCheckpoint(id,checkpointId) { ensureDurable(); const record=recordFor(id); return verifyPayload(directory,record,itemFor(record,checkpointId)).value; },
+    jointCheckpoints() { ensureDurable(); return structuredClone(catalog.jointCheckpoints ?? []); },
+    readJointCheckpoint(jointCheckpointId) {
+      ensureDurable();
+      const joint = (catalog.jointCheckpoints ?? []).find(value => value.jointCheckpointId === jointCheckpointId);
+      if (!joint) throw new Error('Joint checkpoint not found');
+      return structuredClone(joint);
+    },
+    persistJointCheckpoint({jointCheckpointId,intervalMs,tick,members}) {
+      ensureDurable();
+      if (!uuid(jointCheckpointId) || intervalMs !== 5 || !integer(tick) || !Array.isArray(members) || members.length < 2 || members.length > LIMITS.identities
+        || new Set(members.map(member => member?.individualId)).size !== members.length
+        || (catalog.jointCheckpoints ?? []).some(value => value.jointCheckpointId === jointCheckpointId)) throw new Error('Invalid joint checkpoint transaction');
+      const planned = [], ids = new Set();
+      let totalBytes = storageBytes();
+      for (const input of members) {
+        if (!exact(input, ['individualId','dataset','parentId','checkpoint','mode']) || typeof input.individualId !== 'string' || ids.has(input.individualId)
+          || !['active','resting'].includes(input.mode)) throw new Error('Invalid joint checkpoint member');
+        const record = recordFor(input.individualId);
+        if (input.dataset !== record.descriptor.dataset || input.parentId !== record.head || record.checkpoints.length >= LIMITS.history) throw new Error('Stale joint checkpoint member');
+        validateCheckpoint(input.checkpoint, record);
+        const bytes = Buffer.from(JSON.stringify(input.checkpoint));
+        if (bytes.length > LIMITS.checkpointBytes || totalBytes + bytes.length > LIMITS.totalCheckpointBytes) throw new Error('Joint checkpoint byte ceiling exceeded');
+        const item = { checkpointId: randomUUID(), parentId: record.head, restoredFrom: null, operation: 'save', createdAt: Date.now(), sha256: sha(bytes), bytes: bytes.length, tick: input.checkpoint.tick };
+        planned.push({ recordId: record.individualId, dataset: record.descriptor.dataset, graphSha256: record.descriptor.graphSha256, modelId: record.descriptor.modelId, mode: input.mode, item, bytes });
+        ids.add(input.individualId); totalBytes += bytes.length;
+      }
+      const payload = { version: 1, intervalMs, tick, members: planned.map(value => ({ individualId: value.recordId, dataset: value.dataset,
+        graphSha256: value.graphSha256, modelId: value.modelId, checkpointId: value.item.checkpointId, checkpointSha256: value.item.sha256,
+        simTimeMs: value.item.tick * LIF_MODEL.dtMs, mode: value.mode })) };
+      const joint = { jointCheckpointId, createdAt: Date.now(), payload, sha256: jointDigest(payload) };
+      const next = structuredClone(catalog);
+      next.schemaVersion = 2; next.jointCheckpoints ??= [];
+      if (next.jointCheckpoints.length >= LIMITS.jointHistory) throw new Error('Joint checkpoint history capacity reached');
+      for (const value of planned) {
+        const target = next.individuals.find(record => record.individualId === value.recordId);
+        target.checkpoints.push(value.item); target.head = value.item.checkpointId;
+        writeExclusive(join(checkpointDirectory,`${value.item.checkpointId}.json`), value.bytes);
+      }
+      syncDirectory(checkpointDirectory);
+      next.jointCheckpoints.push(joint);
+      persist(next, { individualId: planned[0].recordId, checkpointId: planned[0].item.checkpointId });
+      return structuredClone(joint);
+    },
+    prepareJointRestore(jointCheckpointId) {
+      ensureDurable();
+      const joint = (catalog.jointCheckpoints ?? []).find(value => value.jointCheckpointId === jointCheckpointId);
+      if (!joint) throw new Error('Joint checkpoint not found');
+      const members = joint.payload.members.map(member => {
+        const record = recordFor(member.individualId), item = itemFor(record, member.checkpointId);
+        return { ...structuredClone(member), parentId: record.head, checkpoint: verifyPayload(directory, record, item).value };
+      });
+      const token = randomUUID();
+      pendingJointRestores.set(token, { jointCheckpointId, expectedHeads: Object.fromEntries(members.map(member => [member.individualId, member.parentId])), members });
+      return { token, jointCheckpointId, members: structuredClone(members) };
+    },
+    commitJointRestore(token) {
+      ensureDurable();
+      const pending = pendingJointRestores.get(token);
+      if (!pending) throw new Error('Unknown or stale joint restore token');
+      const joint = (catalog.jointCheckpoints ?? []).find(value => value.jointCheckpointId === pending.jointCheckpointId);
+      if (!joint) throw new Error('Joint checkpoint not found');
+      const planned = []; let total = storageBytes();
+      for (const member of pending.members) {
+        const record = recordFor(member.individualId);
+        if (record.head !== pending.expectedHeads[member.individualId] || record.checkpoints.length >= LIMITS.history) throw new Error('Stale joint restore membership');
+        const source = itemFor(record, member.checkpointId), bytes = verifyPayload(directory, record, source).bytes;
+        if (total + bytes.length > LIMITS.totalCheckpointBytes) throw new Error('Joint restore byte ceiling exceeded');
+        const item = { checkpointId: randomUUID(), parentId: record.head, restoredFrom: source.checkpointId, operation: 'restore', createdAt: Date.now(), sha256: source.sha256, bytes: bytes.length, tick: source.tick };
+        planned.push({ recordId: record.individualId, item, bytes }); total += bytes.length;
+      }
+      const next = structuredClone(catalog);
+      for (const value of planned) {
+        const target = next.individuals.find(record => record.individualId === value.recordId);
+        target.checkpoints.push(value.item); target.head = value.item.checkpointId;
+        writeExclusive(join(checkpointDirectory,`${value.item.checkpointId}.json`), value.bytes);
+      }
+      syncDirectory(checkpointDirectory);
+      try {
+        persist(next, { individualId: planned[0].recordId, checkpointId: planned[0].item.checkpointId });
+      } catch (error) {
+        pendingJointRestores.delete(token); throw error;
+      }
+      pendingJointRestores.delete(token);
+      return { jointCheckpointId: pending.jointCheckpointId, members: planned.map(value => ({ individualId: value.recordId, checkpointId: value.item.checkpointId })) };
+    },
     persistCheckpoint({individualId,dataset,parentId,checkpoint,operation,sourceCheckpointId=null}) {
       ensureDurable();
       const record=recordFor(individualId);
@@ -197,7 +320,7 @@ export function openConnectomeStore(directory, { profiles = {}, writeCatalog = a
       } catch(error) { throw new Error(`Connectome backup incomplete; source preserved: ${error.message}`); }
       return {status:'offline-copy',individualCount:catalog.individuals.length,checkpointCount:catalog.individuals.reduce((sum,r)=>sum+r.checkpoints.length,0)};
     },
-    close() { if(!closed){closed=true;lock.close();} },
+    close() { if(!closed){closed=true;pendingJointRestores.clear();lock.close();} },
   };
 }
 

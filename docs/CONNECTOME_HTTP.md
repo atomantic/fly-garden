@@ -45,6 +45,10 @@ One public operation per individual can be pending. Different identities remain 
 
 Pre-selection write failure preserves the prior durable head. A post-selection directory-sync failure reports uncertain durability, retains the selected head and evicts the worker. The store must be recovered before constructing/loading a fresh paused research session; no cached arrays bypass this boundary. See [catalog recovery](CONNECTOME_STORE.md).
 
+## Shared research persistence
+
+The full-connectome shared barrier has a separate, catalog-local persistence contract. `GET /api/connectomes/shared/checkpoints` lists bounded joint records. A paused shared session accepts `POST /api/connectomes/shared/:id/control` with `action:"save"`; the service checkpoints every member, validates dataset/graph/model/checkpoint lineage, and replaces all selected heads plus one joint record in one catalog commit. `POST /api/connectomes/shared/restore` requires the exact saved membership and current paused envelopes, then returns a new shared epoch with fresh paused worker sessions. Save and restore never start a worker, render a body, inject sensory input or call a provider. The fixture identity catalog remains separate; this endpoint is not a heterogeneous cross-store transaction.
+
 ## Validation boundary
 
 Tests use tiny kernels, temporary catalogs and injected worker handles. They cover pinned verification/evidence matching, exact creation/command envelopes, cross-profile isolation, paused load/restore, no automatic advancement, precise restore lineage, unavailable measurements, shared capacity reservations, delayed admission and newer lifecycle commands. They do not claim full-graph throughput, body mapping, learning, live deployment or machine-independent resource limits.

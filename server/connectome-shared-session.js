@@ -34,8 +34,11 @@ function participantFrom(state, mode = 'active') {
     model: state.model ?? null, capabilities: state.capabilities };
 }
 
-export function createConnectomeSharedSession({ snapshot, control, barrier, invalidate = () => {}, available = () => true } = {}) {
-  if (typeof snapshot !== 'function' || typeof control !== 'function' || typeof barrier !== 'function' || typeof invalidate !== 'function') throw new Error('Invalid shared connectome service configuration');
+export function createConnectomeSharedSession({ snapshot, control, barrier, invalidate = () => {}, checkpoint, readJointCheckpoint, listJoints, prepareRestore, commitRestore, available = () => true } = {}) {
+  if (typeof snapshot !== 'function' || typeof control !== 'function' || typeof barrier !== 'function' || typeof invalidate !== 'function'
+    || (checkpoint !== undefined && typeof checkpoint !== 'function') || (readJointCheckpoint !== undefined && typeof readJointCheckpoint !== 'function')
+    || (listJoints !== undefined && typeof listJoints !== 'function') || (prepareRestore !== undefined && typeof prepareRestore !== 'function')
+    || (commitRestore !== undefined && typeof commitRestore !== 'function')) throw new Error('Invalid shared connectome service configuration');
   const sessions = new Map();
   const owners = new Map();
   const joining = new Set();
@@ -121,7 +124,7 @@ export function createConnectomeSharedSession({ snapshot, control, barrier, inva
   }
   async function runControl(sharedId, body) {
     const session = sessionFor(sharedId);
-    if (!exact(body, ['protocolVersion', 'sharedId', 'worldEpoch', 'sequence', 'action']) || !['start', 'pause', 'separate'].includes(body.action)) fail('Invalid shared research action.');
+    if (!exact(body, ['protocolVersion', 'sharedId', 'worldEpoch', 'sequence', 'action']) || !['start', 'pause', 'save', 'separate'].includes(body.action)) fail('Invalid shared research action.');
     validateControl(session, body, ['protocolVersion', 'sharedId', 'worldEpoch', 'sequence', 'action']);
     if (body.action === 'start') {
       const active = session.participants.filter(member => member.mode === 'active');
@@ -139,6 +142,14 @@ export function createConnectomeSharedSession({ snapshot, control, barrier, inva
         fail(session.reason);
       }
       session.status = 'paused'; session.reason = 'Shared research session paused.'; session.worldEpoch = randomUUID(); event(session, 'pause');
+    } else if (body.action === 'save') {
+      if (session.status === 'running') fail('Pause the shared research session before saving a joint checkpoint.');
+      if (typeof checkpoint !== 'function') fail('Shared research checkpoint persistence is unavailable.');
+      assertParticipantEpochs(session);
+      const result = await checkpoint({ ids: session.participants.map(member => member.individualId), intervalMs: WORLD_INTERVAL_MS, tick: session.tick,
+        modes: Object.fromEntries(session.participants.map(member => [member.individualId, member.mode])) });
+      if (!result || typeof result.jointCheckpointId !== 'string' || result.payload?.members?.length !== session.participants.length) fail('Shared research checkpoint persistence returned an incomplete transaction.');
+      event(session, 'save', { jointCheckpointId: result.jointCheckpointId });
     } else {
       const paused = await pauseAll(session);
       if (paused.some(result => result.status === 'rejected')) {
@@ -215,6 +226,41 @@ export function createConnectomeSharedSession({ snapshot, control, barrier, inva
     session.commandSequence++;
     return bundle(session);
   }
+  async function restore(body) {
+    required();
+    if (typeof readJointCheckpoint !== 'function' || typeof prepareRestore !== 'function' || typeof commitRestore !== 'function'
+      || !exact(body, ['protocolVersion', 'jointCheckpointId', 'members']) || body.protocolVersion !== 1
+      || typeof body.jointCheckpointId !== 'string' || !Array.isArray(body.members) || body.members.length < 2 || body.members.length > MAX_MEMBERS
+      || new Set(body.members.map(member => member?.individualId)).size !== body.members.length) fail('Invalid shared research restore envelope.');
+    const joint = readJointCheckpoint(body.jointCheckpointId);
+    const expected = joint?.payload?.members;
+    if (!joint || joint.jointCheckpointId !== body.jointCheckpointId || !Array.isArray(expected) || expected.length !== body.members.length) fail('Shared research joint checkpoint membership is unavailable.');
+    const expectedIds = new Set(expected.map(member => member.individualId));
+    for (const member of body.members) {
+      if (!exact(member, ['protocolVersion', 'individualId', 'sessionEpoch', 'commandSequence']) || member.protocolVersion !== 1
+        || !expectedIds.has(member.individualId) || owns(member.individualId) || joining.has(member.individualId)) fail('Stale or unavailable shared research restore member.');
+      const state = stateFor(member.individualId);
+      if (state.sessionEpoch !== member.sessionEpoch || state.commandSequence !== member.commandSequence || state.status !== 'paused'
+        || state.resident !== true || state.capabilities?.sensoryMotor !== false || state.capabilities?.learning !== false
+        || state.capabilities?.chemistry !== false || state.capabilities?.embodiment !== false) fail('Every shared restore member must be an explicitly paused healthy resident.');
+    }
+    if (expected.some(member => !body.members.some(value => value.individualId === member.individualId))) fail('Shared research restore requires the complete saved membership.');
+    const prepared = await prepareRestore(body.jointCheckpointId);
+    await commitRestore(prepared);
+    const participants = expected.map(member => {
+      const state = stateFor(member.individualId);
+      return { individualId: member.individualId, sessionEpoch: state.sessionEpoch, mode: member.mode };
+    });
+    const session = { sharedId: randomUUID(), worldEpoch: randomUUID(), tick: joint.payload.tick, status: 'paused', reason: 'Explicit shared restore is paused.', commandSequence: 0,
+      pressureRequested: false, participants, events: [{ type: 'restore', tick: joint.payload.tick, jointCheckpointId: joint.jointCheckpointId }] };
+    sessions.set(session.sharedId, session);
+    for (const member of participants) owners.set(member.individualId, session.sharedId);
+    return bundle(session);
+  }
+  function checkpoints() {
+    required();
+    return typeof listJoints === 'function' ? listJoints() : [];
+  }
   async function finishOperation(sharedId) {
     pending.delete(sharedId);
     const session = sessions.get(sharedId);
@@ -244,5 +290,5 @@ export function createConnectomeSharedSession({ snapshot, control, barrier, inva
     for (const session of sessions.values()) for (const member of session.participants) owners.delete(member.individualId);
     sessions.clear(); joining.clear();
   }
-  return { view, join, control: controlShared, advance, member: memberControl, owns, pauseForPressure, snapshot: id => bundle(sessionFor(id)), close };
+  return { view, join, control: controlShared, advance, member: memberControl, restore, checkpoints, owns, pauseForPressure, snapshot: id => bundle(sessionFor(id)), close };
 }

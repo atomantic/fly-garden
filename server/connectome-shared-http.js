@@ -10,10 +10,13 @@ export function createConnectomeSharedHttp({ service, readBody, json, checkOrigi
     if (url.pathname !== '/api/connectomes/shared' && !url.pathname.startsWith('/api/connectomes/shared/')) return false;
     if (url.search) fail('Shared research endpoints do not accept query parameters.');
     const collection = url.pathname === '/api/connectomes/shared';
+    const checkpoints = url.pathname === '/api/connectomes/shared/checkpoints';
     const join = url.pathname === '/api/connectomes/shared/join';
+    const restore = url.pathname === '/api/connectomes/shared/restore';
     const match = /^\/api\/connectomes\/shared\/([0-9a-f-]+)(?:\/(control|barrier|member))?$/.exec(url.pathname);
-    if (!collection && !join && !match) fail('Shared research API route not found.', 404);
+    if (!collection && !checkpoints && !join && !restore && !match) fail('Shared research API route not found.', 404);
     if (request.method === 'GET' && collection) { json(response, 200, service.view()); return true; }
+    if (request.method === 'GET' && checkpoints) { json(response, 200, { checkpoints: service.checkpoints() }); return true; }
     if (request.method === 'GET' && match && !match[2]) { json(response, 200, service.snapshot(match[1])); return true; }
     if (request.method !== 'POST') fail('Use POST for shared research mutations.', 405);
     checkOrigin(request, base);
@@ -22,6 +25,8 @@ export function createConnectomeSharedHttp({ service, readBody, json, checkOrigi
       if (join) {
         if (!exact(body, ['protocolVersion', 'members'])) fail('Invalid shared research join envelope.');
         json(response, 200, await service.join(body));
+      } else if (restore) {
+        json(response, 200, await service.restore(body));
       } else if (match?.[2] === 'control') {
         json(response, 200, await service.control(match[1], body));
       } else if (match?.[2] === 'barrier') {

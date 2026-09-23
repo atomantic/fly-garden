@@ -34,7 +34,8 @@ function backendFor(options, failure) {
     prepareAdvance: async value => { if (options.individualId === 'shared-a') await new Promise(resolve => setTimeout(resolve, 2)); return dispatch('prepareAdvance', value); },
     commitAdvance: async value => { if (failure && options.individualId === 'shared-b') throw new Error('commit failed'); return dispatch('commitAdvance', value); },
     rollbackAdvance: value => dispatch('rollbackAdvance', value), releaseAdvance: value => dispatch('releaseAdvance', value),
-    checkpoint: () => dispatch('checkpoint'), restore: value => dispatch('restore', value) };
+    checkpoint: () => dispatch('checkpoint'), restore: value => dispatch('restore', value),
+    prepareRestore: value => dispatch('prepareRestore', value), commitRestore: value => dispatch('commitRestore', value) };
 }
 
 function registrySetup(failure = false) {
@@ -161,4 +162,35 @@ test('HTTP shared full-connectome barrier is explicit, fixed-step and owner-scop
   const separated = await h.post(`/api/connectomes/shared/${joined.shared.sharedId}/control`, { protocolVersion: 1, sharedId: joined.shared.sharedId, worldEpoch: advanced.shared.worldEpoch, sequence: advanced.shared.commandSequence + 1, action: 'separate' });
   assert.equal(separated.status, 200);
   assert.equal((await h.post(`/api/connectomes/${a.individualId}/commands`, { protocolVersion: 1, individualId: a.individualId, sessionEpoch: states[0].sessionEpoch, commandSequence: states[0].commandSequence, action: 'pause', steps: null, checkpointId: null })).status, 409);
+});
+
+test('HTTP joint checkpoint save, listing and restore are explicit, paused and lineage-bound', async t => {
+  const h = await httpSetup(t), a = await h.create(datasets[0]), b = await h.create(datasets[1]);
+  assert.equal((await h.load(a.individualId)).status, 200); assert.equal((await h.load(b.individualId)).status, 200);
+  const initial = await Promise.all([h.state(a.individualId), h.state(b.individualId)]);
+  const joinedResponse = await h.post('/api/connectomes/shared/join', { protocolVersion: 1, members: initial.map(value => ({ protocolVersion: 1, individualId: value.individualId, sessionEpoch: value.sessionEpoch, commandSequence: value.commandSequence })) });
+  assert.equal(joinedResponse.status, 200); const joined = await joinedResponse.json();
+  const savedResponse = await h.post(`/api/connectomes/shared/${joined.shared.sharedId}/control`, { protocolVersion: 1, sharedId: joined.shared.sharedId, worldEpoch: joined.shared.worldEpoch, sequence: 1, action: 'save' });
+  assert.equal(savedResponse.status, 200); const saved = await savedResponse.json();
+  assert.equal(saved.shared.status, 'paused'); assert.equal(saved.shared.events.at(-1).type, 'save');
+  const listedResponse = await fetch(`${h.base}/api/connectomes/shared/checkpoints`); assert.equal(listedResponse.status, 200);
+  const listed = await listedResponse.json(); assert.equal(listed.checkpoints.length, 1); const jointId = listed.checkpoints[0].jointCheckpointId;
+  const before = await Promise.all([h.state(a.individualId), h.state(b.individualId)]);
+  const separatedResponse = await h.post(`/api/connectomes/shared/${joined.shared.sharedId}/control`, { protocolVersion: 1, sharedId: joined.shared.sharedId, worldEpoch: saved.shared.worldEpoch, sequence: saved.shared.commandSequence + 1, action: 'separate' });
+  assert.equal(separatedResponse.status, 200);
+  const current = await Promise.all([h.state(a.individualId), h.state(b.individualId)]);
+  const incomplete = await h.post('/api/connectomes/shared/restore', { protocolVersion: 1, jointCheckpointId: jointId,
+    members: [{ protocolVersion: 1, individualId: current[0].individualId, sessionEpoch: current[0].sessionEpoch, commandSequence: current[0].commandSequence }] });
+  assert.equal(incomplete.status, 409);
+  assert.deepEqual((await Promise.all([h.state(a.individualId), h.state(b.individualId)])).map(value => value.status), ['paused', 'paused']);
+  const restoredResponse = await h.post('/api/connectomes/shared/restore', { protocolVersion: 1, jointCheckpointId: jointId,
+    members: current.map(value => ({ protocolVersion: 1, individualId: value.individualId, sessionEpoch: value.sessionEpoch, commandSequence: value.commandSequence })) });
+  assert.equal(restoredResponse.status, 200); const restored = await restoredResponse.json();
+  assert.equal(restored.shared.status, 'paused'); assert.equal(restored.shared.tick, 0);
+  const after = await Promise.all([h.state(a.individualId), h.state(b.individualId)]);
+  assert.deepEqual(after.map(value => value.status), ['paused', 'paused']);
+  assert.equal(after[0].sessionEpoch === before[0].sessionEpoch, false); assert.equal(after[1].sessionEpoch === before[1].sessionEpoch, false);
+  const stale = await h.post('/api/connectomes/shared/restore', { protocolVersion: 1, jointCheckpointId: jointId,
+    members: current.map(value => ({ protocolVersion: 1, individualId: value.individualId, sessionEpoch: value.sessionEpoch, commandSequence: value.commandSequence })) });
+  assert.equal(stale.status, 409);
 });

@@ -1,5 +1,5 @@
 import test from 'node:test';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, readFileSync, writeFileSync, readdirSync, symlinkSync } from 'node:fs';
 import { join } from 'node:path';
@@ -61,7 +61,59 @@ test('backup includes all referenced history, restores only to a new directory a
  const root=directory(t),backup=join(root,'backup'),target=join(root,'recovered');assert.equal(store.backup(backup).checkpointCount,2);
  assert.throws(()=>store.backup(backup),/exist/);restoreConnectomeBackup(backup,target,{profiles});const restored=openConnectomeStore(target,{profiles});t.after(()=>restored.close());assert.equal(restored.checkpoints(a.individualId).length,2);
  assert.throws(()=>restoreConnectomeBackup(backup,target,{profiles}),/exist/);
- const head=store.identities()[0].checkpointId;writeFileSync(join(backup,'checkpoints',`${head}.json`),'corrupt');assert.throws(()=>restoreConnectomeBackup(backup,join(root,'bad'),{profiles}));assert.equal(readdirSync(root).includes('bad'),false);
+ const head=store.identities()[0].checkpointId;writeFileSync(join(backup,'checkpoints',`${head}.json`),'corrupt');assert.throws(()=>restoreConnectomeBackup(backup,join(root,'bad'),{profiles}));  assert.equal(readdirSync(root).includes('bad'),false);
+});
+
+test('joint checkpoint writes and restores every member head as one catalog transaction', t => {
+  let fail = false;
+  const { path, store } = open(t, { writeCatalog: (file, bytes) => { if (fail) throw new Error('disk full'); writeFileSync(file, bytes); } });
+  const a = store.create(datasets[0]), b = store.create(datasets[1]);
+  const ka = kernel(a), kb = kernel(b);
+  save(store, a, ka.checkpoint()); save(store, b, kb.checkpoint());
+  const members = () => store.identities().map(identity => ({ individualId: identity.individualId, dataset: identity.dataset,
+    parentId: identity.checkpointId, checkpoint: identity.individualId === a.individualId ? ka.checkpoint() : kb.checkpoint(), mode: 'active' }));
+  const first = store.persistJointCheckpoint({ jointCheckpointId: randomUUID(), intervalMs: 5, tick: 0, members: members() });
+  assert.equal(first.payload.members.length, 2); assert.equal(store.jointCheckpoints().length, 1);
+  const before = readFileSync(join(path, 'catalog.json')); fail = true;
+  assert.throws(() => store.persistJointCheckpoint({ jointCheckpointId: randomUUID(), intervalMs: 5, tick: 0, members: members() }), /disk full/);
+  assert.deepEqual(readFileSync(join(path, 'catalog.json')), before); assert.equal(store.jointCheckpoints().length, 1);
+  fail = false;
+  const prepared = store.prepareJointRestore(first.jointCheckpointId);
+  const restored = store.commitJointRestore(prepared.token);
+  assert.equal(restored.members.length, 2);
+  assert.deepEqual(store.identities().map(identity => identity.checkpointId), restored.members.map(member => member.checkpointId));
+  assert.equal(store.checkpoints(a.individualId).at(-1).operation, 'restore');
+  assert.equal(store.checkpoints(b.individualId).at(-1).operation, 'restore');
+  store.close(); const reopened = openConnectomeStore(path, { profiles }); t.after(() => reopened.close());
+  assert.equal(reopened.readJointCheckpoint(first.jointCheckpointId).payload.members.length, 2);
+});
+
+test('joint post-rename directory sync failure exposes the selected transaction and blocks activation', t => {
+  let fail = false;
+  const { path, store } = open(t, { syncCatalogDirectory: () => { if (fail) throw new Error('directory fsync failed'); } });
+  const a = store.create(datasets[0]), b = store.create(datasets[1]), ka = kernel(a), kb = kernel(b);
+  save(store, a, ka.checkpoint()); save(store, b, kb.checkpoint()); fail = true;
+  const members = store.identities().map(identity => ({ individualId: identity.individualId, dataset: identity.dataset,
+    parentId: identity.checkpointId, checkpoint: identity.individualId === a.individualId ? ka.checkpoint() : kb.checkpoint(), mode: 'active' }));
+  let uncertain;
+  assert.throws(() => store.persistJointCheckpoint({ jointCheckpointId: randomUUID(), intervalMs: 5, tick: 0, members }), error => { uncertain = error; return error.code === 'CONNECTOME_DURABILITY_UNCERTAIN'; });
+  const catalog = JSON.parse(readFileSync(join(path, 'catalog.json')));
+  assert.equal(catalog.jointCheckpoints.length, 1); assert.equal(catalog.individuals.every(record => record.head === catalog.jointCheckpoints[0].payload.members.find(member => member.individualId === record.individualId).checkpointId), true);
+  assert.equal(uncertain.selectedCheckpointId, catalog.jointCheckpoints[0].payload.members[0].checkpointId);
+  assert.throws(() => store.readCheckpoint(a.individualId, uncertain.selectedCheckpointId), error => error.code === 'CONNECTOME_STORE_RECOVERY_REQUIRED');
+});
+
+test('joint checkpoint validation rejects stale, foreign and malformed members before file creation', t => {
+  const { path, store } = open(t), a = store.create(datasets[0]), b = store.create(datasets[1]);
+  const ka = kernel(a), kb = kernel(b); save(store, a, ka.checkpoint()); save(store, b, kb.checkpoint());
+  const base = store.identities().map(identity => ({ individualId: identity.individualId, dataset: identity.dataset,
+    parentId: identity.checkpointId, checkpoint: identity.individualId === a.individualId ? ka.checkpoint() : kb.checkpoint(), mode: 'active' }));
+  for (const mutate of [members => { members[0].parentId = randomUUID(); }, members => { members[0].dataset = datasets[1]; },
+    members => { members[0].mode = 'sleeping'; }, members => { members.push(structuredClone(members[0])); }]) {
+    const members = structuredClone(base); mutate(members); assert.throws(() => store.persistJointCheckpoint({ jointCheckpointId: randomUUID(), intervalMs: 5, tick: 0, members }));
+  }
+  assert.deepEqual(store.jointCheckpoints(), []);
+  assert.equal(readdirSync(join(path, 'checkpoints')).length, 2);
 });
 
 test('duplicate payload restores retain the exact chosen source, refusing absent or foreign source IDs',t=>{
