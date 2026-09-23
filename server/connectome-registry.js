@@ -130,6 +130,13 @@ export function createConnectomeRegistry({ identities = [], capacity = createCap
       }
     });
   }
+  function invalidateCommands(ids) {
+    if (!Array.isArray(ids) || ids.length < 1 || ids.length > 64 || new Set(ids).size !== ids.length) throw new Error('Invalid shared research command invalidation membership');
+    const records = ids.map(record);
+    if (records.some(r => !Number.isSafeInteger(r.sequence + 1))) throw new Error('Research command sequence limit reached');
+    for (const r of records) r.sequence++;
+    return records.map(publicState);
+  }
   async function barrier(ids, steps, expectedEpochs = {}) {
     if (!Array.isArray(ids) || ids.length < 2 || ids.length > 64 || new Set(ids).size !== ids.length || !Number.isInteger(steps) || steps < 1 || steps > 1000) {
       throw new Error('Invalid shared research barrier membership or step count');
@@ -297,7 +304,7 @@ export function createConnectomeRegistry({ identities = [], capacity = createCap
       return { ...value, status: r.lifecycle, commandSequence: r.sequence };
     });
   }
-  return { register, load, command, sample, sharedControl, barrier, list: () => [...records.values()].map(publicState), snapshot: id => publicState(record(id)),
+  return { register, load, command, sample, sharedControl, invalidateCommands, barrier, list: () => [...records.values()].map(publicState), snapshot: id => publicState(record(id)),
     close: async () => { if (closed || closing) return; closing = true; await Promise.all([...records.values()].map(r => r.queue)); closed = true;
       await Promise.all([...records.values()].map(r => evict(r, 'Registry closed; only previously committed checkpoints can recover.'))); } };
 }

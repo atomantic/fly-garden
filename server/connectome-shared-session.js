@@ -34,8 +34,8 @@ function participantFrom(state, mode = 'active') {
     model: state.model ?? null, capabilities: state.capabilities };
 }
 
-export function createConnectomeSharedSession({ snapshot, control, barrier, available = () => true } = {}) {
-  if (typeof snapshot !== 'function' || typeof control !== 'function' || typeof barrier !== 'function') throw new Error('Invalid shared connectome service configuration');
+export function createConnectomeSharedSession({ snapshot, control, barrier, invalidate = () => {}, available = () => true } = {}) {
+  if (typeof snapshot !== 'function' || typeof control !== 'function' || typeof barrier !== 'function' || typeof invalidate !== 'function') throw new Error('Invalid shared connectome service configuration');
   const sessions = new Map();
   const owners = new Map();
   const joining = new Set();
@@ -62,6 +62,18 @@ export function createConnectomeSharedSession({ snapshot, control, barrier, avai
   function pauseFailure(results) {
     return results.find(result => result.status === 'rejected')?.reason?.message || 'A shared research participant could not be paused.';
   }
+  async function applyPressurePause(session) {
+    if (session.status !== 'running' && !session.pressureRequested) return;
+    const paused = await pauseAll(session);
+    session.pressureRequested = paused.some(result => result.status === 'rejected');
+    session.status = 'paused';
+    session.reason = session.pressureRequested
+      ? `Resource pressure pause incomplete: ${pauseFailure(paused)}`
+      : 'Resource pressure paused shared research; explicit shared start required.';
+    session.worldEpoch = randomUUID();
+    session.commandSequence++;
+    event(session, 'pressure-pause');
+  }
   async function join(body) {
     required();
     if (!exact(body, ['protocolVersion', 'members']) || body.protocolVersion !== 1 || !Array.isArray(body.members)
@@ -81,7 +93,8 @@ export function createConnectomeSharedSession({ snapshot, control, barrier, avai
     for (const id of states.map(state => state.individualId)) joining.add(id);
     try {
       await Promise.all(states.map(state => control(state.individualId, 'pause')));
-      const session = { sharedId: randomUUID(), worldEpoch: randomUUID(), tick: 0, status: 'paused', reason: 'Explicit shared start required.', commandSequence: 0,
+      invalidate(states.map(state => state.individualId));
+      const session = { sharedId: randomUUID(), worldEpoch: randomUUID(), tick: 0, status: 'paused', reason: 'Explicit shared start required.', commandSequence: 0, pressureRequested: false,
         participants: states.map(state => ({ individualId: state.individualId, sessionEpoch: state.sessionEpoch, mode: 'active' })), events: [{ type: 'join', tick: 0 }] };
       sessions.set(session.sharedId, session);
       for (const member of session.participants) owners.set(member.individualId, session.sharedId);
@@ -124,6 +137,11 @@ export function createConnectomeSharedSession({ snapshot, control, barrier, avai
       const paused = await pauseAll(session);
       if (paused.some(result => result.status === 'rejected')) {
         session.status = 'paused'; session.reason = `Shared research separation incomplete: ${pauseFailure(paused)}`; session.worldEpoch = randomUUID();
+        fail(session.reason);
+      }
+      try { invalidate(session.participants.map(member => member.individualId)); }
+      catch (error) {
+        session.status = 'paused'; session.reason = `Shared research command invalidation incomplete: ${error.message}`; session.worldEpoch = randomUUID();
         fail(session.reason);
       }
       session.status = 'separated'; session.reason = 'Shared research membership separated at the current boundary.'; event(session, 'separate');
@@ -171,7 +189,13 @@ export function createConnectomeSharedSession({ snapshot, control, barrier, avai
     assertParticipantEpochs(session);
     if (body.action === 'withdraw') {
       if (session.participants.length <= 2) fail('Withdrawal would drop the research population below two members; separate the session instead.');
-      await control(member.individualId, 'pause'); session.participants = session.participants.filter(value => value !== member); owners.delete(member.individualId);
+      await control(member.individualId, 'pause');
+      try { invalidate([member.individualId]); }
+      catch (error) {
+        await pauseAll(session); session.status = 'paused'; session.reason = `Shared research command invalidation incomplete: ${error.message}`; session.worldEpoch = randomUUID();
+        fail(session.reason);
+      }
+      session.participants = session.participants.filter(value => value !== member); owners.delete(member.individualId);
       if (session.participants.every(value => value.mode === 'resting')) { session.status = 'resting'; session.reason = 'Every remaining participant is resting; the world clock is frozen.'; }
       event(session, 'withdraw', { individualId: member.individualId });
     } else {
@@ -185,29 +209,28 @@ export function createConnectomeSharedSession({ snapshot, control, barrier, avai
     session.commandSequence++;
     return bundle(session);
   }
+  async function finishOperation(sharedId) {
+    pending.delete(sharedId);
+    const session = sessions.get(sharedId);
+    if (session?.pressureRequested) await applyPressurePause(session);
+  }
   async function controlShared(sharedId, body) {
     sessionFor(sharedId); reserve(sharedId);
-    try { return await runControl(sharedId, body); } finally { pending.delete(sharedId); }
+    try { return await runControl(sharedId, body); } finally { await finishOperation(sharedId); }
   }
   async function advance(sharedId, body) {
     sessionFor(sharedId); reserve(sharedId);
-    try { return await runAdvance(sharedId, body); } finally { pending.delete(sharedId); }
+    try { return await runAdvance(sharedId, body); } finally { await finishOperation(sharedId); }
   }
   async function memberControl(sharedId, body) {
     sessionFor(sharedId); reserve(sharedId);
-    try { return await runMemberControl(sharedId, body); } finally { pending.delete(sharedId); }
+    try { return await runMemberControl(sharedId, body); } finally { await finishOperation(sharedId); }
   }
   async function pauseForPressure() {
     for (const session of sessions.values()) {
-      if (pending.has(session.sharedId) || session.status !== 'running') continue;
-      const paused = await pauseAll(session);
-      session.status = 'paused';
-      session.reason = paused.some(result => result.status === 'rejected')
-        ? `Resource pressure pause incomplete: ${pauseFailure(paused)}`
-        : 'Resource pressure paused shared research; explicit shared start required.';
-      session.worldEpoch = randomUUID();
-      session.commandSequence++;
-      event(session, 'pressure-pause');
+      if (pending.has(session.sharedId)) { session.pressureRequested = true; continue; }
+      if (session.status !== 'running' && !session.pressureRequested) continue;
+      await applyPressurePause(session);
     }
   }
   async function close() {

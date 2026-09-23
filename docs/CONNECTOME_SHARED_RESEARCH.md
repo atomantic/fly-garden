@@ -14,7 +14,7 @@ Completion order is not an authority. The public traces are returned in the requ
 
 `POST /api/connectomes/shared/join` accepts exact membership envelopes containing `protocolVersion`, `individualId`, `sessionEpoch`, and the current individual `commandSequence`. Joining pauses all members and creates a new shared ID and world epoch. `POST /api/connectomes/shared/:id/control` supports explicit `start`, `pause`, and `separate`. `POST /api/connectomes/shared/:id/barrier` runs one complete barrier and advances the shared sequence only after all participants commit. `POST /api/connectomes/shared/:id/member` supports per-member `rest`, `resume`, and `withdraw`; withdrawal stops at the two-member floor and records the boundary.
 
-Reads and mutations use the existing same-origin, host, content-type, and bounded JSON checks. While joined, the ordinary individual research command route refuses lifecycle control for that identity. The full-connectome lab displays the research-only disclosure and never presents this path as a garden body or sensory result.
+Reads and mutations use the existing same-origin, host, content-type, and bounded JSON checks. Joining invalidates individual command envelopes, while the ordinary individual research command route refuses lifecycle control for a joined identity; separation and withdrawal invalidate the affected envelopes again. The full-connectome lab displays the research-only disclosure and never presents this path as a garden body or sensory result.
 
 ## Persistence and remaining work
 

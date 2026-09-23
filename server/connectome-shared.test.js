@@ -81,7 +81,8 @@ test('shared session exposes fixed five-substep barriers, rest and withdrawal wi
     resident: true, status: 'paused', neural: { tick: 0, simTimeMs: 0 }, graphSha256: `${index}`.repeat(64), model: { id: datasets[index] },
     capabilities: { sensoryMotor: false, learning: false, chemistry: false, embodiment: false } });
   const control = async (id, action) => { const state = states.get(id); state.status = action === 'start' ? 'running' : 'paused'; if (action === 'rest') state.status = 'resting'; return structuredClone(state); };
-  const barrier = async ids => ids.map(id => { const state = states.get(id); state.neural.tick += 5; state.neural.simTimeMs += 5; return structuredClone(state); });
+  let barrierGate = null;
+  const barrier = async ids => { if (barrierGate) await barrierGate.promise; return ids.map(id => { const state = states.get(id); state.neural.tick += 5; state.neural.simTimeMs += 5; return structuredClone(state); }); };
   const service = createConnectomeSharedSession({ snapshot: id => structuredClone(states.get(id)), control, barrier, available: () => true });
   const joined = await service.join({ protocolVersion: 1, members: ['one', 'two'].map(id => ({ protocolVersion: 1, individualId: id, sessionEpoch: states.get(id).sessionEpoch, commandSequence: 0 })) });
   assert.equal(joined.shared.participants.length, 2); assert.equal(joined.shared.status, 'paused');
@@ -95,6 +96,15 @@ test('shared session exposes fixed five-substep barriers, rest and withdrawal wi
   await service.pauseForPressure(); const pressure = service.snapshot(joined.shared.sharedId).shared; assert.equal(pressure.status, 'paused');
   await service.pauseForPressure(); assert.equal(service.snapshot(joined.shared.sharedId).shared.commandSequence, pressure.commandSequence);
   await assert.rejects(service.member(joined.shared.sharedId, { protocolVersion: 1, sharedId: joined.shared.sharedId, worldEpoch: service.snapshot(joined.shared.sharedId).shared.worldEpoch, sequence: pressure.commandSequence + 1, individualId: 'one', action: 'withdraw' }), /below two/);
+  const restarted = await service.control(joined.shared.sharedId, { protocolVersion: 1, sharedId: joined.shared.sharedId, worldEpoch: service.snapshot(joined.shared.sharedId).shared.worldEpoch, sequence: pressure.commandSequence + 1, action: 'start' });
+  let releaseBarrier;
+  const startedBarrier = new Promise(resolve => { releaseBarrier = resolve; });
+  barrierGate = { promise: startedBarrier };
+  const inFlight = service.advance(joined.shared.sharedId, { protocolVersion: 1, sharedId: joined.shared.sharedId, worldEpoch: restarted.shared.worldEpoch, sequence: restarted.shared.commandSequence + 1, action: 'barrier' });
+  await new Promise(resolve => setImmediate(resolve));
+  await service.pauseForPressure(); assert.equal(service.snapshot(joined.shared.sharedId).shared.status, 'running');
+  releaseBarrier(); await inFlight; assert.equal(service.snapshot(joined.shared.sharedId).shared.status, 'paused');
+  barrierGate = null;
   await service.close(); assert.equal(service.view().sessions.length, 0);
 });
 
@@ -131,4 +141,7 @@ test('HTTP shared full-connectome barrier is explicit, fixed-step and owner-scop
   assert.equal(barrier.status, 200); const advanced = await barrier.json();
   assert.equal(advanced.shared.tick, 1); assert.deepEqual(advanced.traces.map(value => value.substeps), [5, 5]);
   const current = await h.state(a.individualId); assert.equal(current.neural.tick, 5);
+  const separated = await h.post(`/api/connectomes/shared/${joined.shared.sharedId}/control`, { protocolVersion: 1, sharedId: joined.shared.sharedId, worldEpoch: advanced.shared.worldEpoch, sequence: advanced.shared.commandSequence + 1, action: 'separate' });
+  assert.equal(separated.status, 200);
+  assert.equal((await h.post(`/api/connectomes/${a.individualId}/commands`, { protocolVersion: 1, individualId: a.individualId, sessionEpoch: states[0].sessionEpoch, commandSequence: states[0].commandSequence, action: 'pause', steps: null, checkpointId: null })).status, 409);
 });
