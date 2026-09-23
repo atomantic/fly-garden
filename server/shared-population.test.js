@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { Readable } from 'node:stream';
 import { createSharedHttp } from './shared-http.js';
 import { SHARED_LIMITS, validSharedCount } from '../shared/population-limits.js';
-import { createSharedCreativeSessions } from './shared-creative-session.js';
+import { createSharedCreativeSessions, fixtureActionBatch, fixtureTraceProvenance } from './shared-creative-session.js';
 
 // HTTP contract doubles: no runtime, admission, neural advancement or renderer.
 test('maximum population envelopes are bounded and reject 65 members before consuming counters', async () => {
@@ -39,11 +39,12 @@ test('64-recipient capture stops at last complete 1024-action prefix without dro
  const participants=Array.from({length:64},(_,i)=>({individualId:`fly-${i}`,sessionId:`session-${i}`,simTimeMs:0,pose:{x:0,z:0,yaw:0}}));
  const shared={sharedId:'world',worldEpoch:'epoch',status:'running',tick:0,worldTimeMs:0,lastReceivedAtMs:1000,participants};
  const states=participants.map(p=>({...p,source:'fixture',dataset:{namespace:'fixture',release:'v1',modelId:'synthetic'},model:{id:'fixture-v1'},persistence:{checkpointId:null}}));
- service.command('world',{protocolVersion:1,sharedId:'world',worldEpoch:'epoch',captureSequence:0,action:'start'},shared,states);
+ service.command('world',{protocolVersion:1,sharedId:'world',worldEpoch:'epoch',captureSequence:0,action:'start'},shared,states.map(fixtureTraceProvenance));
  for(let tick=1;tick<=17;tick++) {
   shared.tick=tick;shared.worldTimeMs=tick*5;shared.lastReceivedAtMs++;
   for(const p of participants)p.simTimeMs=tick*5;
-  service.capture(shared,participants.toReversed().map(p=>({...p,environmentEpoch:'epoch',frameId:tick-1,outputSimTimeMs:p.simTimeMs})));
+  const traces=participants.toReversed().map(p=>({...p,environmentEpoch:'epoch',frameId:tick-1,outputSimTimeMs:p.simTimeMs,motor:{forward:0,yaw:0}}));
+  service.capture(shared,()=>fixtureActionBatch(shared,traces,id=>fixtureTraceProvenance(states.find(s=>s.individualId===id))));
  }
  const status=service.status('world');assert.equal(status.active,false);assert.equal(status.actionCount,1024);
  const source=JSON.parse(service.export('world','json').bytes).source;
