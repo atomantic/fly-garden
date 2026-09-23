@@ -56,7 +56,7 @@ function fixture(kinds = ['fixture', 'fixture'], { ids } = {}) {
   const live = id => fixtureTraceProvenance(stateFor(id));
   const capture = (traces, build = t => fixtureActionBatch(shared, t, live)) => captures.capture(shared, () => build(traces));
   const source = () => JSON.parse(captures.export('world', 'json').bytes).source;
-  return { captures, shared, states, provenance, command, advance, capture, declaredBatch, stateFor, source };
+  return { captures, shared, states, provenance, command, advance, capture, declaredBatch, stateFor, live, source };
 }
 
 test('a complete fixture batch yields one attributable action per recipient and every export keeps provenance', () => {
@@ -308,4 +308,24 @@ test('HTTP capture refreshes source after a delayed body rather than starting fr
       assert.deepEqual(source.actions[0].from, { x: (from.x + 2) / 4, y: (from.z + 2) / 4 });
     }
   }
+});
+
+test('dense note output ends capture at the byte bound while every export, including per-note MIDI, stays within limits', () => {
+  // A dense human arrangement: 32 coincident flowers make every entry emit 32 attributed notes.
+  const flowers = Array.from({ length: 32 }, (_, i) => ({ id: `dense-${i}`, x: 0.5, y: 0.5, radius: 0.05, midiNote: 60, velocity: 64, durationMs: 20 }));
+  const captures = createSharedCreativeSessions({ arrangement: { id: 'dense', humanContributionId: 'test-dense-arrangement', mappingVersion: 'flower-pollen-v1',
+    flowers, pollen: { enabled: false, color: '#000000', radius: 1 } } });
+  const f = fixture();
+  f.shared.participants[0].pose = { x: 0, z: 0.5, yaw: 0 }; f.shared.participants[1].pose = { x: 0, z: -0.5, yaw: 0 };
+  captures.command('world', { protocolVersion: 1, sharedId: 'world', worldEpoch: 'epoch', captureSequence: 0, action: 'start' }, f.shared, f.provenance());
+  for (let i = 0; i < 200 && captures.status('world').active; i++) {
+    const traces = f.advance(false);
+    // Both members alternate between outside and inside the dense flower cluster.
+    for (const [index, p] of f.shared.participants.entries()) { p.pose.z = i % 2 ? (index ? -0.5 : 0.5) : 0; traces[index].pose = { ...p.pose }; traces[index].motor.forward = 1; }
+    captures.capture(f.shared, () => fixtureActionBatch(f.shared, traces, f.live));
+  }
+  const status = captures.status('world');
+  assert.equal(status.active, false); assert.equal(status.boundary.cause, 'bound'); assert(status.actionCount < 1024);
+  for (const format of Object.keys(renderers)) assert(captures.export('world', format).bytes.length <= CREATIVE_LIMITS.outputBytes, format);
+  assert.equal(JSON.parse(captures.export('world', 'json').bytes).source.arrangement.humanContributionId, 'test-dense-arrangement');
 });

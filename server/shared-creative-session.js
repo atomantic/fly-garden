@@ -10,6 +10,7 @@ const exporters = { json: exportCreativeJSON, mid: exportCreativeMIDI, svg: expo
 const point = pose => ({ x: (pose.x + 2) / 4, y: (pose.z + 2) / 4 });
 const failure = message => Object.assign(new Error(message), { statusCode: 409 });
 // PNG embeds the JSON source beside a bounded RGB raster; this headroom keeps every format exportable.
+// MIDI and SVG stay below the JSON size: JSON already holds every event, and MIDI adds only bytes per note.
 const JSON_BUDGET = CREATIVE_LIMITS.outputBytes - 256 * 1024;
 const ACTIVE_REASON = 'Capture is active; this export is a partial snapshot.';
 const REASONS = Object.freeze({
@@ -53,8 +54,9 @@ export function fixtureActionBatch(shared, traces, provenanceFor) {
 }
 
 /** Explicit bounded capture of complete already-committed action batches. No neural authority:
- * nothing here starts, advances, rewards, pauses or otherwise controls a participant. */
-export function createSharedCreativeSessions() {
+ * nothing here starts, advances, rewards, pauses or otherwise controls a participant.
+ * `arrangement` is the human-authored layout; it defaults to the rendered shared garden. */
+export function createSharedCreativeSessions({ arrangement = SHARED_ARRANGEMENT } = {}) {
   const records = new Map();
   const captureFor = r => ({ complete: !r.active && r.boundary?.cause === 'stop', reason: r.active ? ACTIVE_REASON : r.failure, boundary: r.boundary });
   function end(r, cause) {
@@ -115,7 +117,7 @@ export function createSharedCreativeSessions() {
       const next = { sequence: body.captureSequence + 1, epoch: shared.worldEpoch, tick: shared.tick, active: true, failure: null, boundary: null,
         sessions: new Map(participants.map(p => [p.individualId, p.sessionId])), positions: new Map(participants.map(p => [p.individualId, p.startPosition])),
         source: { schemaVersion: 2, kind: SHARED_SOURCE_KIND, traceVersion: SHARED_ACTION_TRACE.version, sessionId: randomUUID(), worldId: id,
-          worldEpoch: shared.worldEpoch, startTick: shared.tick, participants, arrangement: structuredClone(SHARED_ARRANGEMENT), actions: [] } };
+          worldEpoch: shared.worldEpoch, startTick: shared.tick, participants, arrangement: structuredClone(arrangement), actions: [] } };
       try { exportCreativeJSON({ ...next.source, capture: captureFor(next) }); } catch { throw failure('Shared capture source is invalid; nothing was started.'); }
       records.set(id, next);
     } else {
