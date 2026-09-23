@@ -16,3 +16,11 @@
 .connectome-lab .lab-history td { max-width:220px; overflow-wrap:anywhere; min-width:130px; vertical-align:top; }
 .connectome-lab details { margin-top:18px; }
 .connectome-lab [role=alert] { padding:12px; border-left:3px solid #d6b975; background:#302b1e; overflow-wrap:anywhere; }
+.connectome-lab .mixed-world { min-width:0; }
+.connectome-lab .mixed-world-canvas { position:relative; width:100%; height:clamp(260px, 46vw, 440px); touch-action:none; border:1px solid #3d5044; border-radius:8px; overflow:hidden; }
+.connectome-lab .mixed-world-canvas canvas { display:block; }
+.connectome-lab .mixed-world-table { overflow-x:auto; max-width:100%; margin-top:14px; }
+.connectome-lab .mixed-world-table th,.connectome-lab .mixed-world-table td { max-width:220px; min-width:120px; overflow-wrap:anywhere; vertical-align:top; text-align:left; }
+.connectome-lab .mixed-world-table caption { text-align:left; padding:6px 0; }
+.connectome-lab .mixed-world-cohorts { padding-left:18px; overflow-wrap:anywhere; }
+.connectome-lab .mixed-world-cohorts li { margin:6px 0; }
