@@ -12,6 +12,7 @@ import EnvironmentControls from "./EnvironmentControls.jsx";
 import CreativeControls from "./CreativeControls.jsx";
 import LanguageControls from "./LanguageControls.jsx";
 import ManagedVisitorControls from "./ManagedVisitorControls.jsx";
+import VisitorPatchPreview from "./VisitorPatchPreview.jsx";
 import { mergeToolbarVisitorReply } from "./visitor-command-state.js";
 import { postVisitorCommand } from "./visitor-api.js";
 import { podPresentation, podRosterEntry } from "./visitor-phase.js";
@@ -417,7 +418,7 @@ function App() {
                   setState(previous => mergeRuntimeSnapshot(previous, next));
                 }} />
               )}
-              {state?.externalOwner && <p className="visitor-home-placeholder">An external visit is pending or active. The home controller remains unavailable until confirmed return or trusted expiry. Neural state and identity stay local.</p>}
+              {state?.externalOwner && <VisitorPatchPreview visitor={state?.visitor} />}
               {state?.sharedSession && (sharedBundle?.shared.sharedId === state.sharedSession.sharedId
                 ? <SharedScene shared={sharedBundle.shared} controllerToken={sharedLease?.sharedId === sharedBundle.shared.sharedId ? sharedLease.token : null} onFrame={value => receiveShared(value)} />
                 : <p role="status">Reading the shared committed world…</p>)}
