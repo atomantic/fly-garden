@@ -23,6 +23,7 @@ import { createAtlasConnectivityHttp } from './atlas-connectivity-http.js';
 import { createConnectomeService } from './connectome-service.js';
 import { createConnectomeHttp } from './connectome-http.js';
 import { createConnectomeSharedHttp } from './connectome-shared-http.js';
+import { createMixedWorldHttp } from './mixed-world-http.js';
 import { prepareConnectomeCatalog } from './connectome-descriptors.js';
 import { freemem } from 'node:os';
 
@@ -142,12 +143,16 @@ export function createServer({ runtime = createRuntime(), identities = null, dis
   const sharedCreativeHttp = createSharedCreativeHttp({ identities, captures: sharedCreative, readBody, json });
   const connectomeHttp = createConnectomeHttp({ service: connectomes, readBody, json, checkOrigin });
   const connectomeSharedHttp = createConnectomeSharedHttp({ service: connectomes.shared, readBody, json, checkOrigin });
+  // Render-only composition of committed shared snapshots; it holds no mutation authority.
+  const mixedWorldHttp = createMixedWorldHttp({ readFixtureSessions: identities ? () => identities.sharedSnapshots() : null,
+    readConnectomeView: () => connectomes.shared.view(), json });
   const server = createHttpServer(async (request, response) => {
     try {
       const base = new URL(`http://${request.headers.host ?? 'localhost'}`);
       if (!isLoopback(base.hostname) && !allowedHosts.includes(base.hostname)) throw new RuntimeError('Host is not allowed.', 403);
       const url = new URL(request.url, base);
       if (url.pathname === '/api' || url.pathname.startsWith('/api/')) {
+        if (mixedWorldHttp(request, response, url)) return;
         if (await sampleRecordingHttp(request, response, url, base)) return;
         if (await connectomeSharedHttp(request, response, url, base)) return;
         if (await connectomeHttp(request, response, url, base)) return;

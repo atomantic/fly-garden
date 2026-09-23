@@ -4,6 +4,7 @@ import './connectome-lab.css';
 import ConnectomeRecordings from './ConnectomeRecordings.jsx';
 import { runtimeAdminValues } from './runtime-admin-values.js';
 import ConnectomeSharedControls from './ConnectomeSharedControls.jsx';
+import MixedWorldScene from './MixedWorldScene.jsx';
 import './observatory-accessibility.css';
 
 const LABELS = {'male-cns:v1.0':'MaleCNS v1.0','banc:v888':'BANC v888'};
@@ -28,6 +29,7 @@ export default function ConnectomeLab({ selectedIndividualId, onSelectIndividual
   const [catalog, setCatalog] = useState(null), [dataset, setDataset] = useState(DATASETS[0]), [selected, setSelected] = useState(selectedIndividualId ?? '');
   const [state, setState] = useState(null), [history, setHistory] = useState([]), [checkpoint, setCheckpoint] = useState('');
   const [steps, setSteps] = useState('100'), [busy, setBusy] = useState(false), [error, setError] = useState(''), [readError, setReadError] = useState('');
+  const [mixedOpen, setMixedOpen] = useState(false);
   const [refresh, setRefresh] = useState(0), [receivedAt, setReceivedAt] = useState(null), [displayNow, setDisplayNow] = useState(Date.now());
   useEffect(()=>{const timer=setInterval(()=>setDisplayNow(Date.now()),1000);return()=>clearInterval(timer);},[]);
   const live = useRef({generation:0,individualId:selectedIndividualId ?? '',state:null,busy:false,mounted:true});
@@ -133,6 +135,8 @@ export default function ConnectomeLab({ selectedIndividualId, onSelectIndividual
         </fieldset>
       </div>
       <ConnectomeSharedControls individuals={catalog.individuals} />
+      {/* Opening mounts a read-only observer; closing unmounts its renderer. Neither changes a participant. */}
+      <details className="mixed-world-details" onToggle={event=>setMixedOpen(event.currentTarget.open)}><summary>Mixed shared world shell (render-only observation)</summary>{mixedOpen && <MixedWorldScene />}</details>
       {catalog.population && <section aria-label="Connectome resource admission"><h3>Resource admission</h3>
         <dl className="lab-metrics"><div><dt>Resident / configured ceiling</dt><dd>{number(catalog.population.residentCount)} / {number(catalog.population.settings?.maxResidentFlies)}</dd></div>
           <div><dt>Aggregate memory</dt><dd>{memory(catalog.population.aggregateMemoryBytes)}</dd></div><div><dt>Available host memory</dt><dd>{memory(catalog.population.availableMemoryBytes)}</dd></div>
