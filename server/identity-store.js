@@ -238,6 +238,82 @@ export function openIdentityStore(directory, { write = atomicWrite, loadPrimary 
       return snapshot(id);
     });
   }
+  /**
+   * Cross-catalog staged per-member primitives (#108). Read-only staging never
+   * touches durable state; only persistCrossCatalogCheckpoint selects a head.
+   * None of these start a clock, couple a sensory path or infer embodiment.
+   */
+  function requireCrossCatalogFree(id) {
+    if (externalOwners.has(id)) throw new RuntimeError('A managed visitor owns this individual; use its scoped pause, rest or home flow until confirmed return.', 409);
+    if (sharedOwners.has(id)) throw new RuntimeError('Individual belongs to a shared session; explicitly separate it before cross-catalog coordination.', 409);
+  }
+  function peekLiveCheckpoint(id) {
+    requireCrossCatalogFree(id);
+    const record = recordFor(id);
+    if (!runtimes.has(id)) throw new RuntimeError('Individual is saved-unloaded; explicitly load it before cross-catalog coordination.', 409);
+    const payload = runtimes.get(id).checkpoint();
+    const pose = currentPose(id);
+    const embodiment = pose === null ? null : { version: 1, kind: 'engineered-home-pose', pose: structuredClone(pose) };
+    return { individualId: id, parentHead: record.head, payload,
+      pose, sha256: digest(embodiment ? { payload, embodiment } : payload), simTimeMs: payload.dynamics.tick * 5 };
+  }
+  function readCrossCatalogPayload(id, checkpointId) {
+    requireCrossCatalogFree(id);
+    const record = recordFor(id);
+    const checkpoint = checkpointFor(record, checkpointId);
+    const payload = structuredClone(checkpoint.payload);
+    const pose = structuredClone(checkpoint.embodiment?.pose ?? null);
+    return { individualId: id, checkpointId, payload, pose, sha256: checkpoint.sha256, simTimeMs: payload.dynamics.tick * 5 };
+  }
+  function persistCrossCatalogCheckpoint({ individualId, checkpointId, parentId, payload, pose = null, operation, sourceCheckpointId = null }) {
+    requireCrossCatalogFree(individualId);
+    const record = recordFor(individualId);
+    if (!uuid(checkpointId)) throw new RuntimeError('Invalid cross-catalog checkpoint identifier.', 409);
+    if (saved.individuals.some(value => value.checkpoints.some(item => item.checkpointId === checkpointId))) {
+      throw new RuntimeError('Cross-catalog checkpoint identifier already exists.', 409);
+    }
+    if (parentId !== record.head) throw new RuntimeError('Stale cross-catalog parent head.', 409);
+    if (record.checkpoints.length >= MAX_CHECKPOINTS) throw new RuntimeError('Checkpoint history limit reached; no history was deleted.', 409);
+    if (!['save', 'unload', 'restore'].includes(operation)) throw new RuntimeError('Unknown cross-catalog checkpoint operation.', 409);
+    if ((operation === 'restore') !== (sourceCheckpointId !== null)) {
+      throw new RuntimeError('Restore source must exactly match the requested saved checkpoint.', 409);
+    }
+    let source = null;
+    if (sourceCheckpointId !== null) {
+      source = checkpointFor(record, sourceCheckpointId);
+      if (JSON.stringify(payload) !== JSON.stringify(source.payload)
+        || JSON.stringify(pose) !== JSON.stringify(source.embodiment?.pose ?? null)) {
+        throw new RuntimeError('Restore source must exactly match the requested saved checkpoint.', 409);
+      }
+    }
+    // Construct/validate before durable selection, mirroring restore().
+    createRuntime({ individualId, checkpoint: payload });
+    const checkpoint = entry(structuredClone(payload), parentId, pose);
+    checkpoint.checkpointId = checkpointId;
+    checkpoint.sha256 = digest(checkpoint.embodiment ? { payload: checkpoint.payload, embodiment: checkpoint.embodiment } : checkpoint.payload);
+    if (source && checkpoint.sha256 !== source.sha256) {
+      throw new RuntimeError('Restore source must exactly match the requested saved checkpoint.', 409);
+    }
+    const next = structuredClone(saved);
+    if (checkpoint.embodiment) { next.schemaVersion = Math.max(next.schemaVersion, 3); next.jointCheckpoints ??= []; }
+    const replacement = next.individuals.find(value => value.individualId === individualId);
+    replacement.checkpoints.push(checkpoint);
+    replacement.head = checkpointId;
+    validateIdentityDocument(next);
+    persist(next);
+    return { checkpointId, sha256: checkpoint.sha256, simTimeMs: checkpoint.payload.dynamics.tick * 5 };
+  }
+  function evictCrossCatalogResident(id) {
+    const record = recordFor(id);
+    requireCrossCatalogFree(id);
+    if (!runtimes.has(id)) return { individualId: id, status: 'saved-unloaded', checkpointId: record.head };
+    detachEnvironment(id);
+    runtimes.get(id).control('pause');
+    runtimes.delete(id);
+    encounterAdapters.delete(id); encounterScopes.delete(id);
+    replicaSessions.delete(id);
+    return { individualId: id, status: 'saved-unloaded', checkpointId: record.head };
+  }
   function replica(id, checkpointId) {
     requireExternalFree(id);
     const record = recordFor(id);
@@ -574,6 +650,7 @@ export function openIdentityStore(directory, { write = atomicWrite, loadPrimary 
       return [...sharedSessions.values()].map(session => session.snapshot());
     },
     sharedCheckpoints: () => structuredClone(saved.jointCheckpoints ?? []),
+    peekLiveCheckpoint, readCrossCatalogPayload, persistCrossCatalogCheckpoint, evictCrossCatalogResident,
     encounterDynamicsSnapshot, encounterDynamicsControl, environmentSnapshot, environmentControl, environmentFrame, create, createIndividual: create, load, unload, primaryId: saved.primaryId, snapshot, save, restore, replica,
     list: () => saved.individuals.map(record => ({ individualId: record.individualId, branchOf: structuredClone(record.branchOf),
       dataset: structuredClone(checkpointFor(record, record.head).payload.dataset),
