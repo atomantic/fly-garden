@@ -207,6 +207,17 @@ retained local state intact. `server/managed-visitor-http.test.js` drives the sa
 case through the real transport and asserts the specific reason, code and unresolved setting in
 both `/api/health` and individual visitor state.
 
+Paired location coverage (`#21`, fake-transport only) additionally locks the broker state machine
+across both-at-home, split-location in both directions, and both-visiting with independent return:
+a duplicate admission of the same owned individual is refused with `already-owned` before any
+claim or transport call, leaving the visit stepping and allowing a fresh-epoch grant only after a
+confirmed return; a full round trip keeps per-fly clocks (9/6 ticks), distinct epochs, and
+per-trace `individualId`/`visitEpoch`/`individualSessionId` attribution with both remote bodies
+released and no restore at the end; and an observation scope carrying the partner's identity
+authorizes nothing while the partner keeps stepping. None of this is live-host evidence: it runs
+against the same fake transport as the rest of this file, and both-visiting against a real
+sequencer remains outstanding.
+
 `node --test server/managed-visitor-ui.test.js` checks the pod presentation contract: every bridge phase has a distinct label, the away habitat keeps the pod visible, the pod label reads live visitor state, no motion or arrival wording appears before host acknowledgment, and the roster exposes each fly's pod state. An additional temporary in-process check connected the real Fly Garden bridge, PortOS broker/transport and Eidoverse host factories: negotiated admission, 20 geometric observation/motor steps and confirmed return passed without starting a network server. That check is integration evidence, not a live deployment or browser journey.
 
 ## Local HTTP integration
