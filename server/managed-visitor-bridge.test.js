@@ -353,6 +353,101 @@ test('disconnectAll pauses both visitors, keeps their ticks and never restores a
   assert.equal(s.bridge.snapshot('a').hostVisitors, 0);
   assert.deepEqual(await s.bridge.disconnectAll(), []);
 });
+test('a duplicate admission of the same owned individual is refused without disturbing its visit', async () => {
+  const s = setup();
+  await s.bridge.admit('a', { worldId: 'world' }); await s.bridge.control('a', 'start');
+  await s.bridge.tick('a'); await s.bridge.tick('a');
+  const admit = s.transport.admit; let admitCalls = 0;
+  s.transport.admit = (...args) => { admitCalls++; return admit(...args); };
+  const before = s.runtimes.get('a').snapshot(), epoch = s.bridge.snapshot('a').visitEpoch;
+  // One brain keeps one embodiment: the second grant for the same fly is refused before any claim.
+  await assert.rejects(() => s.bridge.admit('a', { worldId: 'world' }),
+    error => error.code === 'already-owned' && /already owns/.test(error.message));
+  assert.equal(admitCalls, 0);
+  assert.equal(s.owners.has('a'), true);
+  assert.equal(s.bridge.snapshot('a').phase, 'visiting');
+  assert.equal(s.bridge.snapshot('a').visitEpoch, epoch);
+  assert.equal(s.bridge.snapshot('a').running, true);
+  await s.bridge.tick('a');
+  assert.equal(s.runtimes.get('a').snapshot().tick, before.tick + 1);
+  // After a confirmed return the same fly may be granted again under a fresh epoch.
+  await s.bridge.control('a', 'home');
+  assert.equal(s.owners.has('a'), false);
+  const again = await s.bridge.admit('a', { worldId: 'world' });
+  assert.equal(again.phase, 'visiting');
+  assert.notEqual(again.visitEpoch, epoch);
+});
+test('paired locations move both-at-home through split and both-visiting with attributed independent return', async () => {
+  const s = setup();
+  // Both-at-home: neither fly owns a body and neither scheduler tick advances anything.
+  for (const id of ['a', 'b']) {
+    assert.equal(s.bridge.snapshot(id).phase, 'home', id);
+    assert.equal(s.bridge.snapshot(id).owned, false, id);
+    assert.equal(await s.bridge.tick(id), null, id);
+  }
+  // Split-location: A visits while B stays home; B has no lease, no trace and no tick.
+  await s.bridge.admit('a', { worldId: 'world' });
+  assert.equal(s.bridge.snapshot('a').phase, 'visiting');
+  assert.equal(s.bridge.snapshot('b').phase, 'home');
+  assert.equal(s.owners.has('b'), false);
+  await s.bridge.control('a', 'start');
+  for (let i = 0; i < 5; i++) await s.bridge.tick('a');
+  assert.equal(s.runtimes.get('a').snapshot().tick, 5);
+  assert.equal(s.runtimes.get('b').snapshot().tick, 0);
+  assert.equal(s.bridge.snapshot('b').lastTrace, null);
+  assert.equal(await s.bridge.tick('b'), null);
+  // Both-visiting: B joins under its own epoch; every committed step stays attributed to its own fly.
+  await s.bridge.admit('b', { worldId: 'world' });
+  const epochA = s.bridge.snapshot('a').visitEpoch, epochB = s.bridge.snapshot('b').visitEpoch;
+  assert.notEqual(epochA, epochB);
+  await s.bridge.control('b', 'start');
+  for (let i = 0; i < 4; i++) { await s.bridge.tick('a'); await s.bridge.tick('b'); }
+  assert.equal(s.runtimes.get('a').snapshot().tick, 9);
+  assert.equal(s.runtimes.get('b').snapshot().tick, 4);
+  for (const id of ['a', 'b']) {
+    const trace = s.bridge.snapshot(id).lastTrace;
+    assert.equal(trace.individualId, id, id);
+    assert.equal(trace.visitEpoch, s.bridge.snapshot(id).visitEpoch, id);
+    assert.equal(trace.individualSessionId, `runtime-${id}`, id);
+  }
+  // Split-location the other way: A returns home while B keeps its own lease, epoch and clock.
+  await s.bridge.control('a', 'home');
+  assert.equal(s.bridge.snapshot('a').phase, 'home');
+  assert.equal(s.owners.has('a'), false);
+  assert.equal(s.bridge.snapshot('b').phase, 'visiting');
+  assert.equal(s.bridge.snapshot('b').visitEpoch, epochB);
+  await s.bridge.tick('b'); await s.bridge.tick('b');
+  assert.equal(s.runtimes.get('b').snapshot().tick, 6);
+  assert.equal(s.runtimes.get('a').snapshot().tick, 9);
+  // Both-home: independent clocks survive with identities and runtime sessions intact; both bodies released.
+  await s.bridge.control('b', 'home');
+  assert.equal(s.leases.size, 0);
+  for (const id of ['a', 'b']) {
+    assert.equal(s.bridge.snapshot(id).phase, 'home', id);
+    assert.equal(s.owners.has(id), false, id);
+    assert.equal(s.runtimes.get(id).snapshot().individualId, id, id);
+    assert.equal(s.runtimes.get(id).snapshot().sessionId, `runtime-${id}`, id);
+  }
+  assert.deepEqual([s.runtimes.get('a').snapshot().tick, s.runtimes.get('b').snapshot().tick], [9, 6]);
+});
+test("one fly's observation scope cannot authorize the paired fly's movement", async () => {
+  const s = setup();
+  await s.bridge.admit('a', { worldId: 'world' }); await s.bridge.admit('b', { worldId: 'world' });
+  await s.bridge.control('a', 'start'); await s.bridge.control('b', 'start');
+  await s.bridge.tick('a'); await s.bridge.tick('b');
+  const observe = s.transport.observe;
+  // B's next observation arrives carrying A's identity: it must authorize nothing.
+  s.transport.observe = async (...args) => { const value = await observe(...args); value.individualId = 'a'; return value; };
+  await s.bridge.tick('b');
+  assert.equal(s.runtimes.get('b').snapshot().tick, 1);
+  assert.equal(s.bridge.snapshot('b').running, false);
+  // A never shared a credential or selector: its own lease, epoch, clock and outward authority are untouched.
+  assert.equal(s.runtimes.get('a').snapshot().tick, 1);
+  assert.equal(s.bridge.snapshot('a').phase, 'visiting');
+  assert.equal(s.bridge.snapshot('a').running, true);
+  await s.bridge.tick('a');
+  assert.equal(s.runtimes.get('a').snapshot().tick, 2);
+});
 
 // ---------------------------------------------------------------------------
 // Allowlisted patch-object interaction (#10 acceptance criteria)
