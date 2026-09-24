@@ -158,6 +158,7 @@ export function openConnectomeStore(directory, { profiles = {}, writeCatalog = a
   catch { lock.close(); throw new Error('Connectome store is already open or writer lock unavailable'); }
   let catalog, closed=false, durabilityUncertain=false;
   const pendingJointRestores = new Map();
+  const pendingCrossCatalog = new Map();
   const ensureOpen = () => { if (closed) throw new Error('Connectome store closed'); };
   function ensureDurable() {
     ensureOpen();
@@ -194,6 +195,34 @@ export function openConnectomeStore(directory, { profiles = {}, writeCatalog = a
     }
     return value;
   }
+  function readStagedManifestAny(token) {
+    const value = JSON.parse(readBounded(stagingPath(token), 64 * 1024).toString());
+    if (!exact(value, STAGED_RESTORE_KEYS) || value.schemaVersion !== 1 || value.token !== token
+      || !['connectome-staged-restore', 'connectome-staged-cross-catalog'].includes(value.kind)
+      || !Array.isArray(value.files) || !value.files.length || value.files.length > LIMITS.identities) invalid();
+    const ids = new Set();
+    for (const file of value.files) {
+      if (!exact(file, STAGED_FILE_KEYS) || !uuid(file.checkpointId) || ids.has(file.checkpointId) || !shaValid(file.sha256) || !integer(file.bytes) || file.bytes < 1 || file.bytes > LIMITS.checkpointBytes) invalid();
+      ids.add(file.checkpointId);
+    }
+    return value;
+  }
+  function writeStagedManifestKind(kind, token, files) {
+    try { noSymlinkDirectory(stagingDirectory); } catch (error) { if (error.code !== 'ENOENT') throw error; mkdirSync(stagingDirectory,{mode:0o700}); }
+    const value = { schemaVersion:1, kind, token, files:files.map(file => ({ checkpointId:file.checkpointId, sha256:file.sha256, bytes:file.bytes })) };
+    writeExclusive(stagingPath(token), Buffer.from(JSON.stringify(value))); syncStagingDirectory(); syncDirectory(directory);
+  }
+  /** Namespace accumulation rewrites one token's manifest; exclusive creation would collide by design. */
+  function overwriteStagedManifestKind(kind, token, files) {
+    try { noSymlinkDirectory(stagingDirectory); } catch (error) { if (error.code !== 'ENOENT') throw error; mkdirSync(stagingDirectory,{mode:0o700}); }
+    const value = { schemaVersion:1, kind, token, files:files.map(file => ({ checkpointId:file.checkpointId, sha256:file.sha256, bytes:file.bytes })) };
+    const temporary = `${stagingPath(token)}.${randomUUID()}.tmp`;
+    try {
+      writeExclusive(temporary, Buffer.from(JSON.stringify(value)));
+      renameSync(temporary, stagingPath(token));
+    } finally { try { unlinkSync(temporary); } catch (error) { if (error.code !== 'ENOENT') throw error; } }
+    syncStagingDirectory(); syncDirectory(directory);
+  }
   function syncStagingDirectory() {
     try { syncDirectory(stagingDirectory); } catch (error) { if (error.code !== 'ENOENT') throw error; }
   }
@@ -205,14 +234,19 @@ export function openConnectomeStore(directory, { profiles = {}, writeCatalog = a
   function cleanupStagedRestore(token, fallback = []) {
     const referenced = referencedCheckpointIds();
     let files = fallback;
-    try { files = readStagedManifest(token).files; } catch (error) { if (error.code !== 'ENOENT') throw error; }
+    try { files = readStagedManifestAny(token).files; } catch (error) { if (error.code !== 'ENOENT') throw error; }
     for (const file of files) removeOwnedCheckpoint(file.checkpointId, referenced);
     removeStagingManifest(token);
   }
   function writeStagedManifest(token, files) {
-    try { noSymlinkDirectory(stagingDirectory); } catch (error) { if (error.code !== 'ENOENT') throw error; mkdirSync(stagingDirectory,{mode:0o700}); }
-    const value = { schemaVersion:1, kind:'connectome-staged-restore', token, files:files.map(file => ({ checkpointId:file.checkpointId, sha256:file.sha256, bytes:file.bytes })) };
-    writeExclusive(stagingPath(token), Buffer.from(JSON.stringify(value))); syncStagingDirectory(); syncDirectory(directory);
+    writeStagedManifestKind('connectome-staged-restore', token, files);
+  }
+  function cleanupCrossCatalogStaging(token, fallback = []) {
+    const referenced = referencedCheckpointIds();
+    let files = fallback;
+    try { files = readStagedManifestAny(token).files; } catch (error) { if (error.code !== 'ENOENT') throw error; }
+    for (const file of files) removeOwnedCheckpoint(file.checkpointId, referenced);
+    removeStagingManifest(token);
   }
   function recoverStagedRestores() {
     let names;
@@ -220,7 +254,7 @@ export function openConnectomeStore(directory, { profiles = {}, writeCatalog = a
     const referenced = referencedCheckpointIds();
     for (const name of names) {
       if (!/^[0-9a-f-]{36}\.json$/.test(name)) invalid();
-      const token = name.slice(0, -5), manifest = readStagedManifest(token);
+      const token = name.slice(0, -5), manifest = readStagedManifestAny(token);
       for (const file of manifest.files) removeOwnedCheckpoint(file.checkpointId, referenced);
       unlinkSync(stagingPath(token));
     }
@@ -406,6 +440,174 @@ export function openConnectomeStore(directory, { profiles = {}, writeCatalog = a
         pendingJointRestores.delete(token);
       }
     },
+    /**
+     * Cross-catalog staged per-member primitives (#108). Staging writes immutable
+     * checkpoint files plus a manifest without selecting any head; only
+     * commitCrossCatalog selects heads, atomically for the whole token. Staging
+     * manifests of either kind are reclaimed on open, so a pre-journal crash
+     * leaves only inert, explicitly recoverable files. Nothing here starts a
+     * worker, couples a sensory path or claims learning.
+     */
+    stageCrossCatalog(token, items) {
+      ensureDurable();
+      if (!uuid(token)) throw new Error('Invalid cross-catalog staging token');
+      if (!Array.isArray(items) || !items.length || items.length > LIMITS.identities) throw new Error('Invalid cross-catalog staging membership');
+      // Namespaces sharing one store stage under the same transaction token;
+      // entries accumulate until commit or cancel.
+      const existing = pendingCrossCatalog.get(token) ?? [];
+      const seen = new Set(existing.map(value => value.item.checkpointId));
+      const held = new Set(existing.map(value => value.recordId));
+      const planned = [], inventory = storageInventory();
+      let totalBytes = inventory.bytes + existing.reduce((sum, value) => sum + value.item.bytes, 0);
+      for (const input of items) {
+        if (!input || typeof input !== 'object' || !uuid(input.checkpointId) || seen.has(input.checkpointId)
+          || held.has(input.individualId)
+          || typeof input.individualId !== 'string' || !['save', 'restore'].includes(input.operation)
+          || (input.operation === 'restore') !== (input.sourceCheckpointId !== null && input.sourceCheckpointId !== undefined)) {
+          throw new Error('Invalid cross-catalog staging member');
+        }
+        const record = recordFor(input.individualId);
+        if (input.parentId !== record.head || record.checkpoints.length >= LIMITS.history) throw new Error('Stale cross-catalog staging member');
+        if (catalog.individuals.some(value => value.checkpoints.some(item => item.checkpointId === input.checkpointId))) {
+          throw new Error('Cross-catalog checkpoint identifier already exists');
+        }
+        validateCheckpoint(input.checkpoint, record);
+        const bytes = Buffer.from(JSON.stringify(input.checkpoint));
+        if (bytes.length > LIMITS.checkpointBytes || totalBytes + bytes.length > LIMITS.totalCheckpointBytes) throw new Error('Cross-catalog staging byte ceiling exceeded');
+        const source = input.operation === 'restore' ? itemFor(record, input.sourceCheckpointId) : null;
+        if (source) {
+          const current = verifyPayload(directory, record, source).bytes;
+          if (sha(bytes) !== source.sha256 || !current.equals(bytes)) throw new Error('Restore source must exactly match the requested saved checkpoint');
+        }
+        const item = { checkpointId: input.checkpointId, parentId: record.head,
+          restoredFrom: source ? source.checkpointId : null, operation: input.operation,
+          createdAt: Date.now(), sha256: sha(bytes), bytes: bytes.length, tick: input.checkpoint.tick };
+        planned.push({ recordId: record.individualId, item, bytes });
+        seen.add(input.checkpointId); totalBytes += bytes.length;
+      }
+      if (inventory.count + existing.length + planned.length > LIMITS.files) throw new Error('Connectome checkpoint file ceiling reached; no files written');
+      const written = [];
+      try {
+        for (const value of planned) {
+          writeExclusive(join(checkpointDirectory, `${value.item.checkpointId}.json`), value.bytes);
+          written.push(value.item.checkpointId);
+        }
+        overwriteStagedManifestKind('connectome-staged-cross-catalog', token,
+          [...existing.map(value => value.item), ...planned.map(value => value.item)]);
+        syncDirectory(checkpointDirectory); syncCatalogDirectory(directory);
+        pendingCrossCatalog.set(token, [...existing, ...planned.map(value => ({ recordId: value.recordId, item: value.item }))]);
+        return planned.map(value => ({ checkpointId: value.item.checkpointId, sha256: value.item.sha256, bytes: value.item.bytes, tick: value.item.tick }));
+      } catch (error) {
+        const referenced = referencedCheckpointIds();
+        for (const checkpointId of written) removeOwnedCheckpoint(checkpointId, referenced);
+        if (existing.length) {
+          try { overwriteStagedManifestKind('connectome-staged-cross-catalog', token, existing.map(value => value.item)); } catch {}
+        } else {
+          try { cleanupCrossCatalogStaging(token, []); } catch {}
+        }
+        throw error;
+      }
+    },
+    cancelCrossCatalog(token, { individualIds = null } = {}) {
+      ensureOpen();
+      const pending = pendingCrossCatalog.get(token);
+      const scope = individualIds === null ? null : new Set(individualIds);
+      if (!pending) {
+        try { readStagedManifestAny(token); } catch (error) { if (error.code === 'ENOENT') return false; throw error; }
+        if (scope !== null) throw new Error('Unknown cross-catalog staging token');
+        cleanupCrossCatalogStaging(token);
+        return true;
+      }
+      const remove = pending.filter(value => scope === null || scope.has(value.recordId));
+      const keep = pending.filter(value => !(scope === null || scope.has(value.recordId)));
+      if (scope !== null && remove.length !== scope.size) throw new Error('Unknown cross-catalog staging member');
+      cleanupCrossCatalogStaging(token, remove.map(value => ({ checkpointId: value.item.checkpointId, sha256: value.item.sha256, bytes: value.item.bytes })));
+      if (keep.length) {
+        overwriteStagedManifestKind('connectome-staged-cross-catalog', token, keep.map(value => value.item));
+        pendingCrossCatalog.set(token, keep);
+      } else {
+        pendingCrossCatalog.delete(token);
+      }
+      return true;
+    },
+    commitCrossCatalog(token, { individualIds = null } = {}) {
+      const pending = pendingCrossCatalog.get(token);
+      const scope = individualIds === null ? null : new Set(individualIds);
+      const due = !pending ? [] : pending.filter(value => scope === null || scope.has(value.recordId));
+      const stagedFiles = due.map(value => ({ checkpointId: value.item.checkpointId, sha256: value.item.sha256, bytes: value.item.bytes }));
+      let selected = false;
+      try {
+        ensureDurable();
+        if (!pending || !due.length || (scope !== null && due.length !== scope.size)) throw new Error('Unknown or stale cross-catalog staging token');
+        const next = structuredClone(catalog);
+        for (const value of due) {
+          const current = recordFor(value.recordId);
+          if (current.head !== value.item.parentId) throw new Error('Stale cross-catalog staging membership');
+          const staged = readBounded(join(checkpointDirectory, `${value.item.checkpointId}.json`), LIMITS.checkpointBytes);
+          if (staged.length !== value.item.bytes || sha(staged) !== value.item.sha256) invalid();
+          const target = next.individuals.find(record => record.individualId === value.recordId);
+          target.checkpoints.push(value.item); target.head = value.item.checkpointId;
+        }
+        try {
+          persist(next, { individualId: due[0].recordId, checkpointId: due[0].item.checkpointId,
+            heads: Object.fromEntries(due.map(value => [value.recordId, value.item.checkpointId])) });
+          selected = true;
+        } catch (error) {
+          if (error?.code === 'CONNECTOME_DURABILITY_UNCERTAIN') {
+            const keep = pending.filter(value => !due.includes(value));
+            if (keep.length) {
+              try { overwriteStagedManifestKind('connectome-staged-cross-catalog', token, keep.map(value => value.item)); } catch {}
+              pendingCrossCatalog.set(token, keep);
+            } else {
+              removeStagingManifest(token);
+              pendingCrossCatalog.delete(token);
+            }
+          }
+          throw error;
+        }
+        const keep = pending.filter(value => !due.includes(value));
+        if (keep.length) {
+          overwriteStagedManifestKind('connectome-staged-cross-catalog', token, keep.map(value => value.item));
+          pendingCrossCatalog.set(token, keep);
+        } else {
+          removeStagingManifest(token);
+          pendingCrossCatalog.delete(token);
+        }
+        return { members: due.map(value => ({ individualId: value.recordId, checkpointId: value.item.checkpointId })) };
+      } catch (error) {
+        if (!selected && error?.code !== 'CONNECTOME_DURABILITY_UNCERTAIN') {
+          const remaining = (pendingCrossCatalog.get(token) ?? []).filter(value => !due.includes(value));
+          cleanupCrossCatalogStaging(token, stagedFiles);
+          if (remaining.length) {
+            try { overwriteStagedManifestKind('connectome-staged-cross-catalog', token, remaining.map(value => value.item)); } catch {}
+            pendingCrossCatalog.set(token, remaining);
+          }
+        }
+        throw error;
+      }
+    },
+    appendCrossCatalogRevert({ individualId, checkpointId, priorHead }) {
+      ensureDurable();
+      const record = recordFor(individualId);
+      if (!uuid(checkpointId)) throw new Error('Invalid cross-catalog revert identifier');
+      if (catalog.individuals.some(value => value.checkpoints.some(item => item.checkpointId === checkpointId))) {
+        throw new Error('Cross-catalog checkpoint identifier already exists');
+      }
+      const source = itemFor(record, priorHead);
+      if (record.checkpoints.length >= LIMITS.history) throw new Error('Connectome checkpoint history capacity reached');
+      const bytes = verifyPayload(directory, record, source).bytes;
+      const inventory = storageInventory();
+      if (inventory.bytes + bytes.length > LIMITS.totalCheckpointBytes) throw new Error('Connectome checkpoint byte ceiling exceeded');
+      if (inventory.count + 1 > LIMITS.files) throw new Error('Connectome checkpoint file ceiling reached; no files written');
+      const item = { checkpointId, parentId: record.head, restoredFrom: source.checkpointId,
+        operation: 'restore', createdAt: Date.now(), sha256: source.sha256, bytes: source.bytes, tick: source.tick };
+      const next = structuredClone(catalog), target = next.individuals.find(value => value.individualId === individualId);
+      target.checkpoints.push(item); target.head = checkpointId;
+      writeExclusive(join(checkpointDirectory, `${checkpointId}.json`), bytes);
+      syncDirectory(checkpointDirectory);
+      persist(next, { individualId, checkpointId, heads: { [individualId]: checkpointId } });
+      return { checkpointId, sha256: item.sha256, tick: item.tick };
+    },
     persistCheckpoint({individualId,dataset,parentId,checkpoint,operation,sourceCheckpointId=null}) {
       ensureDurable();
       const record=recordFor(individualId);
@@ -440,8 +642,11 @@ export function openConnectomeStore(directory, { profiles = {}, writeCatalog = a
     },
     close() {
       if (closed) return;
-      try { for (const token of pendingJointRestores.keys()) cleanupStagedRestore(token, pendingJointRestores.get(token).members.map(value => ({ checkpointId:value.item.checkpointId, sha256:value.item.sha256, bytes:value.item.bytes }))); }
-      finally { closed=true; pendingJointRestores.clear(); lock.close(); }
+      try {
+        for (const token of pendingJointRestores.keys()) cleanupStagedRestore(token, pendingJointRestores.get(token).members.map(value => ({ checkpointId:value.item.checkpointId, sha256:value.item.sha256, bytes:value.item.bytes })));
+        for (const token of pendingCrossCatalog.keys()) cleanupCrossCatalogStaging(token, pendingCrossCatalog.get(token).map(value => ({ checkpointId:value.item.checkpointId, sha256:value.item.sha256, bytes:value.item.bytes })));
+      }
+      finally { closed=true; pendingJointRestores.clear(); pendingCrossCatalog.clear(); lock.close(); }
     },
   };
 }
