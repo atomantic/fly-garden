@@ -24,6 +24,8 @@ import { createConnectomeService } from './connectome-service.js';
 import { createConnectomeHttp } from './connectome-http.js';
 import { createConnectomeSharedHttp } from './connectome-shared-http.js';
 import { createMixedWorldHttp } from './mixed-world-http.js';
+import { createCrossCatalogService } from './cross-catalog-service.js';
+import { createCrossCatalogHttp } from './cross-catalog-http.js';
 import { prepareConnectomeCatalog } from './connectome-descriptors.js';
 import { freemem } from 'node:os';
 
@@ -51,7 +53,7 @@ async function readBody(request, maxBytes = 4096) {
 }
 
 /** Polling observers share the selected resident runtimes. Wall-clock gaps never catch up simulation time. */
-export function createServer({ runtime = createRuntime(), identities = null, distDir = fileURLToPath(new URL('../dist/', import.meta.url)), autoTick = true, capacity = createCapacityPolicy(), resourceUsage = () => ({ aggregateMemoryBytes: process.memoryUsage().rss, availableMemoryBytes: freemem() }), incrementalMemoryBytes = null, recordings = null, connectomeRecordings = null, creativeSessions = createCreativeSessions(), onEnvironmentFrame = null, languageProviders = [], languageService = null, visitorTransport = undefined, connectomeCatalog = null, connectomeProfiles = {}, connectomeReason = 'No verified local research catalog is configured.', connectomeBackend = undefined, atlasDirectory = fileURLToPath(new URL('../data/atlas/', import.meta.url)), atlasGraphDirectory = fileURLToPath(new URL('../data/', import.meta.url)), allowedOrigins = [], allowedHosts = [] } = {}) {
+export function createServer({ runtime = createRuntime(), identities = null, distDir = fileURLToPath(new URL('../dist/', import.meta.url)), autoTick = true, capacity = createCapacityPolicy(), resourceUsage = () => ({ aggregateMemoryBytes: process.memoryUsage().rss, availableMemoryBytes: freemem() }), incrementalMemoryBytes = null, recordings = null, connectomeRecordings = null, creativeSessions = createCreativeSessions(), onEnvironmentFrame = null, languageProviders = [], languageService = null, visitorTransport = undefined, connectomeCatalog = null, connectomeProfiles = {}, connectomeReason = 'No verified local research catalog is configured.', connectomeBackend = undefined, atlasDirectory = fileURLToPath(new URL('../data/atlas/', import.meta.url)), atlasGraphDirectory = fileURLToPath(new URL('../data/', import.meta.url)), allowedOrigins = [], allowedHosts = [], crossCatalogDirectory = null, crossCatalogService = null } = {}) {
   const root = resolve(distDir);
   const atlasHttp = createAtlasHttp({ directory: atlasDirectory });
   const atlasConnectivityHttp = createAtlasConnectivityHttp({ atlasDirectory, graphDirectory: atlasGraphDirectory });
@@ -68,8 +70,10 @@ export function createServer({ runtime = createRuntime(), identities = null, dis
         ...research.filter(value => value.resident).map(value => ({ individualId: value.individualId, status: value.status }))] };
   };
   let sampleRecordings;
+  let crossCatalog = crossCatalogService;
+  const isCrossCatalogReserved = id => crossCatalog?.reserved(id) === true;
   const connectomes = createConnectomeService({ store: connectomeCatalog, profiles: connectomeProfiles, reason: connectomeCatalog ? null : connectomeReason,
-    capacity, getResources: resources, openBackend: connectomeBackend, onLifecycle: id => sampleRecordings?.sourceChanged(id) });
+    capacity, getResources: resources, openBackend: connectomeBackend, isReserved: isCrossCatalogReserved, onLifecycle: id => sampleRecordings?.sourceChanged(id) });
   sampleRecordings = createConnectomeRecordingService({store:connectomeRecordings,connectomes,fixtureStorage:()=>recordings?.status()});
   const population = () => ({ ...capacity.snapshot(resources()), incrementalMemoryBytes,
     admission: capacity.preflight({ ...resources(), incrementalMemoryBytes }) });
@@ -84,11 +88,13 @@ export function createServer({ runtime = createRuntime(), identities = null, dis
     if (request.headers['sec-fetch-site'] === 'cross-site') throw new RuntimeError('Cross-site mutation refused.', 403);
   }
   const stateFor = id => identities ? identities.snapshot(id) : runtime.snapshot();
+  const assertUnreserved = id => { if (isCrossCatalogReserved(id)) throw new RuntimeError('Cross-catalog checkpoint coordination is reserved for this individual.', 409); };
   const sequences = new Map();
   const sequenceFor = id => sequences.get(id ?? identities?.primaryId) ?? 0;
   const visitors = identities ? createManagedVisitorBridge({ transport: visitorTransport, authority: {
-    claim(id, ownerId) {
-      const handle = identities.claimExternal(id, ownerId);
+     claim(id, ownerId) {
+       assertUnreserved(id);
+       const handle = identities.claimExternal(id, ownerId);
       try {
         language?.lifecycle(id);
         creativeSessions.synchronize(stateFor(id));
@@ -110,6 +116,7 @@ export function createServer({ runtime = createRuntime(), identities = null, dis
     return { ...state, ...(visitors ? { visitor: visitors.snapshot(state.individualId) } : {}), commandSequence: sequenceFor(id), ...(creativeCapture ? { creativeCapture } : {}) };
   };
   function validateCommand(body, fields, id) {
+    assertUnreserved(id);
     const expected = ['protocolVersion', 'individualId', 'sessionId', 'sequence', ...fields];
     if (Object.keys(body).length !== expected.length || expected.some(key => !Object.hasOwn(body, key))
       || body.protocolVersion !== 1 || body.individualId !== id || body.sessionId !== stateFor(id).sessionId
@@ -118,8 +125,14 @@ export function createServer({ runtime = createRuntime(), identities = null, dis
     }
     sequences.set(id, body.sequence);
   }
+  if (!crossCatalog && identities && crossCatalogDirectory) {
+    crossCatalog = createCrossCatalogService({ identityStore: identities, connectomeStore: connectomeCatalog,
+      connectomeWorker: connectomes.crossCatalogWorker, journalDirectory: crossCatalogDirectory,
+      onLifecycle: id => { sampleRecordings?.sourceChanged(id); language?.lifecycle(id); creativeSessions.synchronize(stateFor(id)); for (const source of activeRecordings.values()) if (source.individualId === id) source.sessionId = null; } });
+  }
+  const crossCatalogHttp = crossCatalog ? createCrossCatalogHttp({ service: crossCatalog, readBody, json, checkOrigin }) : (() => false);
   const sharedCreative = createSharedCreativeSessions();
-  const sharedHttp = createSharedHttp({ identities, snapshot, sequenceFor,
+  const sharedHttp = createSharedHttp({ identities, snapshot, sequenceFor, isReserved: isCrossCatalogReserved,
     consumeSequences: members => { for (const member of members) sequences.set(member.individualId, member.sequence); },
     afterTransition: (ids, action) => {
       // Every lifecycle transition, including a checkpoint save, ends shared capture at a recorded boundary.
@@ -140,7 +153,7 @@ export function createServer({ runtime = createRuntime(), identities = null, dis
     },
   });
   const sampleRecordingHttp = createConnectomeRecordingHttp({service:sampleRecordings,readBody,json,checkOrigin});
-  const sharedCreativeHttp = createSharedCreativeHttp({ identities, captures: sharedCreative, readBody, json });
+  const sharedCreativeHttp = createSharedCreativeHttp({ identities, captures: sharedCreative, readBody, json, isReserved: isCrossCatalogReserved });
   const connectomeHttp = createConnectomeHttp({ service: connectomes, readBody, json, checkOrigin });
   const connectomeSharedHttp = createConnectomeSharedHttp({ service: connectomes.shared, readBody, json, checkOrigin });
   // Render-only composition of committed shared snapshots; it holds no mutation authority.
@@ -152,6 +165,7 @@ export function createServer({ runtime = createRuntime(), identities = null, dis
       if (!isLoopback(base.hostname) && !allowedHosts.includes(base.hostname)) throw new RuntimeError('Host is not allowed.', 403);
       const url = new URL(request.url, base);
       if (url.pathname === '/api' || url.pathname.startsWith('/api/')) {
+        if (await crossCatalogHttp(request, response, url, base)) return;
         if (mixedWorldHttp(request, response, url)) return;
         if (await sampleRecordingHttp(request, response, url, base)) return;
         if (await connectomeSharedHttp(request, response, url, base)) return;
@@ -176,7 +190,8 @@ export function createServer({ runtime = createRuntime(), identities = null, dis
             ui: { available: uiAvailable, reason: uiAvailable ? 'Built entry point is present; browser behavior is verified separately.' : 'Built UI is missing or unreadable; build the frontend.' },
             runtime: { node: process.version, platform: process.platform, architecture: process.arch },
             simulation: state.status, persistence: identities ? 'durable-fixture' : 'session-only',
-            connectome: { available: research.available, mode: 'sparse-lif-research',
+             crossCatalog: (() => { try { const value = crossCatalog?.view(); return value ? { available: value.available, busy: value.busy, recovery: value.recovery, reason: value.reason ?? null, disclosure: value.disclosure } : { available: false, busy: false, recovery: null, reason: 'Cross-catalog checkpoint service is not configured.' }; } catch { return { available: false, busy: false, recovery: null, reason: 'Cross-catalog checkpoint status is unavailable.' }; } })(),
+             connectome: { available: research.available, mode: 'sparse-lif-research',
               reason: research.reason ?? (research.available ? 'Complete local graph research is available; explicit paused load and bounded steps only. No garden body coupling.' : 'No verified local connectome catalog is available.'),
               residentCount: research.individuals.filter(value => value.resident).length,
               runningCount: research.individuals.filter(value => value.status === 'running').length,
@@ -330,9 +345,10 @@ export function createServer({ runtime = createRuntime(), identities = null, dis
           if (request.method === 'GET' && !operation) return json(response, 200, identities.environmentSnapshot(id));
           if (request.method !== 'POST') throw new RuntimeError('Use POST for this environment operation.', 405);
           checkOrigin(request, base);
-          const body = await readBody(request);
-          if (operation === 'frames') {
-            const result = identities.environmentFrame(id, body);
+           const body = await readBody(request);
+           if (operation === 'frames') {
+             assertUnreserved(id);
+             const result = identities.environmentFrame(id, body);
             try { creativeSessions.capture(result.state); }
             catch { environmentCaptureFailure = 'Movement capture failed; accepted sensory state was preserved.'; }
             if (onEnvironmentFrame) {
@@ -417,16 +433,16 @@ export function createServer({ runtime = createRuntime(), identities = null, dis
     if (identities) {
       const budget = population();
       if (budget.pressure !== 'within-budget') {
-        for (const resident of identities.list().filter(value => value.resident)) {
-          const id = resident.individualId;
-          if (stateFor(id).externalOwner) { if (visitors.snapshot(id).running) visitors.lifecycle(id).catch(() => {}); }
-          else identities.control(id, 'pause');
-        }
-      } else identities.step();
+         for (const resident of identities.list().filter(value => value.resident && !isCrossCatalogReserved(value.individualId))) {
+           const id = resident.individualId;
+           if (stateFor(id).externalOwner) { if (visitors.snapshot(id).running) visitors.lifecycle(id).catch(() => {}); }
+           else identities.control(id, 'pause');
+         }
+       } else for (const resident of identities.list().filter(value => value.resident && !isCrossCatalogReserved(value.individualId))) identities.step(resident.individualId);
     } else runtime.step();
-    if (visitors) for (const resident of identities.list().filter(value => value.resident)) {
-      if (stateFor(resident.individualId).externalOwner) visitors.tick(resident.individualId).catch(() => { visitors.lifecycle(resident.individualId).catch(() => {}); });
-    }
+     if (visitors) for (const resident of identities.list().filter(value => value.resident && !isCrossCatalogReserved(value.individualId))) {
+       if (stateFor(resident.individualId).externalOwner) visitors.tick(resident.individualId).catch(() => { visitors.lifecycle(resident.individualId).catch(() => {}); });
+     }
     connectomes.enforcePressure().catch(() => {});
     language?.tick().catch(() => {});
     if (++sampleTick % 10 !== 0 || !recordings) return;
@@ -459,10 +475,23 @@ export function createServer({ runtime = createRuntime(), identities = null, dis
     pendingRecordings.add(batch);
     batch.finally(() => pendingRecordings.delete(batch));
   }, 50); });
-  server.on('close', () => { clearInterval(timer); language?.close();
-    if (visitors) visitors.disconnectAll().finally(() => identities?.close()); else identities?.close();
-    sampleRecordings.close().finally(() => connectomes.close()).catch(() => {});
-    Promise.allSettled([...pendingRecordings]).then(() => recordings?.close()); });
+   let shutdownPromise;
+   const shutdown = () => {
+     if (shutdownPromise) return shutdownPromise;
+     shutdownPromise = (async () => {
+       clearInterval(timer);
+       language?.close();
+       if (visitors) await visitors.disconnectAll();
+       await crossCatalog?.close();
+       await sampleRecordings?.close();
+       await connectomes.close();
+       identities?.close();
+       await Promise.allSettled([...pendingRecordings]);
+       await recordings?.close();
+     })().catch(() => {});
+     return shutdownPromise;
+   };
+   server.on('close', () => { void shutdown(); });
   return server;
 }
 
@@ -493,7 +522,7 @@ if (entryPath && resolve(entryPath) === fileURLToPath(import.meta.url)) {
   const aggregateSpendMicros = Number(process.env.FLY_GARDEN_LANGUAGE_AGGREGATE_SPEND_MICROS ?? '0');
   if (!Number.isSafeInteger(aggregateSpendMicros) || aggregateSpendMicros < 0) throw new Error('Language aggregate spend must be a nonnegative safe integer.');
   const languageService = createLanguageService({ identities, providers: localLanguageProvider ? [localLanguageProvider] : [], aggregateSpendMicros });
-  const server = createServer({ identities, languageService, connectomeCatalog: research.store, connectomeProfiles: research.profiles, connectomeReason: research.reason, capacity, incrementalMemoryBytes: footprint.incrementalMemoryBytes, recordings, connectomeRecordings, allowedHosts, allowedOrigins: (process.env.DEV_ORIGINS ?? `http://127.0.0.1:${ecosystem.PORTS.devUi},http://localhost:${ecosystem.PORTS.devUi}`).split(',').filter(Boolean) });
+  const server = createServer({ identities, languageService, connectomeCatalog: research.store, connectomeProfiles: research.profiles, connectomeReason: research.reason, capacity, incrementalMemoryBytes: footprint.incrementalMemoryBytes, recordings, connectomeRecordings, crossCatalogDirectory: resolve(dataDirectory, 'cross-catalog'), allowedHosts, allowedOrigins: (process.env.DEV_ORIGINS ?? `http://127.0.0.1:${ecosystem.PORTS.devUi},http://localhost:${ecosystem.PORTS.devUi}`).split(',').filter(Boolean) });
   server.listen(port, host, () => {
     console.log(`Fly Garden: http://${host}:${port} — fixture paused or unloaded; research identities remain unloaded`);
     process.send?.('ready');

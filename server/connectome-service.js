@@ -9,9 +9,10 @@ const exact=(v,keys)=>v&&typeof v==='object'&&!Array.isArray(v)&&Object.keys(v).
 const fail=(message,status=409)=>{throw new RuntimeError(message,status);};
 const plainState=state=>({...state,reason:state.reason?(state.recoveryRequired?'Storage durability is uncertain; recover the catalog before explicit paused reload.':'Research operation unavailable or paused; refresh state and verify local configuration.'):null});
 /** Trusted application adapter. Browser callers can select IDs/profiles, never directories or neural payloads. */
-export function createConnectomeService({store=null,profiles={},reason=null,capacity,getResources,openBackend,onLifecycle=()=>{}}={}) {
+export function createConnectomeService({store=null,profiles={},reason=null,capacity,getResources,openBackend,onLifecycle=()=>{},isReserved=()=>false}={}) {
   const catalogEpoch=randomUUID();let catalogSequence=0,admissions=Promise.resolve(),pressureWork=null,storageFault=false;
   const pending=new Set(), pendingSamples=new Set();
+  let shared;
   const registry=store?createConnectomeRegistry({identities:store.identities(),capacity,getResources:async({dataset})=>({...getResources(),measurement:profiles[dataset]?.measurement}),
     loadCheckpoint:({individualId,checkpointId})=>store.readCheckpoint(individualId,checkpointId),
     persistCheckpoint:request=>store.persistCheckpoint(request),
@@ -20,12 +21,13 @@ export function createConnectomeService({store=null,profiles={},reason=null,capa
     prepareJointRestore:id=>store.prepareJointRestore(id),
     commitJointRestore:token=>store.commitJointRestore(token),
     cancelJointRestore:token=>store.cancelJointRestore(token),
-    openBackend:(directory,options)=>(openBackend??openConnectomeBackend)(directory,{...options,onExit:()=>{options.onExit();onLifecycle(options.individualId);}})}):null;
+     openBackend:(directory,options)=>(openBackend??openConnectomeBackend)(directory,{...options,onExit:()=>{options.onExit();onLifecycle(options.individualId);}}),
+     isShared:id=>shared?.owns(id)===true}):null;
   // Safe aggregate counts/bytes and trusted per-profile memory evidence only; never directories or graph arrays.
   const sharedResources=()=>{const current=population();return{residentCount:current.residentCount,runningCount:current.runningCount,maxResidentFlies:current.settings.maxResidentFlies,
     aggregateMemoryBytes:current.aggregateMemoryBytes,availableMemoryBytes:current.availableMemoryBytes,pressure:current.pressure,
     memberMemoryBytes:Object.fromEntries(Object.keys(CONNECTOME_PROFILES).map(dataset=>[dataset,profiles[dataset]?.measurement?.available?profiles[dataset].measurement.incrementalMemoryBytes:null]))};};
-  const shared=createConnectomeSharedSession({available:()=>!!registry&&!storageFault,resources:sharedResources,
+  shared=createConnectomeSharedSession({available:()=>!!registry&&!storageFault,isReserved,resources:sharedResources,
     snapshot:id=>registry.snapshot(id),invalidate:ids=>registry.invalidateCommands(ids),
     control:async(id,action)=>{try{return await registry.sharedControl(id,action);}finally{onLifecycle(id);}},
     barrier:async(ids,steps,expected,observe)=>{try{return await registry.barrier(ids,steps,expected,observe);}finally{ids.forEach(id=>onLifecycle(id));}},
@@ -71,6 +73,7 @@ export function createConnectomeService({store=null,profiles={},reason=null,capa
   }
   async function command(id,body){
     required();
+    if(isReserved(id))fail('Cross-catalog checkpoint coordination is reserved for this individual.',409);
     if(!exact(body,['protocolVersion','individualId','sessionEpoch','commandSequence','action','steps','checkpointId'])||body.protocolVersion!==1
       ||body.individualId!==id||!['load','start','advance','pause','rest','home','save','unload','restore'].includes(body.action)
       ||(body.action==='advance'?!Number.isInteger(body.steps)||body.steps<1||body.steps>1000:body.steps!==null)
@@ -100,6 +103,7 @@ export function createConnectomeService({store=null,profiles={},reason=null,capa
   }
   async function sample(id,body) {
     const current=required();record(id);
+    if(isReserved(id))fail('Cross-catalog checkpoint coordination is reserved for this individual.',409);
     if(pendingSamples.has(id))fail('A neuron sample is already in progress for this individual.');
     pendingSamples.add(id);
     try {return await boundary(()=>current.sample(id,body));}
@@ -110,12 +114,13 @@ export function createConnectomeService({store=null,profiles={},reason=null,capa
     if(!registry||population().pressure==='within-budget')return Promise.resolve();
     if(pressureWork)return pressureWork;
     const sharedWork=shared.pauseForPressure();
-    const direct=registry.list().filter(state=>state.status==='running'&&!shared.owns(state.individualId)).map(state=>registry.command(state.individualId,{
+    const direct=registry.list().filter(state=>state.status==='running'&&!shared.owns(state.individualId)&&!isReserved(state.individualId)).map(state=>registry.command(state.individualId,{
       protocolVersion:1,individualId:state.individualId,sessionEpoch:state.sessionEpoch,commandSequence:state.commandSequence,action:'pause',steps:null,
     }));
     pressureWork=Promise.allSettled([sharedWork,...direct]).finally(()=>{pressureWork=null;});return pressureWork;
   }
   return{view,snapshot,create,command,sample,history,list,withAdmission,enforcePressure,shared,
+    crossCatalogWorker:registry?.crossCatalogWorker??null,
     reservations:()=>registry?registry.list().filter(state=>state.resident).map(state=>({individualId:state.individualId,status:state.status})):[],
     close:async()=>{await shared.close();if(registry)await registry.close();store?.close();}};
 }

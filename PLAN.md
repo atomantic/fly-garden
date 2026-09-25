@@ -208,3 +208,9 @@ Delivered at `631e7ab`: configurable capacity with a default of one, paused resi
 PRD FR-36–40 define acceptance. Configured capacity is an operator ceiling, not a guarantee of throughput. The first supported multi-individual evidence gate is two flies; larger populations require additional measured capacity tests.
 
 Implementation owners: [shared garden #20](https://github.com/atomantic/fly-garden/issues/20), [independent Eidoverse population #21](https://github.com/atomantic/fly-garden/issues/21), and [resource-aware capacity #22](https://github.com/atomantic/fly-garden/issues/22). Existing #1–#11 and #14/#16 carry the related dataset, identity, UI, recording and validation changes.
+
+## Cross-catalog checkpoint increment
+
+The fixed fixture, MaleCNS and BANC namespaces are now connected through a trusted local service. The coordinator snapshots membership, source epochs, heads, lineage and modes; reserves both catalog families; preflights capacity and durability; stages immutable payloads; publishes selected full-connectome heads to the live registry; and restores only into fresh paused sessions. Direct fixture and connectome lifecycle, sampling, shared-session and visitor operations refuse reserved participants, and shutdown settles the transaction before closing either catalog store.
+
+The bounded status/checkpoint routes and the Connectome lab panel require exact IDs, namespaces and saved membership. Recovery is never automatic: an operator must choose rollback or complete after inspecting the journal record and complete affected-head set. The journal is copied only by explicit offline backup and is restored before any replacement state is published. This remains a cross-catalog research transaction, not a coupled mixed world, body controller, sensory path, learning result or biological validation. Tiny live-registry tests cover the wiring; full pinned paired throughput and embodiment remain unvalidated.

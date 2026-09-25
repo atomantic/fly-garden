@@ -34,7 +34,8 @@ function checkStore(store, methods, kind) {
 }
 
 function checkWorker(worker) {
-  if (!worker || ['describe', 'peekCheckpoint', 'activatePaused', 'evict'].some(name => typeof worker[name] !== 'function')) {
+  if (!worker || ['describe', 'peekCheckpoint', 'activatePaused', 'evict'].some(name => typeof worker[name] !== 'function')
+    || ['reserve', 'selectHeads'].some(name => worker[name] !== undefined && typeof worker[name] !== 'function')) {
     throw new Error('Invalid connectome worker hooks for cross-catalog coordination');
   }
 }
@@ -118,6 +119,7 @@ export function createFixtureCrossCatalogAdapter(store, { catalogId = 'fixture' 
         if (!source || source.sha256 !== member.checkpointSha256) throw new Error('Restore source is not in this member history');
       }
     }
+    if (typeof store.crossCatalogPreflight === 'function') store.crossCatalogPreflight(request);
   }
 
   return {
@@ -205,6 +207,7 @@ export function createFixtureCrossCatalogAdapter(store, { catalogId = 'fixture' 
         if (headOf(member.individualId) !== member.checkpointId) throw new Error('Cross-catalog activation head does not match the selected head');
         const snap = store.restore(member.individualId, member.checkpointId);
         if (snap.status !== 'paused') throw new Error('Cross-catalog activation could not be verified paused');
+        if (member.mode === 'resting' && store.control(member.individualId, 'rest').status !== 'resting') throw new Error('Cross-catalog rest mode could not be retained');
         return { individualId: member.individualId, checkpointId: member.checkpointId, sessionEpoch: snap.sessionId, status: 'paused' };
       });
     },
@@ -282,26 +285,42 @@ export function createConnectomeCrossCatalogAdapter({ store, worker, catalogId, 
       .filter(record => dataset === null || record.dataset === dataset)
       .map(record => [record.individualId, record.checkpointId]).sort()),
     member: id => view(id),
-    reserve: ids => guard.reserve(ids),
+    reserve: async ids => {
+      const releaseLocal = guard.reserve(ids);
+      if (typeof worker.reserve !== 'function') return releaseLocal;
+      try {
+        const releaseRemote = await worker.reserve(ids);
+        let released = false;
+        return () => {
+          if (released) return;
+          released = true;
+          try { if (typeof releaseRemote === 'function') releaseRemote(); } finally { releaseLocal(); }
+        };
+      } catch (error) {
+        releaseLocal();
+        throw error;
+      }
+    },
     preflight: async request => { preflight(request); },
     stage: async request => {
       preflight(request);
       if (staged.has(request.transactionId)) throw new Error('Duplicate cross-catalog staging transaction');
-      const items = request.members.map(member => {
+      const items = [];
+      for (const member of request.members) {
         let checkpoint;
         if (request.operation === 'save') {
-          checkpoint = worker.peekCheckpoint(member.individualId);
+          checkpoint = await worker.peekCheckpoint(member.individualId);
           if (!checkpoint || checkpoint.individualId !== member.individualId) throw new Error('Connectome worker checkpoint recipient mismatch');
           const identity = identityOf(member.individualId);
           if (!identity || checkpoint.dataset !== identity.dataset) throw new Error('Connectome worker checkpoint recipient mismatch');
         } else {
           checkpoint = store.readCheckpoint(member.individualId, member.sourceCheckpointId);
         }
-        return { individualId: member.individualId, checkpointId: randomUUID(), parentId: member.parentId,
+        items.push({ individualId: member.individualId, checkpointId: randomUUID(), parentId: member.parentId,
           restoredFrom: request.operation === 'restore' ? member.sourceCheckpointId : null,
           operation: request.operation, checkpoint,
-          sourceCheckpointId: member.sourceCheckpointId ?? null, mode: member.mode };
-      });
+          sourceCheckpointId: member.sourceCheckpointId ?? null, mode: member.mode });
+      }
       let files;
       try {
         files = store.stageCrossCatalog(request.transactionId, items);
@@ -323,8 +342,17 @@ export function createConnectomeCrossCatalogAdapter({ store, worker, catalogId, 
       const scope = prepared.entries.map(entry => entry.individualId);
       try {
         const result = store.commitCrossCatalog(transactionId, { individualIds: scope });
+        const heads = Object.fromEntries(result.members.map(member => [member.individualId, member.checkpointId]));
+        if (typeof worker.selectHeads === 'function') {
+          try { await worker.selectHeads(heads); }
+          catch (error) {
+            throw Object.assign(new Error('Connectome selected heads could not be published to the live registry'), {
+              code: 'CATALOG_DURABILITY_UNCERTAIN', selectedHeads: heads,
+            });
+          }
+        }
         staged.delete(transactionId);
-        return { heads: Object.fromEntries(result.members.map(member => [member.individualId, member.checkpointId])) };
+        return { heads };
       } catch (error) { staged.delete(transactionId); asUncertain(error); }
     },
     cancel: async ({ transactionId }) => {
@@ -348,6 +376,14 @@ export function createConnectomeCrossCatalogAdapter({ store, worker, catalogId, 
         if (current && current.restoredFrom === prior) { result[id] = identity.checkpointId; continue; }
         const appended = store.appendCrossCatalogRevert({ individualId: id, checkpointId: randomUUID(), priorHead: prior });
         result[id] = appended.checkpointId;
+      }
+      if (typeof worker.selectHeads === 'function') {
+        try { await worker.selectHeads(result); }
+        catch (error) {
+          throw Object.assign(new Error('Connectome reverted heads could not be published to the live registry'), {
+            code: 'CATALOG_DURABILITY_UNCERTAIN', selectedHeads: { ...result },
+          });
+        }
       }
       reverts.set(transactionId, result);
       return { heads: { ...result } };

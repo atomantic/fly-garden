@@ -5,6 +5,7 @@ import ConnectomeRecordings from './ConnectomeRecordings.jsx';
 import { runtimeAdminValues } from './runtime-admin-values.js';
 import ConnectomeSharedControls from './ConnectomeSharedControls.jsx';
 import MixedWorldScene from './MixedWorldScene.jsx';
+import CrossCatalogCheckpoints from './CrossCatalogCheckpoints.jsx';
 import './observatory-accessibility.css';
 
 const LABELS = {'male-cns:v1.0':'MaleCNS v1.0','banc:v888':'BANC v888'};
@@ -134,8 +135,9 @@ export default function ConnectomeLab({ selectedIndividualId, onSelectIndividual
           <p>Selection reads summaries and history. It never loads or starts a worker.</p>
         </fieldset>
       </div>
-      <ConnectomeSharedControls individuals={catalog.individuals} />
-      {/* Opening mounts a read-only observer; closing unmounts its renderer. Neither changes a participant. */}
+       <ConnectomeSharedControls individuals={catalog.individuals} />
+       <CrossCatalogCheckpoints />
+       {/* Opening mounts a read-only observer; closing unmounts its renderer. Neither changes a participant. */}
       <details className="mixed-world-details" onToggle={event=>setMixedOpen(event.currentTarget.open)}><summary>Mixed shared world shell (render-only observation)</summary>{mixedOpen && <MixedWorldScene />}</details>
       {catalog.population && <section aria-label="Connectome resource admission"><h3>Resource admission</h3>
         <dl className="lab-metrics"><div><dt>Resident / configured ceiling</dt><dd>{number(catalog.population.residentCount)} / {number(catalog.population.settings?.maxResidentFlies)}</dd></div>

@@ -1,6 +1,6 @@
 import { fixtureTraceProvenance } from './shared-creative-session.js';
 /** Artifact operations have their own sequence and cannot command neural lifecycles. */
-export function createSharedCreativeHttp({ identities, captures, readBody, json }) {
+export function createSharedCreativeHttp({ identities, captures, readBody, json, isReserved = () => {} }) {
   const shared = id => { try { return identities?.sharedSnapshot(id) ?? null; } catch { return null; } };
   return async (request, response, url) => {
     if (url.pathname === '/api/shared/artifacts' && request.method === 'GET' && !url.search) {
@@ -24,8 +24,9 @@ export function createSharedCreativeHttp({ identities, captures, readBody, json 
       if (request.method !== 'POST' || format) throw Object.assign(new Error('Use GET for export or POST for capture actions.'), { statusCode: 405 });
       const body = await readBody(request);
       // The world may pause, separate or advance while a request body arrives.
-      const current = shared(id);
-      // Garden participants are fixtures; a research participant would need a declared adapter, never an inferred one.
+       const current = shared(id);
+       if (current?.participants?.some(member => isReserved(member.individualId))) throw Object.assign(new Error('Cross-catalog checkpoint coordination is reserved for this fixture participant.'), { statusCode: 409 });
+       // Garden participants are fixtures; a research participant would need a declared adapter, never an inferred one.
       const provenance = body?.action === 'start' && current ? current.participants.map(p => fixtureTraceProvenance(identities.snapshot(p.individualId))) : [];
       json(response, 200, captures.command(id, body, current, provenance));
     } catch (error) { json(response, error.statusCode ?? 500, { error: error.statusCode ? error.message : 'Shared artifact operation failed; previous captured actions are preserved.' }); }

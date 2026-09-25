@@ -48,12 +48,12 @@ function participantFrom(state, mode = 'active') {
     model: state.model ?? null, capabilities: state.capabilities };
 }
 
-export function createConnectomeSharedSession({ snapshot, control, barrier, invalidate = () => {}, checkpoint, readJointCheckpoint, listJoints, prepareRestore, commitRestore, available = () => true,
+export function createConnectomeSharedSession({ snapshot, control, barrier, invalidate = () => {}, checkpoint, readJointCheckpoint, listJoints, prepareRestore, commitRestore, available = () => true, isReserved = () => false,
   now = () => performance.now(), resources = () => null, memoryUsage = () => process.memoryUsage(), measuredAt = () => new Date().toISOString(),
   runtime = { node: process.version, platform: process.platform, arch: process.arch }, pinned = portableConnectomeProfiles,
   measurementDeadlineMs = SHARED_MEASUREMENT_BOUNDS.deadlineMs } = {}) {
   if (typeof snapshot !== 'function' || typeof control !== 'function' || typeof barrier !== 'function' || typeof invalidate !== 'function'
-    || [now, resources, memoryUsage, measuredAt, pinned].some(value => typeof value !== 'function') || !runtime || typeof runtime !== 'object'
+    || typeof isReserved !== 'function' || [now, resources, memoryUsage, measuredAt, pinned].some(value => typeof value !== 'function') || !runtime || typeof runtime !== 'object'
     || !Number.isSafeInteger(measurementDeadlineMs) || measurementDeadlineMs < 1 || measurementDeadlineMs > 600000
     || (checkpoint !== undefined && typeof checkpoint !== 'function') || (readJointCheckpoint !== undefined && typeof readJointCheckpoint !== 'function')
     || (listJoints !== undefined && typeof listJoints !== 'function') || (prepareRestore !== undefined && typeof prepareRestore !== 'function')
@@ -66,6 +66,7 @@ export function createConnectomeSharedSession({ snapshot, control, barrier, inva
   const owns = id => owners.has(id) || joining.has(id);
   const reserve = id => { if (pending.has(id)) fail('Shared research operation already in progress.'); pending.add(id); };
   const required = () => { if (closing || !available()) fail('Full-connectome shared research is unavailable.', 409); };
+  const assertUnreserved = ids => { if (Array.isArray(ids) && ids.some(id => isReserved(id))) fail('Cross-catalog checkpoint coordination is reserved for this research participant.', 409); };
   const sessionFor = id => { required(); const value = sessions.get(id); if (!value) fail('Shared research session not found.', 404); return value; };
   const stateFor = id => safeState(snapshot(id));
   const event = (session, type, extra = {}) => { session.events.push({ type, tick: session.tick, ...extra }); session.events = session.events.slice(-64); };
@@ -139,6 +140,7 @@ export function createConnectomeSharedSession({ snapshot, control, barrier, inva
       || body.members.length < 2 || body.members.length > MAX_MEMBERS || new Set(body.members.map(member => member?.individualId)).size !== body.members.length) {
       fail('Select 2–64 distinct loaded full-connectome participants.');
     }
+    assertUnreserved(body.members.map(member => member.individualId));
     const states = body.members.map(member => {
       if (!envelope(member)) fail('Invalid shared research membership envelope.');
       const state = stateFor(member.individualId);
@@ -179,6 +181,7 @@ export function createConnectomeSharedSession({ snapshot, control, barrier, inva
   }
   async function runControl(sharedId, body) {
     const session = sessionFor(sharedId);
+    assertUnreserved(session.participants.map(member => member.individualId));
     if (!exact(body, ['protocolVersion', 'sharedId', 'worldEpoch', 'sequence', 'action']) || !['start', 'pause', 'save', 'separate'].includes(body.action)) fail('Invalid shared research action.');
     validateControl(session, body, ['protocolVersion', 'sharedId', 'worldEpoch', 'sequence', 'action']);
     if (body.action === 'start') {
@@ -265,6 +268,7 @@ export function createConnectomeSharedSession({ snapshot, control, barrier, inva
   }
   async function runAdvance(sharedId, body) {
     const session = sessionFor(sharedId);
+    assertUnreserved(session.participants.map(member => member.individualId));
     if (!exact(body, ['protocolVersion', 'sharedId', 'worldEpoch', 'sequence', 'action']) || body.action !== 'barrier') fail('Invalid shared research barrier envelope.');
     validateControl(session, body, ['protocolVersion', 'sharedId', 'worldEpoch', 'sequence', 'action']);
     if (session.status !== 'running') fail('Explicit shared start required before a research barrier.');
@@ -276,6 +280,7 @@ export function createConnectomeSharedSession({ snapshot, control, barrier, inva
    * deadline or resource pressure, reporting the measurement as unavailable. */
   async function runMeasure(sharedId, body) {
     const session = sessionFor(sharedId);
+    assertUnreserved(session.participants.map(member => member.individualId));
     const keys = ['protocolVersion', 'sharedId', 'worldEpoch', 'sequence', 'barriers'];
     if (!exact(body, keys) || !Number.isSafeInteger(body.barriers) || body.barriers < SHARED_MEASUREMENT_BOUNDS.minBarriers
       || body.barriers > SHARED_MEASUREMENT_BOUNDS.maxBarriers) fail('Invalid shared research measurement envelope.');
@@ -325,6 +330,7 @@ export function createConnectomeSharedSession({ snapshot, control, barrier, inva
   }
   async function runMemberControl(sharedId, body) {
     const session = sessionFor(sharedId);
+    assertUnreserved(session.participants.map(member => member.individualId));
     if (!exact(body, ['protocolVersion', 'sharedId', 'worldEpoch', 'sequence', 'individualId', 'action']) || !['rest', 'resume', 'withdraw'].includes(body.action)) fail('Invalid shared research member envelope.');
     validateControl(session, body, ['protocolVersion', 'sharedId', 'worldEpoch', 'sequence', 'individualId', 'action']);
     const member = session.participants.find(value => value.individualId === body.individualId);
@@ -358,6 +364,7 @@ export function createConnectomeSharedSession({ snapshot, control, barrier, inva
       || !exact(body, ['protocolVersion', 'jointCheckpointId', 'members']) || body.protocolVersion !== 1
       || typeof body.jointCheckpointId !== 'string' || !Array.isArray(body.members) || body.members.length < 2 || body.members.length > MAX_MEMBERS
       || new Set(body.members.map(member => member?.individualId)).size !== body.members.length) fail('Invalid shared research restore envelope.');
+    assertUnreserved(body.members.map(member => member.individualId));
     const joint = readJointCheckpoint(body.jointCheckpointId);
     const expected = joint?.payload?.members;
     if (!joint || joint.jointCheckpointId !== body.jointCheckpointId || !Array.isArray(expected) || expected.length !== body.members.length) fail('Shared research joint checkpoint membership is unavailable.');

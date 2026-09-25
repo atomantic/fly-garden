@@ -257,6 +257,20 @@ export function openIdentityStore(directory, { write = atomicWrite, loadPrimary 
     return { individualId: id, parentHead: record.head, payload,
       pose, sha256: digest(embodiment ? { payload, embodiment } : payload), simTimeMs: payload.dynamics.tick * 5 };
   }
+  function crossCatalogPreflight(request) {
+    if (!request || !['save', 'restore'].includes(request.operation) || !Array.isArray(request.members)) throw new RuntimeError('Invalid cross-catalog fixture preflight request.', 409);
+    let projectedBytes = Buffer.byteLength(JSON.stringify(saved));
+    for (const member of request.members) {
+      requireCrossCatalogFree(member.individualId);
+      const record = recordFor(member.individualId);
+      if (record.head !== member.parentId || record.checkpoints.length >= MAX_CHECKPOINTS) throw new RuntimeError('Cross-catalog fixture preflight found stale or full history.', 409);
+      const source = request.operation === 'restore' ? readCrossCatalogPayload(member.individualId, member.sourceCheckpointId) : peekLiveCheckpoint(member.individualId);
+      if (request.operation === 'restore' && source.sha256 !== member.checkpointSha256) throw new RuntimeError('Cross-catalog fixture restore source is not in history.', 409);
+      projectedBytes += Buffer.byteLength(JSON.stringify(source.payload)) + (source.pose ? Buffer.byteLength(JSON.stringify(source.pose)) : 0) + 1024;
+      if (projectedBytes > MAX_BYTES) throw new RuntimeError('Cross-catalog fixture storage capacity would be exceeded.', 409);
+    }
+    return true;
+  }
   function readCrossCatalogPayload(id, checkpointId) {
     requireCrossCatalogFree(id);
     const record = recordFor(id);
@@ -650,7 +664,7 @@ export function openIdentityStore(directory, { write = atomicWrite, loadPrimary 
       return [...sharedSessions.values()].map(session => session.snapshot());
     },
     sharedCheckpoints: () => structuredClone(saved.jointCheckpoints ?? []),
-    peekLiveCheckpoint, readCrossCatalogPayload, persistCrossCatalogCheckpoint, evictCrossCatalogResident,
+    peekLiveCheckpoint, crossCatalogPreflight, readCrossCatalogPayload, persistCrossCatalogCheckpoint, evictCrossCatalogResident,
     encounterDynamicsSnapshot, encounterDynamicsControl, environmentSnapshot, environmentControl, environmentFrame, create, createIndividual: create, load, unload, primaryId: saved.primaryId, snapshot, save, restore, replica,
     list: () => saved.individuals.map(record => ({ individualId: record.individualId, branchOf: structuredClone(record.branchOf),
       dataset: structuredClone(checkpointFor(record, record.head).payload.dataset),
