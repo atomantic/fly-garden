@@ -24,3 +24,7 @@
 .connectome-lab .mixed-world-table caption { text-align:left; padding:6px 0; }
 .connectome-lab .mixed-world-cohorts { padding-left:18px; overflow-wrap:anywhere; }
 .connectome-lab .mixed-world-cohorts li { margin:6px 0; }
+.connectome-lab .lab-history table { width:100%; border-collapse:collapse; }
+.connectome-lab .lab-history th,.connectome-lab .lab-history td { padding:8px; border-bottom:1px solid #3d5044; }
+.connectome-lab fieldset label span { overflow-wrap:anywhere; }
+.connectome-lab fieldset input[type=checkbox] { width:auto; }

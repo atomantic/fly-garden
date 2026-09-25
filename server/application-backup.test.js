@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { openIdentityStore } from './identity-store.js';
 import { openCapacityStore } from './population-capacity.js';
 import { openConnectomeStore } from './connectome-store.js';
+import { openCrossCatalogJournal } from './cross-catalog-checkpoint.js';
 import { createSparseLif } from './sparse-lif.js';
 import { createRecordingStore } from './recording-store.js';
 import { backupApplication, restoreApplicationBackup, validateApplicationBackup } from './application-backup.js';
@@ -115,7 +116,15 @@ test('rehashed typed archives reject impossible fixed-epoch chronology before re
  store.stop(session.id);store.close();backupApplication(source,archive,{profiles});
  const path=join(archive,'connectome-recordings',`${session.id}.json`),original=JSON.parse(readFileSync(path));
  for(const mutate of [v=>v.records[1].commandSequence=4,v=>v.records[1].samples[0].potential=-0.5]){
-  const value=structuredClone(original);mutate(value);writeFileSync(path,JSON.stringify(value));rehashArchive(archive);
-  assert.throws(()=>restoreApplicationBackup(archive,destination,{profiles}));assert.equal(existsSync(destination),false);
- }
+   const value=structuredClone(original);mutate(value);writeFileSync(path,JSON.stringify(value));rehashArchive(archive);
+   assert.throws(()=>restoreApplicationBackup(archive,destination,{profiles}));assert.equal(existsSync(destination),false);
+  }
+});
+
+test('cross-catalog recovery journal round-trips without a writer lock', t=>{
+  const {source,archive,destination}=setup(t);openIdentityStore(source).close();
+  const journal=openCrossCatalogJournal(join(source,'cross-catalog'));journal.close();
+  assert.equal(backupApplication(source,archive,{profiles}).crossCatalog,true);
+  const manifest=validateApplicationBackup(archive,{profiles});assert.equal(manifest.manifest.schemaVersion,3);assert.equal(manifest.crossCatalog.kind,'cross-catalog-journal');
+  restoreApplicationBackup(archive,destination,{profiles});const restored=openCrossCatalogJournal(join(destination,'cross-catalog'));assert.equal(restored.document().kind,'cross-catalog-journal');restored.close();
 });

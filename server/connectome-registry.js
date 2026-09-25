@@ -13,7 +13,7 @@ const capabilities = Object.freeze({ sensoryMotor: false, learning: false, chemi
  * measured capacity evidence and atomic checkpoint/head persistence. No HTTP or timers. */
 export function createConnectomeRegistry({ identities = [], capacity = createCapacityPolicy(), getResources = async () => ({}),
   persistCheckpoint, loadCheckpoint, persistJointCheckpoint, readJointCheckpoint, prepareJointRestore, commitJointRestore, cancelJointRestore,
-  openBackend = openConnectomeBackend, operationTimeoutMs = 30000, now = () => performance.now() } = {}) {
+  openBackend = openConnectomeBackend, operationTimeoutMs = 30000, now = () => performance.now(), isShared = () => false } = {}) {
   if (!Array.isArray(identities) || identities.length > 64 || typeof persistCheckpoint !== 'function'
     || (loadCheckpoint !== undefined && typeof loadCheckpoint !== 'function')
     || (persistJointCheckpoint !== undefined && typeof persistJointCheckpoint !== 'function')
@@ -21,7 +21,8 @@ export function createConnectomeRegistry({ identities = [], capacity = createCap
     || (prepareJointRestore !== undefined && typeof prepareJointRestore !== 'function')
     || (commitJointRestore !== undefined && typeof commitJointRestore !== 'function')
     || (cancelJointRestore !== undefined && typeof cancelJointRestore !== 'function')
-    || !Number.isInteger(operationTimeoutMs) || operationTimeoutMs < 1 || operationTimeoutMs > 120000 || typeof now !== 'function') throw new Error('Invalid research registry configuration');
+    || !Number.isInteger(operationTimeoutMs) || operationTimeoutMs < 1 || operationTimeoutMs > 120000 || typeof now !== 'function'
+    || typeof isShared !== 'function') throw new Error('Invalid research registry configuration');
   const records = new Map(); let loadQueue = Promise.resolve(), closed = false, closing = false;
   const restoreReservations = new Map(), restoreCalls = new Set(), restoreWaiters = new Set();
   function register(input) {
@@ -165,6 +166,107 @@ export function createConnectomeRegistry({ identities = [], capacity = createCap
       }
     });
   }
+  async function reserveCrossCatalog(recordsToReserve) {
+    const token = reserveRestore(recordsToReserve, 'cross-catalog');
+    try {
+      await Promise.all(recordsToReserve.map(r => r.queue));
+      let released = false;
+      return () => {
+        if (released) return;
+        released = true;
+        releaseRestore(token);
+      };
+    } catch (error) {
+      releaseRestore(token);
+      throw error;
+    }
+  }
+  function describeCrossCatalog(id) {
+    const r = record(id);
+    const state = publicState(r);
+    if (isShared(id)) return { ...state, status: 'shared-joined' };
+    return state;
+  }
+  function peekCrossCatalogCheckpoint(id) {
+    const r = record(id);
+    return enqueue(r, async () => {
+      if (isShared(id)) throw new Error('Connectome participant belongs to a shared session');
+      if (!r.backend || !r.owner || !['paused', 'resting'].includes(r.lifecycle) || r.state?.status === 'fault') {
+        throw new Error('Connectome participant is not a paused resident');
+      }
+      const checkpoint = await call(r, 'checkpoint', undefined, { allowReserved: true });
+      if (checkpoint?.individualId !== id || checkpoint?.dataset !== r.dataset) throw new Error('Connectome worker checkpoint recipient mismatch');
+      return structuredClone(checkpoint);
+    });
+  }
+  function selectCrossCatalogHeads(heads) {
+    const entries = heads && typeof heads === 'object' && !Array.isArray(heads) ? Object.entries(heads) : [];
+    if (!entries.length || entries.some(([id, head]) => !idValid(id) || !idValid(head))) throw new Error('Invalid cross-catalog selected heads');
+    const selected = entries.map(([id]) => record(id));
+    if (new Set(selected.map(r => r.individualId)).size !== selected.length || selected.some(r => !Number.isSafeInteger(r.sequence + 1))) {
+      throw new Error('Cross-catalog selected head command sequence limit reached');
+    }
+    for (const [id, head] of entries) {
+      const r = record(id);
+      r.checkpointId = head;
+      r.saved = loadCheckpoint ? null : r.saved;
+      r.sequence++;
+    }
+    return selected.map(publicState);
+  }
+  async function activateCrossCatalogPaused(id, { checkpointId, mode }) {
+    const r = record(id);
+    return enqueue(r, async () => {
+      if (isShared(id)) throw new Error('Connectome participant belongs to a shared session');
+      if (!r.backend || !r.owner || !r.state || !['paused', 'resting'].includes(r.lifecycle) || r.state.status === 'fault') throw new Error('Connectome participant is not a paused resident');
+      if (r.checkpointId !== checkpointId || !['active', 'resting'].includes(mode)) throw new Error('Cross-catalog selected head is not current');
+      if (typeof loadCheckpoint !== 'function') throw new Error('A lazy checkpoint loader is required for cross-catalog restore');
+      const checkpoint = await loadCheckpoint({ individualId: id, dataset: r.dataset, checkpointId });
+      if (!checkpoint || checkpoint.individualId !== id || checkpoint.dataset !== r.dataset) throw new Error('Cross-catalog checkpoint recipient mismatch');
+      const rollbackCheckpoint = await call(r, 'checkpoint', undefined, { allowReserved: true });
+      const oldEpoch = r.state.sessionEpoch;
+      let restoreToken = null;
+      let committed = false;
+      try {
+        const prepared = await call(r, 'prepareRestore', structuredClone(checkpoint), { allowReserved: true });
+        restoreToken = prepared?.token;
+        if (!restoreToken) throw new Error('Connectome worker returned no restore token');
+        const state = await call(r, 'commitRestore', restoreToken, { allowReserved: true });
+        if (state?.individualId !== id || state?.dataset !== r.dataset || state.status !== 'paused' || state.sessionEpoch === oldEpoch) {
+          throw new Error('Connectome cross-catalog activation was not a fresh paused state');
+        }
+        committed = true;
+        r.state = state;
+        r.lifecycle = mode === 'resting' ? 'resting' : 'paused';
+        r.saved = null;
+        r.sequence++;
+        return { individualId: id, checkpointId, sessionEpoch: state.sessionEpoch, status: 'paused' };
+      } catch (error) {
+        if (committed) {
+          try { await rollbackWorkerRestore(r, { restoreToken, rollbackCheckpoint, rollbackLifecycle: r.lifecycle }); }
+          catch { await evict(r, 'Cross-catalog restore rollback failed; durable checkpoint retained for paused recovery.').catch(() => {}); }
+        } else if (restoreToken) await discardWorkerRestore(r, restoreToken).catch(() => {});
+        throw error;
+      }
+    });
+  }
+  function evictCrossCatalog(id) {
+    const r = record(id);
+    return enqueue(r, async () => {
+      if (r.lifecycle === 'saved-unloaded' && !r.owner) return;
+      if (!r.owner) throw new Error('Connectome runtime is not resident');
+      await evict(r, 'Cross-catalog runtime evicted; durable head retained for explicit paused reload.');
+      if (r.lifecycle !== 'saved-unloaded' || r.owner) throw new Error('Cross-catalog runtime eviction could not be verified');
+    });
+  }
+  const crossCatalogWorker = {
+    describe: describeCrossCatalog,
+    peekCheckpoint: peekCrossCatalogCheckpoint,
+    reserve: ids => reserveCrossCatalog(ids.map(record)),
+    selectHeads: selectCrossCatalogHeads,
+    activatePaused: activateCrossCatalogPaused,
+    evict: evictCrossCatalog,
+  };
   function invalidateCommands(ids) {
     if (!Array.isArray(ids) || ids.length < 1 || ids.length > 64 || new Set(ids).size !== ids.length) throw new Error('Invalid shared research command invalidation membership');
     const records = ids.map(record);
@@ -555,7 +657,7 @@ export function createConnectomeRegistry({ identities = [], capacity = createCap
       return { ...value, status: r.lifecycle, commandSequence: r.sequence };
     });
   }
-  return { register, load, command, sample, sharedControl, invalidateCommands, barrier, sharedCheckpoint, prepareSharedRestore, commitSharedRestore,
+  return { register, load, command, sample, sharedControl, invalidateCommands, barrier, sharedCheckpoint, prepareSharedRestore, commitSharedRestore, crossCatalogWorker,
     list: () => [...records.values()].map(publicState), snapshot: id => publicState(record(id)),
     close: async () => { if (closed || closing) return; closing = true; cancelRestoreCalls();
       const reservedRecords = [...new Set([...restoreReservations.keys()])].map(id => records.get(id)).filter(Boolean);

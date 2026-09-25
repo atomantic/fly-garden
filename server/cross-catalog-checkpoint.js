@@ -90,6 +90,7 @@ function validateJournal(value) {
   if (open.length > 1 || open.length === 1 && open[0] !== value.transactions.length - 1) corrupt();
   return value;
 }
+export function validateCrossCatalogJournalDocument(value) { return validateJournal(value); }
 function readBounded(path, max) {
   const fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW);
   try { const stat = fstatSync(fd); if (!stat.isFile() || stat.size > max) corrupt(); return readFileSync(fd); }
@@ -235,7 +236,7 @@ export function createCrossCatalogCoordinator({ journal, catalogs, now = Date.no
       if (await group.adapter.epoch() !== catalog.catalogEpoch) fail('A source catalog epoch changed during the transaction.', 'CROSS_CATALOG_STALE');
       for (const member of group.members) {
         const view = await group.adapter.member(member.individualId), prior = snapshot.get(member.individualId);
-        if (!validView(view, group.adapter, member.individualId) || view.head !== member.priorHead || view.sessionEpoch !== prior.sessionEpoch || view.status !== prior.status) fail('A member changed during the transaction.', 'CROSS_CATALOG_STALE');
+        if (!validView(view, group.adapter, member.individualId) || view.head !== member.priorHead || view.sessionEpoch !== prior.sessionEpoch || view.status !== prior.status || view.mode !== prior.mode) fail('A member changed during the transaction.', 'CROSS_CATALOG_STALE');
       }
     }
   }

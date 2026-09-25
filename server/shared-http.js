@@ -14,15 +14,17 @@ async function bodyFor(request) {
 /** Caller owns origin protection, resource admission, public snapshots and individual command counters.
  * No route allocates residents. Only a complete authenticated frame batch advances the existing population. */
 export function createSharedHttp({ identities, snapshot = id => identities.snapshot(id), sequenceFor = () => 0,
-  consumeSequences = () => {}, afterTransition = () => {}, afterFrames = () => {} }) {
+  consumeSequences = () => {}, afterTransition = () => {}, afterFrames = () => {}, isReserved = () => {} }) {
   const sequences = new Map();
+  const assertUnreserved = ids => { if (Array.isArray(ids) && ids.some(id => isReserved(id))) throw new RuntimeError('Cross-catalog checkpoint coordination is reserved for this fixture participant.', 409); };
   const bundle = state => ({ shared: { ...state, commandSequence: sequences.get(state.sharedId) ?? 0 },
     members: state.participants.map(member => snapshot(member.individualId)) });
   function validateMembers(members, expectedIds = null) {
     if (!Array.isArray(members) || !validSharedCount(members.length) || (expectedIds && members.length !== expectedIds.length) || new Set(members.map(item => item?.individualId)).size !== members.length) throw new RuntimeError('Select 2–64 distinct loaded fixture recipients.');
-    for (const item of members) {
-      if (!exact(item, envelopeKeys) || item.protocolVersion !== 1) throw new RuntimeError('Invalid recipient command envelope.', 409);
-      const state = snapshot(item.individualId);
+     for (const item of members) {
+       if (!exact(item, envelopeKeys) || item.protocolVersion !== 1) throw new RuntimeError('Invalid recipient command envelope.', 409);
+       assertUnreserved([item.individualId]);
+       const state = snapshot(item.individualId);
       if (state.sessionId !== item.sessionId || !Number.isSafeInteger(item.sequence) || item.sequence !== sequenceFor(item.individualId) + 1
         || !state.persistence?.resident || state.source !== 'fixture' || (expectedIds && !expectedIds.includes(item.individualId))) throw new RuntimeError('Stale or unavailable shared recipient; refresh both recipients.', 409);
     }
@@ -49,8 +51,9 @@ export function createSharedHttp({ identities, snapshot = id => identities.snaps
           if (!checkpoint || !validSharedCount(checkpoint.payload.members.length)) throw new RuntimeError('Select a saved population joint checkpoint.', 409);
           expected = checkpoint.payload.members.map(item => item.individualId);
         }
-        validateMembers(body.members, expected);
-        // Validation of all recipient envelopes precedes any sequence consumption or runtime mutation.
+         validateMembers(body.members, expected);
+         assertUnreserved(body.members.map(member => member.individualId));
+         // Validation of all recipient envelopes precedes any sequence consumption or runtime mutation.
         const previousSharedIds = body.members.map(member => snapshot(member.individualId).sharedSession?.sharedId).filter(Boolean);
         consumeSequences(body.members);
         const result = action === 'join' ? identities.sharedJoin(body.members.map(item => item.individualId), body.sharedVersion ?? 1) : identities.sharedRestore(body.jointCheckpointId);
@@ -60,8 +63,9 @@ export function createSharedHttp({ identities, snapshot = id => identities.snaps
         afterTransition(state.participants.map(item => item.individualId), action);
         send(response, 200, { ...bundle(state), controllerToken });
       } else {
-        const [, id, action] = route, prior = identities.sharedSnapshot(id);
-        if (action === 'member') {
+         const [, id, action] = route, prior = identities.sharedSnapshot(id);
+         assertUnreserved(prior.participants.map(member => member.individualId));
+         if (action === 'member') {
           // Per-member quiet state and partial withdrawal. Membership/mode changes keep the world
           // epoch, so a still valid controller lease is never revoked by another member's rest.
           if (!exact(body, ['protocolVersion', 'sharedId', 'worldEpoch', 'sequence', 'individualId', 'action']) || body.protocolVersion !== 1
