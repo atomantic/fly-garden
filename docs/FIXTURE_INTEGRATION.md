@@ -44,6 +44,11 @@ does **not** test an unreachable host's unconfirmed-leave quarantine.
 
 ## Reading the result
 
+The [recorded run](../research/results/fixture-http-integration.json) used clean
+revision `fe4a89f` on Node 24.19.0, Darwin arm64. All ten fixture checks passed;
+full integration acceptance remained unavailable. The record pins exact harness
+and dependency hashes, and records the zero-event creative result.
+
 `outcome` applies only to `synthetic-fixture-http-integration`.
 `integrationAcceptance` remains `unavailable`, even when every fixture check
 passes. Every result includes source revision, dirty-tree status, harness,

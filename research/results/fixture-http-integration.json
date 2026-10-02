@@ -1,0 +1,165 @@
+{
+  "schemaVersion": 1,
+  "scope": "synthetic-fixture-http-integration",
+  "disclosure": "Engineered sensory arrays and host double; not a rendered garden, live Eidoverse, learning or biological acceptance.",
+  "provenance": {
+    "revision": "fe4a89f6ceea54b5898ff8a3483d687b171096bf",
+    "dirty": false,
+    "node": "v24.19.0",
+    "platform": "darwin",
+    "architecture": "arm64",
+    "dataset": {
+      "namespace": "synthetic-fixture",
+      "release": "1",
+      "modelId": "synthetic-lif-v1"
+    },
+    "host": "in-process-synthetic-double-v1",
+    "dependencyLockSha256": "61de02d29c615ee7948dc99d7cc09d49ddcf264c59906ec9b3724dcb48754dda",
+    "harnessSha256": "08b2323a199a458f3ea5484f6b7269a7afc2b299072da318bb992341d7738f89",
+    "hostDoubleSha256": "dfc1598321330a413d4c5ca81a12eef527080fb0b446a4db4a85ef55612c4e34"
+  },
+  "checks": [
+    {
+      "id": "paused-boot-and-observer",
+      "outcome": "pass",
+      "evidence": {
+        "tick": 0,
+        "hostCalls": 0
+      }
+    },
+    {
+      "id": "garden-to-artifact",
+      "outcome": "pass",
+      "evidence": {
+        "tick": 40,
+        "acceptedActions": 40,
+        "events": 0,
+        "formats": {
+          "mid": {
+            "bytes": 1798,
+            "sha256": "8ebf3f99b72b749050d576f388c6c1b723c23d27ae0aed7b6a206b9e385cb67e"
+          },
+          "svg": {
+            "bytes": 2156,
+            "sha256": "a5bc0474deb2f53773a7102802aff58189df6223edd0faa3793bcace7afed700"
+          },
+          "png": {
+            "bytes": 16612,
+            "sha256": "803c29d4e55e9744b72c97d642aace114c51202bebc5d551adf9d370cfba2b79"
+          }
+        },
+        "note": "An exported MIDI container does not establish a melody or learned choice."
+      }
+    },
+    {
+      "id": "replayed-garden-frame",
+      "outcome": "pass",
+      "evidence": {
+        "rejected": true,
+        "tick": 40
+      }
+    },
+    {
+      "id": "acknowledged-visit-and-return",
+      "outcome": "pass",
+      "evidence": {
+        "homeTick": 40,
+        "returnedTick": 41,
+        "identityPreserved": true,
+        "sessionPreserved": true,
+        "checkpointPreserved": true,
+        "hostSteps": 1,
+        "interactionAcknowledged": true
+      }
+    },
+    {
+      "id": "denied",
+      "outcome": "pass",
+      "evidence": {
+        "rejectedWithoutAdvancement": true,
+        "tick": 41
+      }
+    },
+    {
+      "id": "old-version",
+      "outcome": "pass",
+      "evidence": {
+        "rejectedWithoutAdvancement": true,
+        "tick": 41
+      }
+    },
+    {
+      "id": "stale-frame",
+      "outcome": "pass",
+      "evidence": {
+        "rejectedWithoutAdvancement": true,
+        "tick": 41
+      }
+    },
+    {
+      "id": "prior-epoch",
+      "outcome": "pass",
+      "evidence": {
+        "rejectedWithoutAdvancement": true,
+        "tick": 41
+      }
+    },
+    {
+      "id": "disconnect",
+      "outcome": "pass",
+      "evidence": {
+        "rejectedWithoutAdvancement": true,
+        "tick": 41
+      }
+    },
+    {
+      "id": "saved-paused-reopen",
+      "outcome": "pass",
+      "evidence": {
+        "identityPreserved": true,
+        "checkpointPreserved": true,
+        "freshSession": true,
+        "tick": 41
+      }
+    }
+  ],
+  "unavailable": [
+    {
+      "id": "live-managed-host",
+      "outcome": "unavailable",
+      "reason": "No PortOS/Eidoverse process, production broker or credential is used."
+    },
+    {
+      "id": "rendered-observer",
+      "outcome": "unavailable",
+      "reason": "No browser or rendered host observer is exercised."
+    },
+    {
+      "id": "full-connectome-embodiment",
+      "outcome": "unavailable",
+      "reason": "Only the synthetic 32-neuron fixture is loaded."
+    },
+    {
+      "id": "retained-learning",
+      "outcome": "unavailable",
+      "reason": "Fixture has no plasticity or RNG state; the separate learning campaign remains negative."
+    },
+    {
+      "id": "language-provider",
+      "outcome": "unavailable",
+      "reason": "No provider is configured or armed."
+    },
+    {
+      "id": "production-restart",
+      "outcome": "unavailable",
+      "reason": "Temporary-store reopen is not fresh-clone, PM2 or worker-crash verification."
+    },
+    {
+      "id": "remaining-fault-campaign",
+      "outcome": "unavailable",
+      "reason": "Expiry, revocation, numerical faults and corrupt durable restore need separate integrated evidence."
+    }
+  ],
+  "integrationAcceptance": "unavailable",
+  "outcome": "pass"
+}
