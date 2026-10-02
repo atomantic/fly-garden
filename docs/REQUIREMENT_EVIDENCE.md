@@ -121,7 +121,7 @@ These are stated once here so that no reader mistakes a scoped Pass for integrat
 2. **Linked PortOS and Eidoverse repository changes.** Per [AGENTS.md](../AGENTS.md) and [CONTRIBUTING.md](../CONTRIBUTING.md) those changes belong in their own repositories; nothing in this repository can evidence them.
 3. **No rendered pod phase has been reached by a real admission.** All nine phases are now observed in a browser (FR35), but by overriding the `visitor` field of the loopback state read, not by visiting a host. A configured bridge, a provisioned credential and an explicit admission command remain unexercised in any recorded browser run, so the rendered evidence covers presentation only.
 4. **No published demonstration artifact exists.**
-5. **No committed integration harness chains one session end to end.** `package.json` exposes `test`, `test:browser`, `build` and `start` only; the campaign scripts under `scripts/` are single-purpose and explicitly gated.
+5. **No rendered, real-host integration harness chains one session end to end.** The new opt-in [fixture HTTP harness](FIXTURE_INTEGRATION.md) chains accepted synthetic sensory input, artifact export, acknowledged visitor-double admission/return, fault refusals and paused store reopen. Its result explicitly leaves integrated acceptance unavailable. This later fixture increment does not change the historical matrix outcomes or establish a live host, rendered garden, learning or biological result.
 6. **Retained learning does not exist and cannot be evaluated under protocol v1.** See FR22 and FR25.
 7. **The full-connectome visual-to-motor loop is a recorded 8 of 8 negative.** See FR7.
 
