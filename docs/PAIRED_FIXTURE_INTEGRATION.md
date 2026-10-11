@@ -38,7 +38,7 @@ provider are doubles.
 | `independent-return-in-both-directions` | B returns while A keeps visiting and stepping; A then returns from its own fresh grant. |
 | `host-wide-disconnect-with-confirmed-cleanup` | Observations fail for every visitor; both return paused, ticks never rewind, sessions and checkpoints are unchanged. |
 | `host-wide-unreachable-host-holds-both-paused` | Nothing is reachable, cleanup included. Both stay owned and paused, never claim to be home and refuse local control; when the host returns the retry confirms both. |
-| `paired-round-trip-continuity` | Per fly: same identity, session, checkpoint lineage, stimulus-reservation ledger and chemical recovery clocks across every visit, no restore, no refunded language reservation. |
+| `paired-round-trip-continuity` | Per fly: same identity, session, checkpoint lineage and stimulus-reservation ledger across every visit; no restore; chemical cooldowns equal their exact decay over the simulated time that elapsed (a reset, re-arm or zeroed clock is rejected); no refunded language reservation. |
 | `older-host-refuses-second-visitor` | A host that publishes no capacity field is read as one visitor. The second admission is refused before any host request, with the first visit stepping on undisturbed; the second is admitted after the first returns. |
 | `saved-paused-reopen-pair` | Both individuals reopen from the store with the same identity and checkpoint, fresh sessions, paused, owned by no visitor, and with no host call. |
 
@@ -102,13 +102,17 @@ not a capacity, latency or throughput measurement.
 The harness is verified against its own failure modes by `server/fixture-paired-integration.test.js`:
 a host that publishes capacity 1, a host that revokes every visitor when one grant is revoked, and a
 host whose admission acknowledgment throws each produce a `failed` report at the expected check,
-with FR-40 reported as failed and no exception text published.
+with the affected requirement reported as failed and no exception text published. A separate unit
+test feeds the continuity assertion twelve faulty visits (zeroed, re-armed or over-fast cooldowns,
+a re-armed effect, a refunded reservation, a cleared ledger entry, a restored or added checkpoint, a
+replaced session, rewound clocks, a still-owned fly) and requires each to be rejected. The report
+never republishes server response text; refusals appear as fixed harness-owned codes.
 
 ## Recorded run
 
 The [recorded result](../research/results/fixture-http-paired-integration.json) used clean revision
-`1330173` on Node 26.10.0, Darwin arm64. All 15 fixture checks passed in 4.7 s of wall time. The two
-flies were stepped from 12 to 26 (A) and 12 to 36 (B) fixture ticks; the host double issued nine
+`b2873d5` on Node 26.10.0, Darwin arm64. All 15 fixture checks passed in 4.8 s of wall time. The two
+flies were stepped from 13 to 27 (A, 70 simulated ms) and 12 to 36 (B, 120 simulated ms) fixture ticks; the host double issued nine
 leases across the run (six for A, three for B, all with distinct epochs) and recorded zero requests
 outside any lease's scope. Both flies spent an identical bounded nectar reservation before the first
 visit, and each made exactly one chat request to the synthetic provider before the late-reply

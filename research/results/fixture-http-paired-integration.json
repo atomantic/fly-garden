@@ -3,7 +3,7 @@
   "scope": "synthetic-fixture-http-paired-integration",
   "disclosure": "Two independent synthetic fixtures, an in-process host double and a synthetic provider double; not a live Eidoverse, rendered garden, shared habitat, learning or biological acceptance.",
   "provenance": {
-    "revision": "133017381dc9c470916902d27f6973a64be04233",
+    "revision": "b2873d55735c49ccd0c2c71092a33cc3794051a5",
     "dirty": false,
     "node": "v26.10.0",
     "platform": "darwin",
@@ -16,7 +16,7 @@
     "host": "in-process-synthetic-paired-double-v1",
     "languageProvider": "in-process-synthetic-provider-double-v1",
     "dependencyLockSha256": "61de02d29c615ee7948dc99d7cc09d49ddcf264c59906ec9b3724dcb48754dda",
-    "harnessSha256": "49bc6f08ae5de5050ebf02a6fd47104b5383ddbbbd7318e46049036e697d2c8d",
+    "harnessSha256": "6966b556464fe06edfd8188bf33c2d66e683d21c1428297da53f53613373d9f4",
     "hostDoubleSha256": "86912fe9f9a5f61c229352865646bea3201f769d03b12f61cb382780beb99566"
   },
   "checks": [
@@ -49,15 +49,15 @@
             "formats": {
               "mid": {
                 "bytes": 1798,
-                "sha256": "3e782cd56c46913791296251657813d5f58c25d99fce0ad4776fe8ceb720c5d6"
+                "sha256": "de5dd8e360d1ab3f673d90430bf5735d2efd263f6d27b4576ced4713f0fd38b2"
               },
               "svg": {
                 "bytes": 2156,
-                "sha256": "6b4aef776b55c7294384383d5f513f0dde6c5d2e7dad7d015d06e46103b5c362"
+                "sha256": "e4c4106dd2d4575df87a92bee9aaada461d22113275f64ceedbe01a719c5f3aa"
               },
               "png": {
-                "bytes": 6910,
-                "sha256": "ee9121d488d9ff866f8c28ecc933b32dfa0d9188ab91567874dc8630b6c83b14"
+                "bytes": 6912,
+                "sha256": "26403618adcd5eb9ac2bfd865e4b3a8bf5c27d07cbd385178a9032763c8c9c4d"
               }
             }
           },
@@ -67,15 +67,15 @@
             "formats": {
               "mid": {
                 "bytes": 1798,
-                "sha256": "8410e93b6f5a7acce176bf54002d9cf0ecb79494e665f684dc84364748c611ea"
+                "sha256": "f685922cca7b6bc91f35545f64b97c1a1623e6fae6f8acfec9a257a2f18b7763"
               },
               "svg": {
                 "bytes": 2156,
-                "sha256": "0ba6854db4c0fc4affe6838dcd2d674c758458c0596a0cdea3f6771a7692dd68"
+                "sha256": "ba6a6ef277101ddf37ad83741dc441b7575546e58278a47f6fabe0bb75f71df9"
               },
               "png": {
                 "bytes": 6910,
-                "sha256": "9a86b17a4e95dea7b04cc861df12fc9371e53436b696d99b1347b1520cfbea65"
+                "sha256": "1081188a9248e0e69d6b2f2862205eba25a93d6d0f0c35f2f933c598b5cd8beb"
               }
             }
           }
@@ -120,7 +120,7 @@
           }
         },
         "aggregateReservedSpendMicros": 200,
-        "overCeilingRefusedForB": "Language budget exhausted.",
+        "overCeilingRefusalForB": "language-budget-exhausted",
         "partnerNotDelayedByCooldown": true,
         "eventsAttributed": true,
         "note": "The server has no active-selection input: every language request is keyed by its envelope individual. Neither fly consumed the other's ceiling."
@@ -244,12 +244,16 @@
         "identityAndSessionPreservedPerFly": true,
         "checkpointLineagePreservedPerFly": true,
         "stimulusLedgerPreservedPerFly": true,
-        "chemicalRecoveryNeverReset": true,
+        "chemicalCooldownsDecayedExactlyWithSimulatedTime": true,
         "noRestoreDuringAnyVisit": true,
+        "simulatedMsElapsed": {
+          "A": 70,
+          "B": 120
+        },
         "ticksBeforeAndAfter": {
           "A": [
-            12,
-            26
+            13,
+            27
           ],
           "B": [
             12,
@@ -299,7 +303,7 @@
         "refusedFlyUntouched": true,
         "hostAdmissionRequests": 1,
         "secondAdmittedAfterFirstReturned": true,
-        "reason": "Host negotiated 1 concurrent managed visitor; the existing visit was left undisturbed."
+        "refusal": "host-capacity-one-visitor"
       }
     },
     {
@@ -498,7 +502,7 @@
   "integrationAcceptance": "unavailable",
   "outcome": "pass",
   "timing": {
-    "wallMs": 4728,
+    "wallMs": 4751,
     "note": "Wall time of one run on the recorded machine with a 50 ms server scheduler; not a capacity, latency or throughput benchmark."
   }
 }
