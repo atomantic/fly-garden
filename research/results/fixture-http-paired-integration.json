@@ -1,0 +1,508 @@
+{
+  "schemaVersion": 1,
+  "scope": "synthetic-fixture-http-paired-integration",
+  "disclosure": "Two independent synthetic fixtures, an in-process host double and a synthetic provider double; not a live Eidoverse, rendered garden, shared habitat, learning or biological acceptance.",
+  "provenance": {
+    "revision": "b2873d55735c49ccd0c2c71092a33cc3794051a5",
+    "dirty": false,
+    "node": "v26.10.0",
+    "platform": "darwin",
+    "architecture": "arm64",
+    "dataset": {
+      "namespace": "synthetic-fixture",
+      "release": "1",
+      "modelId": "synthetic-lif-v1"
+    },
+    "host": "in-process-synthetic-paired-double-v1",
+    "languageProvider": "in-process-synthetic-provider-double-v1",
+    "dependencyLockSha256": "61de02d29c615ee7948dc99d7cc09d49ddcf264c59906ec9b3724dcb48754dda",
+    "harnessSha256": "6966b556464fe06edfd8188bf33c2d66e683d21c1428297da53f53613373d9f4",
+    "hostDoubleSha256": "86912fe9f9a5f61c229352865646bea3201f769d03b12f61cb382780beb99566"
+  },
+  "checks": [
+    {
+      "id": "local-capacity-admits-two-and-refuses-a-third",
+      "outcome": "pass",
+      "evidence": {
+        "configuredResidentCeiling": 2,
+        "residents": 2,
+        "thirdLoadRefused": true,
+        "residentsPreserved": true,
+        "distinctIdentities": true,
+        "distinctSessions": true,
+        "bothPausedAtTickZero": true,
+        "hostCalls": 0,
+        "note": "Local resident capacity is a separate setting from the host-negotiated visitor capacity; admission inputs here are fixed synthetic constants."
+      }
+    },
+    {
+      "id": "home-state-per-individual",
+      "outcome": "pass",
+      "evidence": {
+        "interleavedFrames": 24,
+        "crossRecipientFrameRefused": true,
+        "replayedFrameRefused": true,
+        "artifacts": {
+          "A": {
+            "acceptedActions": 12,
+            "events": 0,
+            "formats": {
+              "mid": {
+                "bytes": 1798,
+                "sha256": "de5dd8e360d1ab3f673d90430bf5735d2efd263f6d27b4576ced4713f0fd38b2"
+              },
+              "svg": {
+                "bytes": 2156,
+                "sha256": "e4c4106dd2d4575df87a92bee9aaada461d22113275f64ceedbe01a719c5f3aa"
+              },
+              "png": {
+                "bytes": 6912,
+                "sha256": "26403618adcd5eb9ac2bfd865e4b3a8bf5c27d07cbd385178a9032763c8c9c4d"
+              }
+            }
+          },
+          "B": {
+            "acceptedActions": 12,
+            "events": 0,
+            "formats": {
+              "mid": {
+                "bytes": 1798,
+                "sha256": "f685922cca7b6bc91f35545f64b97c1a1623e6fae6f8acfec9a257a2f18b7763"
+              },
+              "svg": {
+                "bytes": 2156,
+                "sha256": "ba6a6ef277101ddf37ad83741dc441b7575546e58278a47f6fabe0bb75f71df9"
+              },
+              "png": {
+                "bytes": 6910,
+                "sha256": "1081188a9248e0e69d6b2f2862205eba25a93d6d0f0c35f2f933c598b5cd8beb"
+              }
+            }
+          }
+        },
+        "spentNectarReservation": {
+          "A": 13.5,
+          "B": 13.5
+        },
+        "checkpointCount": {
+          "A": 4,
+          "B": 4
+        },
+        "note": "Each artifact names only its own individual and session. An exported MIDI container does not establish a melody or learned choice."
+      }
+    },
+    {
+      "id": "per-individual-language-budgets",
+      "outcome": "pass",
+      "evidence": {
+        "providerCalls": 2,
+        "providerKind": "in-process-synthetic-double",
+        "ceilings": {
+          "A": {
+            "maxCalls": 2,
+            "maxSpendMicros": 300
+          },
+          "B": {
+            "maxCalls": 1,
+            "maxSpendMicros": 100
+          }
+        },
+        "reserved": {
+          "A": {
+            "calls": 1,
+            "tokens": 4096,
+            "spendMicros": 100
+          },
+          "B": {
+            "calls": 1,
+            "tokens": 4096,
+            "spendMicros": 100
+          }
+        },
+        "aggregateReservedSpendMicros": 200,
+        "overCeilingRefusalForB": "language-budget-exhausted",
+        "partnerNotDelayedByCooldown": true,
+        "eventsAttributed": true,
+        "note": "The server has no active-selection input: every language request is keyed by its envelope individual. Neither fly consumed the other's ceiling."
+      }
+    },
+    {
+      "id": "late-provider-reply-keeps-its-recipient",
+      "outcome": "pass",
+      "evidence": {
+        "lateReplyDelivered": false,
+        "departedFlyDisarmed": true,
+        "partnerStillArmed": true,
+        "partnerBudgetUntouched": true,
+        "reservationNotRefunded": true,
+        "providerCalls": 3
+      }
+    },
+    {
+      "id": "split-location-a-visits-b-home",
+      "outcome": "pass",
+      "evidence": {
+        "visitor": "A",
+        "atHome": "B",
+        "homeControlsStayAvailableForB": true,
+        "awayFlyDidNotStep": true,
+        "localControlOfAwayFlyRefused": true,
+        "hostLeases": 1,
+        "podLabels": {
+          "A": "HOST ACKNOWLEDGED · SCOPED VISITOR BODY HELD",
+          "B": "HOST BRIDGE NOT CONNECTED"
+        }
+      }
+    },
+    {
+      "id": "both-visiting-with-distinct-epochs",
+      "outcome": "pass",
+      "evidence": {
+        "negotiatedCapacity": 2,
+        "duplicateAdmissionOfOwnedFlyRefused": true,
+        "distinctVisitEpochs": [
+          "fixture-epoch-1",
+          "fixture-epoch-2"
+        ],
+        "distinctIndividuals": true,
+        "tracesAttributedToOwnIndividualEpochAndSession": true,
+        "hostLeases": 2,
+        "ticksAdvanced": {
+          "A": 3,
+          "B": 3
+        },
+        "secondObserver": "local-http-reader-not-rendered"
+      }
+    },
+    {
+      "id": "revocation-of-a-leaves-b-visiting",
+      "outcome": "pass",
+      "evidence": {
+        "revokedFlyReturnedPausedWithoutRestore": true,
+        "partnerStillVisitingSameEpoch": true,
+        "partnerStillStepping": true,
+        "revokedFlyStoppedStepping": true,
+        "hostLeases": 1
+      }
+    },
+    {
+      "id": "peer-scope-reply-for-a-cannot-command-b",
+      "outcome": "pass",
+      "evidence": {
+        "staleOrMisroutedReplyRefusedWithoutAdvancement": true,
+        "rejectedFlyReturnedPaused": true,
+        "partnerStillVisitingSameEpoch": true,
+        "hostScopeViolations": 0
+      }
+    },
+    {
+      "id": "stale-epoch-reply-for-a-cannot-command-b",
+      "outcome": "pass",
+      "evidence": {
+        "staleOrMisroutedReplyRefusedWithoutAdvancement": true,
+        "rejectedFlyReturnedPaused": true,
+        "partnerStillVisitingSameEpoch": true,
+        "hostScopeViolations": 0
+      }
+    },
+    {
+      "id": "independent-return-in-both-directions",
+      "outcome": "pass",
+      "evidence": {
+        "bReturnedWhileAVisitedAndKeptStepping": true,
+        "aReturnedLastFromItsOwnFreshGrant": true,
+        "noLeasesRemain": true,
+        "note": "The opposite direction, A leaving while B stays, is the revocation check above."
+      }
+    },
+    {
+      "id": "host-wide-disconnect-with-confirmed-cleanup",
+      "outcome": "pass",
+      "evidence": {
+        "bothPausedWithoutRestore": true,
+        "ticksNeverRewound": true,
+        "sessionsPreserved": true,
+        "checkpointsPreserved": true,
+        "cleanup": "confirmed-on-first-attempt"
+      }
+    },
+    {
+      "id": "host-wide-unreachable-host-holds-both-paused",
+      "outcome": "pass",
+      "evidence": {
+        "bothPausedWithoutRestore": true,
+        "ticksNeverRewound": true,
+        "sessionsPreserved": true,
+        "checkpointsPreserved": true,
+        "cleanup": "quarantined-then-confirmed-after-host-returned"
+      }
+    },
+    {
+      "id": "paired-round-trip-continuity",
+      "outcome": "pass",
+      "evidence": {
+        "identityAndSessionPreservedPerFly": true,
+        "checkpointLineagePreservedPerFly": true,
+        "stimulusLedgerPreservedPerFly": true,
+        "chemicalCooldownsDecayedExactlyWithSimulatedTime": true,
+        "noRestoreDuringAnyVisit": true,
+        "simulatedMsElapsed": {
+          "A": 70,
+          "B": 120
+        },
+        "ticksBeforeAndAfter": {
+          "A": [
+            13,
+            27
+          ],
+          "B": [
+            12,
+            36
+          ]
+        },
+        "hostSteps": {
+          "A": 14,
+          "B": 21
+        },
+        "epochsIssued": {
+          "A": [
+            "fixture-epoch-1",
+            "fixture-epoch-3",
+            "fixture-epoch-4",
+            "fixture-epoch-5",
+            "fixture-epoch-6",
+            "fixture-epoch-8"
+          ],
+          "B": [
+            "fixture-epoch-2",
+            "fixture-epoch-7",
+            "fixture-epoch-9"
+          ]
+        },
+        "languageReservationsNeverRefunded": true,
+        "languageDisarmedByEachDeparture": true,
+        "hostScopeViolations": 0,
+        "notCarriedBecauseUnsupported": [
+          "rng",
+          "plasticity",
+          "refractory",
+          "delayBuffers",
+          "embodiment"
+        ],
+        "note": "RNG, plasticity, refractory state, delay buffers and embodiment are recorded as unsupported nulls; nothing about them was preserved or tested."
+      }
+    },
+    {
+      "id": "older-host-refuses-second-visitor",
+      "outcome": "pass",
+      "evidence": {
+        "hostPublishedCapacityField": false,
+        "bridgeReadsCapacityAs": 1,
+        "secondAdmissionRefusedBeforeAnyHostRequest": true,
+        "firstVisitorKeptSteppingSameEpoch": true,
+        "refusedFlyUntouched": true,
+        "hostAdmissionRequests": 1,
+        "secondAdmittedAfterFirstReturned": true,
+        "refusal": "host-capacity-one-visitor"
+      }
+    },
+    {
+      "id": "saved-paused-reopen-pair",
+      "outcome": "pass",
+      "evidence": {
+        "identitiesPreserved": true,
+        "checkpointsPreserved": true,
+        "freshSessions": true,
+        "bothPausedAtSavedTick": true,
+        "noVisitorOwnership": true,
+        "hostCalls": 0
+      }
+    }
+  ],
+  "requirements": [
+    {
+      "id": "FR-36",
+      "scope": "synthetic-fixture-http",
+      "outcome": "unavailable",
+      "clauses": [
+        {
+          "clause": "Separately versioned MaleCNS v1.0 and BANC v888 profiles",
+          "outcome": "unavailable",
+          "reason": "Only the synthetic fixture is loaded; profile hashes and licences are evidenced by the model cards and descriptor tests, not by this run."
+        }
+      ]
+    },
+    {
+      "id": "FR-37",
+      "scope": "synthetic-fixture-http",
+      "outcome": "partial",
+      "clauses": [
+        {
+          "clause": "Configured resident ceiling admits two and refuses a third without disturbing residents",
+          "checks": [
+            "local-capacity-admits-two-and-refuses-a-third"
+          ],
+          "outcome": "pass"
+        },
+        {
+          "clause": "Preflight against measured memory headroom",
+          "outcome": "unavailable",
+          "reason": "Memory inputs are fixed synthetic constants, so headroom is not measured here."
+        }
+      ]
+    },
+    {
+      "id": "FR-38",
+      "scope": "synthetic-fixture-http",
+      "outcome": "partial",
+      "clauses": [
+        {
+          "clause": "Isolated identity, session and checkpoint lineage per fly",
+          "checks": [
+            "home-state-per-individual",
+            "paired-round-trip-continuity"
+          ],
+          "outcome": "pass"
+        },
+        {
+          "clause": "Isolated chemical and stimulus-reservation state per fly",
+          "checks": [
+            "home-state-per-individual",
+            "paired-round-trip-continuity"
+          ],
+          "outcome": "pass"
+        },
+        {
+          "clause": "Late provider replies and per-fly budgets retain their original recipient",
+          "checks": [
+            "per-individual-language-budgets",
+            "late-provider-reply-keeps-its-recipient"
+          ],
+          "outcome": "pass"
+        },
+        {
+          "clause": "Isolated RNG and learning state per fly",
+          "outcome": "unavailable",
+          "reason": "RNG and plasticity are unsupported nulls in the fixture checkpoint; there is nothing to isolate or compare."
+        }
+      ]
+    },
+    {
+      "id": "FR-39",
+      "scope": "synthetic-fixture-http",
+      "outcome": "unavailable",
+      "clauses": [
+        {
+          "clause": "Individuals couple only through declared senses and a synchronized world clock",
+          "outcome": "unavailable",
+          "reason": "No shared session is created; both flies run independently."
+        }
+      ]
+    },
+    {
+      "id": "FR-40",
+      "scope": "synthetic-fixture-http",
+      "outcome": "partial",
+      "clauses": [
+        {
+          "clause": "Two-at-home, split-location and two-visiting cases with distinct admissions and epochs",
+          "checks": [
+            "split-location-a-visits-b-home",
+            "both-visiting-with-distinct-epochs",
+            "independent-return-in-both-directions"
+          ],
+          "outcome": "pass"
+        },
+        {
+          "clause": "Rejection or revocation of one visitor cannot control another",
+          "checks": [
+            "revocation-of-a-leaves-b-visiting",
+            "peer-scope-reply-for-a-cannot-command-b",
+            "stale-epoch-reply-for-a-cannot-command-b"
+          ],
+          "outcome": "pass"
+        },
+        {
+          "clause": "A host-wide disconnect pauses every affected visitor without resets",
+          "checks": [
+            "host-wide-disconnect-with-confirmed-cleanup",
+            "host-wide-unreachable-host-holds-both-paused"
+          ],
+          "outcome": "pass"
+        },
+        {
+          "clause": "An older single-visitor host preserves single-visitor operation",
+          "checks": [
+            "older-host-refuses-second-visitor"
+          ],
+          "outcome": "pass"
+        },
+        {
+          "clause": "Per-individual and aggregate language budgets independent of selection",
+          "checks": [
+            "per-individual-language-budgets"
+          ],
+          "outcome": "pass"
+        },
+        {
+          "clause": "A second observer sees two distinct, correctly attributed flies in a rendered host",
+          "outcome": "unavailable",
+          "reason": "The second observer is a local HTTP reader; no rendered host or human observer exists in this run."
+        }
+      ]
+    }
+  ],
+  "unavailable": [
+    {
+      "id": "live-managed-host",
+      "outcome": "unavailable",
+      "reason": "No PortOS/Eidoverse process, production broker or credential is used; capacity is published by an in-process host double."
+    },
+    {
+      "id": "rendered-observer",
+      "outcome": "unavailable",
+      "reason": "The second observer is an independent local HTTP reader. No browser, rendered host scene or human observer is exercised."
+    },
+    {
+      "id": "admin-ui-selection",
+      "outcome": "unavailable",
+      "reason": "Per-fly controls, keyboard selection and late-reply attribution after a browser selection change are not exercised; only the server contracts behind them are."
+    },
+    {
+      "id": "full-connectome-embodiment",
+      "outcome": "unavailable",
+      "reason": "Only the synthetic 32-neuron fixture is loaded; no MaleCNS or BANC profile is involved."
+    },
+    {
+      "id": "retained-learning",
+      "outcome": "unavailable",
+      "reason": "Fixture has no plasticity or RNG state; the separate learning campaign remains negative."
+    },
+    {
+      "id": "shared-habitat-coupling",
+      "outcome": "unavailable",
+      "reason": "Both flies are independent residents. No shared session, synchronized barrier or coupled world clock is created."
+    },
+    {
+      "id": "language-provider",
+      "outcome": "unavailable",
+      "reason": "Budgets are exercised against an in-process synthetic provider double. No real provider, model or network is used."
+    },
+    {
+      "id": "lease-expiry-campaign",
+      "outcome": "unavailable",
+      "reason": "Leases are 30 s and the run ends well before one expires; time-based expiry is covered only by the bridge unit tests."
+    },
+    {
+      "id": "production-restart",
+      "outcome": "unavailable",
+      "reason": "Temporary-store reopen is not fresh-clone, PM2 or worker-crash verification."
+    }
+  ],
+  "integrationAcceptance": "unavailable",
+  "outcome": "pass",
+  "timing": {
+    "wallMs": 4751,
+    "note": "Wall time of one run on the recorded machine with a 50 ms server scheduler; not a capacity, latency or throughput benchmark."
+  }
+}
