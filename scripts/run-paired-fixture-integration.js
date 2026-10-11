@@ -59,14 +59,21 @@ function createLanguageDouble() {
     finish() { holding = false; const done = resume; resume = null; done?.(); } };
 }
 
-/** What a visit may change on the home fly: only the clock moves forward. Nothing is restored, re-dosed or re-armed. */
-function assertContinuity(before, after) {
+/** What a visit may change on the home fly: only the clock moves forward. Nothing is restored, re-dosed or re-armed.
+ * Recovery cooldowns must equal their exact decay over the simulated time that elapsed, so a reset, a re-arm or a
+ * zeroed clock cannot pass as "no greater than before". Active effect time may shrink: optional input is truncated at the
+ * ownership boundary by design. */
+export function assertVisitContinuity(before, after) {
   assert.equal(after.sessionId, before.sessionId);
   assert.equal(after.externalOwner, null);
   assert.equal(after.persistence.checkpointId, before.persistence.checkpointId);
   assert.equal(after.persistence.checkpointCount, before.persistence.checkpointCount);
   assert.deepEqual(after.persistence.branchOf, before.persistence.branchOf);
   assert(after.tick >= before.tick);
+  const elapsedMs = after.simTimeMs - before.simTimeMs;
+  assert(Number.isFinite(elapsedMs) && elapsedMs >= 0);
+  // Without a cooldown that outlasts the visit, a reset to zero would be indistinguishable from decay.
+  assert(before.chemistry.some(entry => entry.cooldownRemainingMs > elapsedMs));
   const ledger = entries => entries.map(({ activeUntilMs, ...rest }) => rest);
   assert.deepEqual(ledger(after.stimulusPolicy.entries), ledger(before.stimulusPolicy.entries));
   for (const entry of after.stimulusPolicy.entries) {
@@ -77,7 +84,8 @@ function assertContinuity(before, after) {
   assert.deepEqual(after.chemistry.map(entry => entry.id), before.chemistry.map(entry => entry.id));
   for (const entry of after.chemistry) {
     const previous = before.chemistry.find(value => value.id === entry.id);
-    assert(entry.cooldownRemainingMs <= previous.cooldownRemainingMs); assert(entry.remainingMs <= previous.remainingMs);
+    assert.equal(entry.cooldownRemainingMs, Math.max(0, previous.cooldownRemainingMs - elapsedMs));
+    assert(entry.remainingMs <= previous.remainingMs);
   }
 }
 
@@ -132,7 +140,7 @@ export async function runPairedFixtureIntegration({ hostFactory = createPairedHo
     server.listen(0, '127.0.0.1'); await once(server, 'listening');
     base = `http://127.0.0.1:${server.address().port}`;
   };
-  const baselineOf = value => ({ sessionId: value.sessionId, tick: value.tick, persistence: structuredClone(value.persistence),
+  const baselineOf = value => ({ sessionId: value.sessionId, tick: value.tick, simTimeMs: value.simTimeMs, persistence: structuredClone(value.persistence),
     stimulusPolicy: structuredClone(value.stimulusPolicy), chemistry: structuredClone(value.chemistry) });
   /** The partner must be exactly as it was: same body, grant, epoch and attributed motion, still stepping. */
   const assertPeerUndisturbed = async (peerId, peerEpoch) => {
@@ -419,7 +427,7 @@ export async function runPairedFixtureIntegration({ hostFactory = createPairedHo
     step = 'paired-round-trip-continuity';
     const finalState = { [A]: await state(A), [B]: await state(B) };
     for (const id of [A, B]) {
-      assertContinuity(baseline[id], finalState[id]);
+      assertVisitContinuity(baseline[id], finalState[id]);
       assert(finalState[id].tick > baseline[id].tick); assert(finalState[id].stimulusPolicy.simTimeMs > baseline[id].stimulusPolicy.simTimeMs);
     }
     const checkpoints = {};
@@ -435,7 +443,8 @@ export async function runPairedFixtureIntegration({ hostFactory = createPairedHo
     assert.equal(host.counts().scopeViolations, 0); assert.deepEqual(host.counts().leased, []);
     const epochList = { A: host.epochsFor(A), B: host.epochsFor(B) };
     check(step, { identityAndSessionPreservedPerFly: true, checkpointLineagePreservedPerFly: true, stimulusLedgerPreservedPerFly: true,
-      chemicalRecoveryNeverReset: true, noRestoreDuringAnyVisit: true,
+      chemicalCooldownsDecayedExactlyWithSimulatedTime: true, noRestoreDuringAnyVisit: true,
+      simulatedMsElapsed: { A: finalState[A].simTimeMs - baseline[A].simTimeMs, B: finalState[B].simTimeMs - baseline[B].simTimeMs },
       ticksBeforeAndAfter: { A: [baseline[A].tick, finalState[A].tick], B: [baseline[B].tick, finalState[B].tick] },
       hostSteps: { A: host.stepsFor(A), B: host.stepsFor(B) }, epochsIssued: epochList,
       languageReservationsNeverRefunded: true, languageDisarmedByEachDeparture: true, hostScopeViolations: host.counts().scopeViolations,

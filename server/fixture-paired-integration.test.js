@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { runPairedFixtureIntegration } from '../scripts/run-paired-fixture-integration.js';
+import { runPairedFixtureIntegration, assertVisitContinuity } from '../scripts/run-paired-fixture-integration.js';
 import { createPairedHostDouble } from '../scripts/fixture-integration/paired-host-double.js';
 
 const CHECKS = ['local-capacity-admits-two-and-refuses-a-third', 'home-state-per-individual', 'per-individual-language-budgets',
@@ -140,4 +140,38 @@ test('the paired host double scopes every lease, omits capacity like an older ho
   host.setHostMode('supported');
   await host.transport.leave(leaseA.sessionId, scope('a', leaseA));
   assert.deepEqual(host.counts().leased, ['b']);
+});
+
+test('visit continuity rejects a reset, re-armed or zeroed chemical clock, a changed ledger, a restore and a rewound clock', () => {
+  const home = () => ({ sessionId: 's-1', externalOwner: null, tick: 20, simTimeMs: 100,
+    persistence: { checkpointId: 'c-1', checkpointCount: 3, branchOf: null },
+    stimulusPolicy: { reservedDose: 13.5, reservedDurationMs: 300, entries: [{ id: 1, effect: 'nectar', activeUntilMs: 400 }] },
+    chemistry: [{ id: 'nectar', remainingMs: 300, cooldownRemainingMs: 3000 }, { id: 'floral', remainingMs: 0, cooldownRemainingMs: 1000 }, { id: 'quiet', remainingMs: 0, cooldownRemainingMs: 0 }] });
+  // A faithful visit: 50 simulated ms pass, cooldowns decay by exactly that, active input is truncated at the boundary.
+  const visited = () => { const value = home(); value.tick = 30; value.simTimeMs = 150;
+    value.stimulusPolicy.entries[0].activeUntilMs = 120;
+    value.chemistry = [{ id: 'nectar', remainingMs: 0, cooldownRemainingMs: 2950 }, { id: 'floral', remainingMs: 0, cooldownRemainingMs: 950 }, { id: 'quiet', remainingMs: 0, cooldownRemainingMs: 0 }];
+    return value; };
+  assert.doesNotThrow(() => assertVisitContinuity(home(), visited()));
+  const faulty = {
+    'a zeroed cooldown': value => { value.chemistry[0].cooldownRemainingMs = 0; },
+    'a re-armed (full) cooldown': value => { value.chemistry[1].cooldownRemainingMs = 1000; },
+    'an over-fast cooldown': value => { value.chemistry[0].cooldownRemainingMs = 2000; },
+    'a re-armed active effect': value => { value.chemistry[0].remainingMs = 300; value.stimulusPolicy.entries[0].activeUntilMs = 450; },
+    'a refunded reservation': value => { value.stimulusPolicy.reservedDose = 0; },
+    'a cleared ledger entry': value => { value.stimulusPolicy.entries = []; },
+    'a restored checkpoint': value => { value.persistence.checkpointId = 'c-0'; },
+    'an added checkpoint': value => { value.persistence.checkpointCount = 4; },
+    'a replaced runtime session': value => { value.sessionId = 's-2'; },
+    'a rewound neural clock': value => { value.tick = 10; },
+    'a rewound simulated clock': value => { value.simTimeMs = 50; },
+    'a still-owned fly': value => { value.externalOwner = { kind: 'managed-visitor' }; },
+  };
+  for (const [name, mutate] of Object.entries(faulty)) {
+    const after = visited(); mutate(after);
+    assert.throws(() => assertVisitContinuity(home(), after), name);
+  }
+  // A comparison that cannot tell a reset from decay is itself refused.
+  const flat = home(); flat.chemistry = flat.chemistry.map(entry => ({ ...entry, cooldownRemainingMs: 0 }));
+  assert.throws(() => assertVisitContinuity(flat, { ...visited(), chemistry: flat.chemistry }));
 });
