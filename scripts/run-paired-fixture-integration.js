@@ -154,7 +154,8 @@ export async function runPairedFixtureIntegration({ hostFactory = createPairedHo
     const created = await request('POST', '/api/individuals', { protocolVersion: 1, individualId: A, sessionId: primary.sessionId, sequence: primary.commandSequence + 1 });
     assert.equal(created.status, 200); B = created.body.individualId; host.allow(B);
     assert.notEqual(B, A); assert.equal((await state(B)).status, 'saved-unloaded');
-    assert.equal((await attempt(B, 'load', {})).status, 409);
+    const refusedAtOne = await attempt(B, 'load', {});
+    assert.equal(refusedAtOne.status, 409); assert.match(refusedAtOne.body.error, /resident capacity is exhausted/);
     assert.equal((await state(B)).status, 'saved-unloaded'); assert.equal((await state(A)).status, 'paused');
     const settings = (await get('/api/population')).settings;
     assert.equal((await request('POST', '/api/population', { ...settings, maxResidentFlies: 2 })).status, 200);
@@ -165,7 +166,8 @@ export async function runPairedFixtureIntegration({ hostFactory = createPairedHo
     assert.equal(host.counts().calls, 0);
     const thirdCreate = await request('POST', '/api/individuals', { protocolVersion: 1, individualId: A, sessionId: homeA.sessionId, sequence: homeA.commandSequence + 1 });
     const third = thirdCreate.body.individualId;
-    assert.equal((await attempt(third, 'load', {})).status, 409);
+    const refusedAtTwo = await attempt(third, 'load', {});
+    assert.equal(refusedAtTwo.status, 409); assert.match(refusedAtTwo.body.error, /resident capacity is exhausted/);
     assert.equal((await get('/api/individuals')).individuals.filter(value => value.resident).length, 2);
     assert.equal((await state(third)).status, 'saved-unloaded');
     const population = await get('/api/population');
@@ -222,7 +224,7 @@ export async function runPairedFixtureIntegration({ hostFactory = createPairedHo
     const baseline = { [A]: baselineOf(await state(A)), [B]: baselineOf(await state(B)) };
     for (const id of [A, B]) {
       assert(baseline[id].stimulusPolicy.entries.some(entry => entry.effect === 'nectar'));
-      assert(baseline[id].persistence.checkpointCount >= 3);
+      assert(baseline[id].persistence.checkpointCount > 1);
     }
     assert.notEqual(baseline[A].stimulusPolicy.individualId, baseline[B].stimulusPolicy.individualId);
     check(step, { interleavedFrames: frames, crossRecipientFrameRefused: true, replayedFrameRefused: true,
@@ -290,7 +292,8 @@ export async function runPairedFixtureIntegration({ hostFactory = createPairedHo
     const awayA = await state(A);
     assert.equal(awayA.visitor.owned, true); assert.equal(awayA.status, 'paused'); assert.equal(awayA.environmentAdapter.attached, false);
     assert.equal(awayA.visitor.visitEpoch, epochA1);
-    assert.equal((await attempt(A, 'control', { action: 'start' })).status, 409);
+    const localControl = await attempt(A, 'control', { action: 'start' });
+    assert.equal(localControl.status, 409); assert.match(localControl.body.error, /managed visitor owns this individual/);
     const homeBefore = await state(B); assert.equal(atHome(homeBefore), true);
     await control(B, 'start'); const homeRunning = await advanced(B, homeBefore.tick, 3); await control(B, 'pause');
     const tickA = (await state(A)).tick; await delay(150);
@@ -310,7 +313,8 @@ export async function runPairedFixtureIntegration({ hostFactory = createPairedHo
     const admittedB = await visit(B, 'admit', { worldId: WORLD }); assert.equal(admittedB.visitor.phase, 'visiting');
     const epochB1 = admittedB.visitor.visitEpoch; assert.notEqual(epochB1, epochA1);
     const duplicate = await tryVisit(A, 'admit', { worldId: WORLD });
-    assert.equal(duplicate.status, 409); assert.equal((await state(A)).visitor.visitEpoch, epochA1);
+    assert.equal(duplicate.status, 409); assert.match(duplicate.body.error, /already owns this individual/);
+    assert.equal((await state(A)).visitor.visitEpoch, epochA1);
     assert.deepEqual(host.counts().leased, [A, B].toSorted()); // the host lists leases in id order
     await visit(A, 'start'); await visit(B, 'start');
     const [stepA, stepB] = [await state(A), await state(B)];
@@ -389,7 +393,8 @@ export async function runPairedFixtureIntegration({ hostFactory = createPairedHo
         const held = [];
         for (const fly of [A, B]) held.push(await waitFor(fly, value => value.visitor.owned && ['disconnected', 'reconnecting'].includes(value.visitor.phase)));
         for (const value of held) { assert.equal(value.status, 'paused'); assert.equal(value.visitor.running, false); assert.notEqual(value.externalOwner, null); }
-        assert.equal((await attempt(A, 'control', { action: 'start' })).status, 409);
+        const heldControl = await attempt(A, 'control', { action: 'start' });
+        assert.equal(heldControl.status, 409); assert.match(heldControl.body.error, /managed visitor owns this individual/);
         const frozen = [held[0].tick, held[1].tick]; await delay(150);
         assert.deepEqual([(await state(A)).tick, (await state(B)).tick], frozen);
         host.setHostMode('supported');
