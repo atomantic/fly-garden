@@ -218,6 +218,12 @@ authorizes nothing while the partner keeps stepping. None of this is live-host e
 against the same fake transport as the rest of this file, and both-visiting against a real
 sequencer remains outstanding.
 
+The [paired fixture HTTP run](PAIRED_FIXTURE_INTEGRATION.md) drives two independently admitted fixtures through the
+production HTTP server against an in-process, per-lease host double: split-location and both-visiting
+cases with distinct epochs, A revoked or misrouted without touching B, a host-wide disconnect with
+confirmed and unreachable cleanup, an older single-visitor host refusing the second admission, and
+per-individual language budgets. It is a recorded fixture result, not host or rendered-observer evidence.
+
 `node --test server/managed-visitor-ui.test.js` checks the pod presentation contract: every bridge phase has a distinct label, the away habitat keeps the pod visible, the pod label reads live visitor state, no motion or arrival wording appears before host acknowledgment, and the roster exposes each fly's pod state. An additional temporary in-process check connected the real Fly Garden bridge, PortOS broker/transport and Eidoverse host factories: negotiated admission, 20 geometric observation/motor steps and confirmed return passed without starting a network server. That check is integration evidence, not a live deployment or browser journey.
 
 ## Local HTTP integration

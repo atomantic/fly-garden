@@ -77,4 +77,6 @@ remains negative. See [requirement evidence](REQUIREMENT_EVIDENCE.md),
 
 Issue #16 stays open for the rendered session and real managed-host campaign,
 source/version compatibility, complete failure evidence and published demonstration.
-The paired #21 gate is not satisfied by this single-fixture harness.
+The paired #21 gate is not satisfied by this single-fixture harness; the separate
+[paired fixture run](PAIRED_FIXTURE_INTEGRATION.md) covers two independently admitted flies against
+an in-process host double and is likewise fixture-scoped.
