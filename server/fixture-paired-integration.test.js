@@ -46,14 +46,14 @@ test('one paired HTTP fixture run produces scoped evidence and never claims miss
   for (const id of ['peer-scope-reply-for-a-cannot-command-b', 'stale-epoch-reply-for-a-cannot-command-b']) assert.equal(evidence(report, id).hostScopeViolations, 0);
   const older = evidence(report, 'older-host-refuses-second-visitor');
   assert.equal(older.hostPublishedCapacityField, false); assert.equal(older.bridgeReadsCapacityAs, 1); assert.equal(older.hostAdmissionRequests, 1);
-  assert.match(older.reason, /Host negotiated 1 concurrent managed visitor/);
+  assert.equal(older.refusal, 'host-capacity-one-visitor');
 
   // Per-individual provider budgets: each fly spent only its own ceiling, no real provider was involved, and nothing was refunded.
   const budgets = evidence(report, 'per-individual-language-budgets');
   assert.equal(budgets.providerKind, 'in-process-synthetic-double'); assert.equal(budgets.providerCalls, 2);
   assert.deepEqual(budgets.reserved.A, { calls: 1, tokens: 4096, spendMicros: 100 });
   assert.deepEqual(budgets.reserved.B, { calls: 1, tokens: 4096, spendMicros: 100 });
-  assert.equal(budgets.aggregateReservedSpendMicros, 200); assert.equal(budgets.overCeilingRefusedForB, 'Language budget exhausted.');
+  assert.equal(budgets.aggregateReservedSpendMicros, 200); assert.equal(budgets.overCeilingRefusalForB, 'language-budget-exhausted');
   assert.equal(evidence(report, 'late-provider-reply-keeps-its-recipient').lateReplyDelivered, false);
 
   // Continuity is reported with its limit: unsupported state is named, never implied.
@@ -73,6 +73,8 @@ test('one paired HTTP fixture run produces scoped evidence and never claims miss
   // Nothing private is published: no individual or session identifier, token, credential, address or path.
   const published = JSON.stringify(report);
   assert.doesNotMatch(published, /controllerToken|mv1_|127\.0\.0\.1|\/Users\/|\/tmp\/|LATE-SYNTHETIC-REPLY/);
+  // Server-owned refusal text is asserted exactly by the harness but never republished, so a future message cannot leak detail.
+  assert.doesNotMatch(published, /Host negotiated|budget exhausted|capacity is exhausted|managed visitor owns|already owns/i);
   assert.doesNotMatch(published, /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/);
 });
 

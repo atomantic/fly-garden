@@ -17,6 +17,9 @@ const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 const DISCONNECT_CHECK = 'host-wide-disconnect-with-confirmed-cleanup', UNREACHABLE_CHECK = 'host-wide-unreachable-host-holds-both-paused';
+// Server-owned refusal text is matched exactly and never copied into the report; the report carries harness-owned codes.
+const BUDGET_REFUSAL = 'Language budget exhausted.';
+const OLDER_HOST_REFUSAL = 'Host negotiated 1 concurrent managed visitor; the existing visit was left undisturbed.';
 const WORLD = 'fixture-world', LATE_REPLY = 'LATE-SYNTHETIC-REPLY-MUST-NOT-BE-DELIVERED';
 const UNSUPPORTED = ['rng', 'plasticity', 'refractory', 'delayBuffers', 'embodiment'];
 const unavailable = [
@@ -248,7 +251,7 @@ export async function runPairedFixtureIntegration({ hostFactory = createPairedHo
     await chat(B, 'Describe the current telemetry.');
     await delay(1100);
     const overCeiling = await attempt(B, 'language', { operation: 'chat', payload: { requestId: randomBytes(16).toString('hex'), message: 'Over its own ceiling.', windowId: null } });
-    assert.equal(overCeiling.status, 409); assert.match(overCeiling.body.error, /budget exhausted/);
+    assert.equal(overCeiling.status, 409); assert.equal(overCeiling.body.error, BUDGET_REFUSAL);
     const afterB = { A: await languageView(A), B: await languageView(B) };
     assert.deepEqual(afterB.A.reserved, viewA.reserved);
     assert.deepEqual(afterB.B.reserved, { calls: 1, tokens: 4096, spendMicros: 100 });
@@ -258,7 +261,7 @@ export async function runPairedFixtureIntegration({ hostFactory = createPairedHo
     check(step, { providerCalls: language.calls(), providerKind: 'in-process-synthetic-double',
       ceilings: { A: { maxCalls: 2, maxSpendMicros: 300 }, B: { maxCalls: 1, maxSpendMicros: 100 } },
       reserved: { A: afterB.A.reserved, B: afterB.B.reserved }, aggregateReservedSpendMicros: afterB.A.aggregateReservedSpendMicros,
-      overCeilingRefusedForB: overCeiling.body.error, partnerNotDelayedByCooldown: true, eventsAttributed: true,
+      overCeilingRefusalForB: 'language-budget-exhausted', partnerNotDelayedByCooldown: true, eventsAttributed: true,
       note: 'The server has no active-selection input: every language request is keyed by its envelope individual. Neither fly consumed the other\'s ceiling.' });
 
     step = 'late-provider-reply-keeps-its-recipient';
@@ -455,7 +458,7 @@ export async function runPairedFixtureIntegration({ hostFactory = createPairedHo
     await visit(A, 'admit', { worldId: WORLD }); await visit(A, 'start');
     const olderEpoch = (await state(A)).visitor.visitEpoch;
     const refused = await tryVisit(B, 'admit', { worldId: WORLD });
-    assert.equal(refused.status, 409); assert.match(refused.body.error, /Host negotiated 1 concurrent managed visitor/);
+    assert.equal(refused.status, 409); assert.equal(refused.body.error, OLDER_HOST_REFUSAL);
     const refusedB = await state(B);
     assert.equal(atHome(refusedB), true); assert.equal(refusedB.tick, beforeOlder.B.tick); assert.equal(refusedB.sessionId, recoveredOlder.B.sessionId);
     assert.equal(host.counts().admits, 1);
@@ -468,7 +471,7 @@ export async function runPairedFixtureIntegration({ hostFactory = createPairedHo
     check(step, { hostPublishedCapacityField: false, bridgeReadsCapacityAs: olderCapability.maxConcurrentVisitors,
       secondAdmissionRefusedBeforeAnyHostRequest: true, firstVisitorKeptSteppingSameEpoch: true,
       refusedFlyUntouched: true, hostAdmissionRequests: 1, secondAdmittedAfterFirstReturned: true,
-      reason: refused.body.error });
+      refusal: 'host-capacity-one-visitor' });
 
     step = 'saved-paused-reopen-pair';
     const saved = { A: await send(A, 'checkpoints', {}), B: await send(B, 'checkpoints', {}) };
