@@ -64,10 +64,13 @@ clause this run can evaluate passed and at least one named clause is unavailable
   second fly, or routing observations. Those need linked changes in their own repositories.
 - **The second observer is an HTTP reader.** It uses the local read-only routes and sees structured
   state, not pixels. No browser, rendered scene or human observer was involved.
-- **No browser selection is exercised.** Per-fly controls, keyboard selection and a late reply after
-  a *browser* selection change are not tested here. The server contract behind them is: language and
-  visitor commands are keyed by their envelope individual, and the server has no active-selection
-  input.
+- **No browser selection is exercised here.** The server contract behind per-fly controls is that
+  language and visitor commands are keyed by their envelope individual, and the server has no
+  active-selection input. The browser half — keyboard selection, per-row Visit/Return controls bound
+  to their own fly and session, and a provider reply that lands after a selection change staying with
+  its initiating fly — is measured separately by `tests/browser/fly-roster.spec.js` with every
+  visitor and language route fulfilled on loopback ([record](OBSERVATORY_ACCESSIBILITY.md)); that run
+  involves no host, provider, admission or individual and is not part of this report's figures.
 - **The provider is a double.** Per-individual budgets were exercised with a deterministic
   in-process provider: no model, network or generated text from a real provider. Chat requests have a
   per-fly one-second cooldown, so the run waits it out before testing the call ceiling, and the
@@ -121,5 +124,6 @@ tabulated above. Everything in this document is fixture-scoped evidence; see
 [requirement evidence](REQUIREMENT_EVIDENCE.md) for the matrix and its known gates.
 
 Issue #21 stays open for the live PortOS/Eidoverse both-visiting run, host-published capacity, a
-rendered second observer, the admin-UI per-fly controls with keyboard selection, and paired RNG and
-learning continuity.
+rendered second observer, and paired RNG and learning continuity. The admin-UI per-fly roster with
+keyboard selection and browser-level late-reply attribution is recorded in
+[observatory accessibility](OBSERVATORY_ACCESSIBILITY.md).

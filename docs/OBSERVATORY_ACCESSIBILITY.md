@@ -214,17 +214,57 @@ The shared population gains exactly one control — the individual's own selecti
 
 **FR-12's small screen beyond the empty state.** At a requested 390×844 viewport with that individual resident, the Observatory reported `scrollWidth` **375 px against a 375 px client width** with `window.innerWidth` 390 — the same 15 px non-overlay scrollbar gap recorded in #77 — so there is no horizontal page scrolling. The navigation strip stayed entirely above `main`, and the lifecycle was readable as text. The previously recorded 390×844 evidence covered only the paused, no-individual state; this extends it to a resident one.
 
+## Per-fly roster: keyboard selection and late-reply attribution
+
+Issue #21's admin-UI criterion asks for keyboard selection, per-fly controls and provider replies that
+stay attributed to their initiating fly after a selection change. `tests/browser/fly-roster.spec.js`
+(Playwright project `fly-roster`, run by `npm run test:browser`) measures that in the pinned Chrome
+Headless Shell (Chrome 153.0.8010.12, SwiftShader) against the production build on loopback.
+
+**How the second fly exists.** The suite's identity directory holds one individual, and no individual
+is created. The spec fulfils `/api/state`, `/api/individuals`, both `/api/individuals/:id` reads
+and every `…/visitor` and `…/language` route itself: the second fly's snapshot is the server's own
+runtime read with its identity, session and visitor fields rewritten, and `/api/health` is the
+server's own response with only `eidoverse.configured` and `eidoverse.individuals` replaced. **No
+PortOS host is contacted, no credential is read, no admission is requested, no provider is called and
+the simulation stays paused.** This is evidence about the browser path alone and may not be cited as
+host, transport, admission or provider evidence.
+
+Recorded, three specs passing in 8.1 s:
+
+| Check | Result |
+| --- | --- |
+| Roster radios | The selected row alone has `tabindex="0"`; ArrowDown, ArrowDown (wrap), End and Home each moved focus and selection together, and the toolbar select followed every change. |
+| Focus indicator on a roster radio reached by keyboard | `solid` 3 px outline, measured on the focused element after Tab / Shift+Tab. |
+| Phase as text, per row | Home fly: `HOST BRIDGE NOT CONNECTED · home controller available`; visiting fly: `HOST ACKNOWLEDGED · SCOPED VISITOR BODY HELD · destination garden-world · owned by the bridge`, with the `pod-idle` / `pod-active` tone classes alongside. |
+| Per-row Return while the other fly is selected | Posted `home` to the visiting fly's own route with that fly's listed session and next sequence; the selected fly's row and selection were untouched; the row showed `RETURN REQUESTED · REMOTE CLEANUP PENDING` from the reply before the next roster read. |
+| Per-row Visit while the other fly is selected | `Check worlds` read that row's capabilities, the world select filled with the single approved world, and `Request visit (paused)` posted `admit` with that world to that fly's own route and session; the row showed `ADMISSION REQUESTED · NOT ACKNOWLEDGED` and no arrival wording. Every recorded command's URL individual equalled its envelope individual. |
+| Keyboard-only chat | The caretaker message was typed, Tab reached the submit button and Enter submitted it; one `chat` was posted for the first fly, and no other language command was ever issued. |
+| Late reply after a selection change | The selection moved to the second fly while the routed provider was still held; that fly's panel named itself as recipient, showed no request and no cancellation was sent. After release, the first fly's interpretation never appeared in the second fly's panel; the roster read `interpreter reply received · kept with this fly` on the first fly's row only; after returning to the first fly by ArrowUp, its panel showed the reply under its own request ID, individual and session, and the roster then read `interpreter reply shown under this fly`. |
+
+**Mutation check.** Making the ledger return a held reply for any key rather than the exact
+individual/session key made the third spec fail on the second fly's panel showing the first fly's
+interpretation; the change was reverted. The pure roster and ledger rules are covered in
+`node --test server/fly-roster-state.test.js server/language-reply-ledger.test.js`, and the same file
+guards the source contracts the spec depends on, since this suite is not in CI.
+
+The pre-existing panel checks re-ran unchanged on the same build: shared population 4 of 4 controls
+after 28 preceding stops, telemetry interpreter 1 of 1 after 15, connectome lab 5 of 5 after 18, the
+managed-visitor panel still exposing no enabled control without a configured bridge, and the
+Observatory at 390×844 with `scrollWidth` 390 against a 390 px client width.
+
 ## What was not verified
 
 - The reduced-motion cadence of an actual engineered controller-camera session is still **not** measured in a
   browser. The individual in the gated run was loaded paused and never advanced, so no controller-camera
   session existed to measure.
-- **The managed-visitor panel's keyboard operability is unmeasured, not verified.** Without a configured host
-  bridge every control in it is correctly disabled and therefore correctly unfocusable, with an empty
-  resident state as well as an empty one. Only its text legibility was established.
-- **NFR-4's "chat can be used without a pointer" clause is unmeasured.** With no language provider configured,
-  the only enabled control in the language panel is its evidence-window selector; the request and arming
-  controls were never focusable. Measuring them needs a provider running, which is separate explicit setup.
+- **The managed-visitor panel's own controls remain unmeasured against a configured host bridge.** Without
+  one, every control in that panel is correctly disabled and therefore correctly unfocusable. The roster's
+  per-fly Visit/Return controls and the panel's keyboard reachability were measured only against routed
+  loopback replies, as recorded above; a real bridge, host or admission has not been driven from a keyboard.
+- **NFR-4's "chat can be used without a pointer" clause is measured only against a routed provider.** The
+  keyboard-only submission above answers the clause for the browser path; no language provider was running,
+  so arming from the keyboard against real provider metadata, and a real reply, remain unmeasured.
 - The panel specs run only in the default motion and colour configuration. Keyboard reachability of these four
   panels under `prefers-reduced-motion: reduce` or `forced-colors: active` was not separately measured.
 - Chromium only, in two configurations: the headless shell and a real Chrome over CDP. No Firefox or WebKit

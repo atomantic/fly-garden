@@ -113,6 +113,36 @@ admission succeeded, so the pod is held still and no phase label uses arrival wo
 `/api/health`'s `eidoverse.individuals[]` carries phase, ownership, running state and world for every
 individual, so both flies' pod states are readable without changing the browser selection.
 
+#### Per-fly roster controls (browser)
+
+`client/src/FlyRoster.jsx` lists every fixture individual as one row on the Eidoverse view and under
+the Observatory's roster panel. A row shows that fly's own pod label, destination, ownership, stepping
+state and, when a caretaker language request is in flight or answered, its attribution line. Rows form
+a `radiogroup`: Arrow keys, Home and End move focus and selection together, Enter or Space selects,
+and only the selected row is in the Tab order. Selection changes what the page shows; it starts
+nothing and retargets no request already in flight (the toolbar and roster-panel selects use the same
+path).
+
+Each row carries its own **Check worlds → Request visit (paused)** and **Return home (paused)**
+controls, bound to that row's individual and to the runtime `sessionId` that `GET /api/individuals`
+listed for it, not to the selected fly's state. The row posts the usual scoped envelope through the
+same `postVisitorCommand` pre-read, so a row whose session has since been replaced by a restore is
+refused rather than commanding the new session. Return is offered in every owned phase, including a
+stuck return, so no fly is stranded; a visit can be requested only from `home` by a resident with a
+known session on a configured bridge. Unloaded individuals have no commandable session and show why.
+A reply updates that row at once and triggers a roster re-read; the reply stands in only until a read
+that started after it, and only for the session the row listed.
+
+`tests/browser/fly-roster.spec.js` (Playwright project `fly-roster`) measures this in Chromium with
+every visitor and language route fulfilled on loopback by the spec itself: keyboard selection, the
+visible focus outline, per-row commands posting to their own fly and session while the other fly is
+selected, and a provider reply that lands after a selection change being shown under its initiating
+fly only. **No host, credential, admission, provider or individual is involved**, and the second fly
+exists in the browser alone; this is browser-path evidence, not host or transport evidence.
+`node --test server/fly-roster-state.test.js server/language-reply-ledger.test.js` covers the pure
+roster assembly, key handling, row binding and reply ledger, and guards the source contracts the
+browser spec depends on, since `tests/browser/` is not in CI.
+
 #### Rendered pod evidence, and what it does not establish
 
 `tests/browser/teleport-pod-phases.spec.js` (Playwright projects `pod-phases` and
@@ -227,6 +257,8 @@ per-individual language budgets. It is a recorded fixture result, not host or re
 `node --test server/managed-visitor-ui.test.js` checks the pod presentation contract: every bridge phase has a distinct label, the away habitat keeps the pod visible, the pod label reads live visitor state, no motion or arrival wording appears before host acknowledgment, and the roster exposes each fly's pod state. An additional temporary in-process check connected the real Fly Garden bridge, PortOS broker/transport and Eidoverse host factories: negotiated admission, 20 geometric observation/motor steps and confirmed return passed without starting a network server. That check is integration evidence, not a live deployment or browser journey.
 
 ## Local HTTP integration
+
+`GET /api/individuals` lists each individual with `resident` and, for a resident, the live runtime `sessionId` (`null` when unloaded), so a per-fly browser control can bind to the session it displayed.
 
 `GET /api/individuals/:id/visitor` reads local state only. The exact query `?capabilities=1` explicitly asks the broker for currently negotiated allowed worlds. Discovery failure returns `capabilities.available:false` with a sanitized reason; it never acquires ownership or a remote body.
 
