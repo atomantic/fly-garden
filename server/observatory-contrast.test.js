@@ -104,6 +104,13 @@ const textPairs = [
   ['pod tone active over the habitat', token('.pod-label.pod-active', 'color'), SCENE],
   ['pod tone fault over the habitat', token('.pod-label.pod-fault', 'color'), SCENE],
   ['pod tone fault over the away card', token('.pod-label.pod-fault', 'color'), CARD],
+  // Per-fly roster rows. Each row's phase is written as text; the tone colour is additional.
+  ['roster pod line idle', token('.fly-roster-pod', 'color'), CARD],
+  ['roster pod line pending', token('.fly-roster-row.pod-pending .fly-roster-pod', 'color'), CARD],
+  ['roster pod line active', token('.fly-roster-row.pod-active .fly-roster-pod', 'color'), CARD],
+  ['roster pod line fault', token('.fly-roster-row.pod-fault .fly-roster-pod', 'color'), CARD],
+  ['checked roster radio label', token('.fly-roster-row [role="radio"][aria-checked="true"]', 'color'),
+    token('.fly-roster-row [role="radio"][aria-checked="true"]', 'background')],
 ];
 
 test('every observatory text token reaches the WCAG 1.4.3 minimum against its own surface', () => {
@@ -123,6 +130,7 @@ test('every observatory text token reaches the WCAG 1.4.3 minimum against its ow
  * docs/OBSERVATORY_ACCESSIBILITY.md as a known, documented limitation rather than hidden.
  */
 const nonTextPairs = [
+  ['selected roster row boundary', token('.fly-roster-row[data-selected="true"]', 'border-color'), CARD],
   ['running status dot on the page', token('.status-dot', 'background'), PAGE],
   ['running status dot in the sidebar', token('.status-dot', 'background'), SIDEBAR],
   ['button boundary on the page', token('button', 'border'), PAGE],

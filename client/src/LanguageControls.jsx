@@ -1,34 +1,40 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { emptyLanguageLedger, heldLanguageReply, languageKey, pendingLanguageRequest } from './language-reply-ledger.js';
 
 async function jsonRequest(url, options = {}) {
   const response = await fetch(url, options), value = await response.json();
   if (!response.ok) throw new Error(typeof value.error === 'string' ? value.error : value.error?.message || 'Language request refused');
   return value;
 }
-const post = (runtime, operation, payload, signal) => jsonRequest(`/api/individuals/${runtime.individualId}/language`, {
-  method: 'POST', signal, headers: { 'Content-Type': 'application/json' },
+const post = (runtime, operation, payload) => jsonRequest(`/api/individuals/${runtime.individualId}/language`, {
+  method: 'POST', headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({ protocolVersion: 1, individualId: runtime.individualId, sessionId: runtime.sessionId,
     sequence: runtime.commandSequence + 1, operation, payload }),
 });
 // Cancellation uses fresh command ordering for its original recipient, never a newly selected fly.
-async function cancelRecipient(individualId, sessionId, requestId) {
+async function cancelRecipient(individualId, sessionId) {
   const runtime = await jsonRequest(`/api/individuals/${individualId}`);
   if (runtime.sessionId !== sessionId) return null;
-  return post(runtime, 'cancel', requestId === undefined ? {} : { requestId });
+  return post(runtime, 'cancel', {});
 }
 const initialLimits = { maxCalls: '1', maxTokens: '4096', maxSpendMicros: '0', cooldownMs: '10000', detectorThresholdHz: '20' };
 
-export default function LanguageControls({ state, disabled = false, onMutation = () => {} }) {
+/** The panel for one individual and session. A caretaker chat begun here is handed to the
+ * application-level ledger, so a selection change neither aborts nor cancels it: the reply stays
+ * attributed to this fly and is shown only when this fly is selected again. */
+export default function LanguageControls({ state, disabled = false, onMutation = () => {}, ledger = emptyLanguageLedger,
+  onRequest = () => {}, onReplyShown = () => {} }) {
   const [view, setView] = useState(null), [readError, setReadError] = useState(''), [error, setError] = useState('');
-  const [busy, setBusy] = useState(false), [canceling, setCanceling] = useState(false);
+  const [busy, setBusy] = useState(false), [canceling, setCanceling] = useState(false), [held, setHeld] = useState(null);
   const [providerChoice, setProviderChoice] = useState(''), [limits, setLimits] = useState(initialLimits);
   const [detectorEnabled, setDetectorEnabled] = useState(false), [message, setMessage] = useState(''), [windowId, setWindowId] = useState('');
   const selected = useRef(null), active = useRef(null), mounted = useRef(false), readEpoch = useRef(0);
-  const key = state ? `${state.individualId}/${state.sessionId}` : null;
+  const key = state ? languageKey(state.individualId, state.sessionId) : null;
   selected.current = key;
+  const tracked = key ? pendingLanguageRequest(ledger, key) : null;
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   useEffect(() => {
-    setView(null); setReadError(''); setError(''); setMessage(''); setWindowId(''); setProviderChoice(''); setDetectorEnabled(false); setLimits(initialLimits);
+    setView(null); setReadError(''); setError(''); setMessage(''); setWindowId(''); setProviderChoice(''); setDetectorEnabled(false); setLimits(initialLimits); setHeld(null);
     let stopped = false, timer, controller;
     const id = state?.individualId;
     async function poll() {
@@ -41,30 +47,38 @@ export default function LanguageControls({ state, disabled = false, onMutation =
       finally { if (!stopped) timer = setTimeout(poll, 1000); }
     }
     poll();
-    return () => {
-      stopped = true; clearTimeout(timer); controller?.abort(); readEpoch.current++;
-      const pending = active.current;
-      if (pending?.key === key) {
-        pending.controller.abort(); active.current = null;
-        if (pending.operation === 'chat') void cancelRecipient(pending.individualId, pending.sessionId, pending.requestId).catch(e => {
-          if (mounted.current) setError(`Previous recipient cancellation could not be confirmed: ${e.message}`);
-        });
-      }
-    };
+    // Only this panel's status read stops here. An in-flight caretaker request is the ledger's, not
+    // this mount's: it keeps its original recipient whichever fly is selected next.
+    return () => { stopped = true; clearTimeout(timer); controller?.abort(); readEpoch.current++; active.current = null; };
   }, [key]);
+  // A reply that settled for this exact individual and session, whether it landed while another fly
+  // was selected or while this panel was open, is applied here and nowhere else.
+  useEffect(() => {
+    if (!key) return;
+    const reply = heldLanguageReply(ledger, key);
+    if (!reply) return;
+    setHeld(reply);
+    if (reply.outcome.ok) { if (reply.outcome.language) { readEpoch.current++; setView(reply.outcome.language); } setError(''); }
+    else setError(reply.outcome.error);
+    onReplyShown(key);
+  }, [ledger, key]);
   async function mutate(operation, payload) {
-    const source = state, sourceKey = key, controller = new AbortController();
-    const request = { key: sourceKey, individualId: source.individualId, sessionId: source.sessionId, operation, requestId: payload.requestId, controller };
+    const source = state, sourceKey = key;
+    const request = { key: sourceKey, individualId: source.individualId, sessionId: source.sessionId, operation, requestId: payload.requestId };
     active.current = request; setBusy(true); setError('');
     try {
-      const next = await post(source, operation, payload, controller.signal);
+      const promise = post(source, operation, payload);
+      if (operation === 'chat') onRequest(request, promise);
+      const next = await promise;
       if (mounted.current && selected.current === sourceKey) {
+        // Still this fly's panel: the history below carries the reply, so the ledger need not hold it.
+        if (operation === 'chat') onReplyShown(sourceKey);
         readEpoch.current++; setView(next.language);
         await onMutation(next.state);
         if (operation === 'chat') setMessage('');
       }
-    } catch (e) { if (mounted.current && selected.current === sourceKey && !controller.signal.aborted) setError(e.message); }
-    finally { if (active.current === request) active.current = null; if (mounted.current) setBusy(false); }
+    } catch (e) { if (mounted.current && selected.current === sourceKey) setError(e.message); }
+    finally { if (active.current === request) active.current = null; if (mounted.current && selected.current === sourceKey) setBusy(false); }
   }
   async function cancel() {
     const sourceKey = key, id = state.individualId, sessionId = state.sessionId;
@@ -72,7 +86,6 @@ export default function LanguageControls({ state, disabled = false, onMutation =
     try {
       const next = await cancelRecipient(id, sessionId);
       if (mounted.current && selected.current === sourceKey) {
-        if (active.current?.key === sourceKey) active.current.controller.abort();
         if (next) { readEpoch.current++; setView(next.language); await onMutation(next.state); }
         else setError('Source session changed; previous requests were invalidated. Refresh before arming again.');
       }
@@ -83,11 +96,20 @@ export default function LanguageControls({ state, disabled = false, onMutation =
   const unavailable = disabled || !!readError || !view?.available || !state?.persistence?.resident;
   const numericValid = Object.entries(limits).every(([name, value]) => value.trim() !== '' && Number.isFinite(Number(value))
     && (name === 'detectorThresholdHz' ? Number(value) >= 0 && Number(value) <= 10000 : Number.isSafeInteger(Number(value)) && Number(value) >= (name === 'maxSpendMicros' ? 0 : name === 'cooldownMs' ? 1000 : 1))) && Number(limits.maxCalls) <= 1000;
+  const requestPending = Boolean(view?.pending || tracked || active.current?.operation === 'chat');
   return <section className="recordings-panel" aria-label="Optional telemetry interpreter">
     <h2>Optional telemetry interpreter</h2>
     <p>Generated telemetry interpretation with uncertainty — not the fly speaking, thought decoding, consent, or demonstrated language understanding. Text cannot change neural state, deliver stimuli, or invoke tools.</p>
+    {state && <p className="language-recipient">Recipient: individual <code>{state.individualId}</code> · session <code>{state.sessionId}</code>. Requests and replies stay attributed to this recipient; selecting another fly never moves them.</p>}
     {readError && <p role="alert">Language status unavailable; displayed values may be stale. {readError}</p>}
     {error && <p role="alert">{error}</p>}
+    {tracked && <p role="status" className="language-held">Caretaker request {tracked.requestId} for this fly is still with the provider. It keeps this recipient whichever fly is selected; cancel it below if it should not complete.</p>}
+    {held?.outcome.ok && <article className="language-held" data-request={held.requestId}>
+      <h3>Reply kept with this fly</h3>
+      <p role="status">Request {held.requestId} · individual {held.individualId} · session {held.sessionId} · {held.outcome.result?.status ?? 'settled'}. It was held for this recipient while the reply was in flight and was not shown under any other fly.</p>
+      {held.outcome.result?.interpretation && <p style={{ whiteSpace: 'pre-wrap' }}>{held.outcome.result.interpretation}</p>}
+      {held.outcome.result?.uncertainty && <p>{held.outcome.result.uncertainty}</p>}
+    </article>}
     {!view && !readError && <p role="status">Loading language availability…</p>}
     {view && <>
       {!view.available && <p role="status">{view.reason || 'No provider is configured. Language requests are unavailable.'} Provider installation and startup require separate explicit setup.</p>}
@@ -113,16 +135,16 @@ export default function LanguageControls({ state, disabled = false, onMutation =
       <p>Reserved: {view.reserved.calls} calls / {view.config?.maxCalls ?? 'not set'}, {view.reserved.tokens} tokens / {view.config?.maxTokens ?? 'not set'}, {view.reserved.spendMicros} spend micros / {view.config?.maxSpendMicros ?? 'not set'}. Aggregate spend reservation: {view.aggregateReservedSpendMicros} / {view.aggregateSpendMicros} micros. Cancellation and rearming do not refund reservations.</p>
       <div className="recordings-actions">
         <button disabled={disabled || busy || canceling || !view.armed} onClick={() => mutate('disarm', {})}>Disarm</button>
-        <button disabled={disabled || canceling || (!view.pending && active.current?.operation !== 'chat')} onClick={cancel}>Cancel request and disarm</button>
+        <button disabled={disabled || canceling || !requestPending} onClick={cancel}>Cancel request and disarm</button>
       </div>
-      <form onSubmit={event => { event.preventDefault(); if (!unavailable && !busy && !view.pending && view.armed && message.trim()) void mutate('chat', { requestId: Array.from(crypto.getRandomValues(new Uint8Array(16)), byte => byte.toString(16).padStart(2, '0')).join(''), message, windowId: windowId || null }); }}>
+      <form onSubmit={event => { event.preventDefault(); if (!unavailable && !busy && !requestPending && view.armed && message.trim()) void mutate('chat', { requestId: Array.from(crypto.getRandomValues(new Uint8Array(16)), byte => byte.toString(16).padStart(2, '0')).join(''), message, windowId: windowId || null }); }}>
         <label>Evidence window <select value={windowId} disabled={busy} onChange={event => setWindowId(event.target.value)}>
           <option value="">Current server evidence</option>
           {view.evidenceWindows.map(w => <option key={w.windowId} value={w.windowId}>{w.startMs}–{w.endMs} ms · session {w.sessionId}</option>)}
         </select></label>
         <p>{view.evidenceDisclosure}</p>
         <label>Caretaker message (at most 1000 characters)<textarea style={{ display: 'block', width: '100%', minHeight: 80 }} maxLength={1000} value={message} onChange={event => setMessage(event.target.value)} disabled={unavailable || busy} /></label>
-        <button type="submit" disabled={unavailable || busy || canceling || view.pending || !view.armed || !message.trim() || (!!windowId && !view.evidenceWindows.some(w => w.windowId === windowId))}>Send explicit caretaker request</button>
+        <button type="submit" disabled={unavailable || busy || canceling || requestPending || !view.armed || !message.trim() || (!!windowId && !view.evidenceWindows.some(w => w.windowId === windowId))}>Send explicit caretaker request</button>
       </form>
       <h3>Interpretation and request history</h3>
       {!view.events.length && <p>No language requests or configuration events.</p>}

@@ -399,11 +399,28 @@ h3 {
 .pod-label.pod-pending { color: #d8cf95; }
 .pod-label.pod-active { color: #bddec6; }
 .pod-label.pod-fault { color: #e3a98f; }
-.pod-roster { margin: 12px 0 0; padding: 0; list-style: none; font: 11px monospace; }
-.pod-roster li { margin: 4px 0; overflow-wrap: anywhere; }
-.pod-roster .pod-pending { color: #a79a52; }
-.pod-roster .pod-active { color: #4e7f5f; }
-.pod-roster .pod-fault { color: #a05a3a; }
+/* Per-fly roster. Row tone restates the pod phase that is also written as text in the row. */
+.fly-roster-list { display: grid; gap: 10px; margin: 12px 0; }
+.fly-roster-row {
+  border: 1px solid #2c4236;
+  border-radius: 8px;
+  padding: 10px 12px;
+  display: grid;
+  gap: 8px;
+}
+.fly-roster-row[data-selected="true"] { border-color: #86997a; }
+.fly-roster-row [role="radio"] { text-align: left; justify-self: start; }
+.fly-roster-row [role="radio"][aria-checked="true"] {
+  background: #86997a;
+  color: #101c0d;
+  border-color: #86997a;
+}
+.fly-roster-pod { margin: 0; font: 11px monospace; overflow-wrap: anywhere; color: #8ea394; }
+.fly-roster-row.pod-pending .fly-roster-pod { color: #d8cf95; }
+.fly-roster-row.pod-active .fly-roster-pod { color: #bddec6; }
+.fly-roster-row.pod-fault .fly-roster-pod { color: #e3a98f; }
+.language-recipient, .language-held { overflow-wrap: anywhere; }
+.language-held { border: 1px solid #2c4236; border-radius: 8px; padding: 10px 12px; margin: 12px 0; }
 .scene-footer {
   position: absolute;
   bottom: 0;

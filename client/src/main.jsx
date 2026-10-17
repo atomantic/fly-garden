@@ -16,6 +16,9 @@ import VisitorPatchPreview from "./VisitorPatchPreview.jsx";
 import { mergeToolbarVisitorReply } from "./visitor-command-state.js";
 import { postVisitorCommand } from "./visitor-api.js";
 import { podPresentation, podRosterEntry } from "./visitor-phase.js";
+import FlyRoster from "./FlyRoster.jsx";
+import { buildFlyRoster, recordRosterReply } from "./fly-roster-state.js";
+import { beginLanguageRequest, emptyLanguageLedger, markLanguageReplyShown, settleLanguageRequest } from "./language-reply-ledger.js";
 import { readRuntimeSnapshot, mergeRuntimeSnapshot } from "./runtime-state.js";
 import { selectConnectomePair, mergeConnectomeSelection } from "./connectome-lab-state.js";
 import "./style.css";
@@ -53,6 +56,10 @@ function App() {
   const [individualId, setIndividualId] = useState("");
   const [individuals, setIndividuals] = useState([]);
   const [visitorRoster, setVisitorRoster] = useState([]);
+  const [rosterReadAt, setRosterReadAt] = useState(0), [rosterTick, setRosterTick] = useState(0);
+  const [rosterOverrides, setRosterOverrides] = useState({}), [bridgeConfigured, setBridgeConfigured] = useState(false);
+  // Caretaker language requests, keyed by their recipient; survives panel remounts on selection change.
+  const [languageLedger, setLanguageLedger] = useState(emptyLanguageLedger);
   const [connectomeSelection, setConnectomeSelection] = useState({individualId:"",dataset:"male-cns:v1.0"});
   const {individualId:connectomeId,dataset:connectomeDataset} = connectomeSelection;
   const [tab, setTab] = useState(readTab),
@@ -93,22 +100,24 @@ function App() {
     return () => removeEventListener("hashchange", change);
   }, []);
   // Per-fly pod phase for the whole roster. Read-only; it never admits, starts or retargets a visit.
+  // A row command bumps `rosterTick` so the next read starts at once instead of after the interval.
   useEffect(() => {
     let stopped = false, timer, controller;
     async function readPods() {
       controller = new AbortController();
+      const startedAt = Date.now();
       try {
         const response = await fetch("/api/health", { signal: controller.signal });
         if (!response.ok) throw new Error("Health unavailable");
         const value = await response.json();
         const list = Array.isArray(value?.eidoverse?.individuals) ? value.eidoverse.individuals : [];
-        if (!stopped) setVisitorRoster(list.map(podRosterEntry));
-      } catch { if (!stopped) setVisitorRoster([]); }
+        if (!stopped) { setVisitorRoster(list.map(podRosterEntry)); setRosterReadAt(startedAt); setBridgeConfigured(value?.eidoverse?.configured === true); }
+      } catch { if (!stopped) { setVisitorRoster([]); setBridgeConfigured(false); } }
       finally { if (!stopped) timer = setTimeout(readPods, 2000); }
     }
     readPods();
     return () => { stopped = true; clearTimeout(timer); controller?.abort(); };
-  }, []);
+  }, [rosterTick]);
   useEffect(() => {
     let stopped = false,
       timer,
@@ -222,6 +231,35 @@ function App() {
     if (next.individualId !== selectedIndividualRef.current) return;
     requestEpoch.current++; setState(next);
   }
+  // One selection path for the toolbar select, the roster panel select and the keyboard roster.
+  // Selection changes what is shown; it starts nothing and retargets no request already in flight.
+  function selectIndividual(id) {
+    requestEpoch.current++;
+    const member = selectedSharedMember(sharedLive.current, id);
+    setVisualLease(null);
+    if (!member) { sharedLive.current = null; setSharedBundle(null); setSharedLease(null); }
+    selectedIndividualRef.current = id;
+    setIndividualId(id); setState(member); setSelected(""); setHistory([]); setConnectionError("");
+  }
+  // A visitor reply is merged into the selected state only when it answers the selected individual.
+  function handleVisitorMutation(next) {
+    if (!next || next.individualId !== selectedIndividualRef.current) return;
+    requestEpoch.current++; if (next.externalOwner) setVisualLease(null);
+    setState(previous => mergeRuntimeSnapshot(previous, next));
+  }
+  function handleRosterReply({ state: next, visitor }) {
+    setRosterOverrides(previous => recordRosterReply(previous, { individualId: next.individualId, sessionId: next.sessionId, visitor }));
+    setRosterTick(tick => tick + 1);
+    handleVisitorMutation(next);
+  }
+  // The ledger owns a caretaker chat from submission to settlement, whichever fly is selected meanwhile.
+  function trackLanguageRequest(request, promise) {
+    setLanguageLedger(ledger => beginLanguageRequest(ledger, request));
+    promise.then(
+      value => setLanguageLedger(ledger => settleLanguageRequest(ledger, request, { ok: true, result: value.result, language: value.language, state: value.state })),
+      error => setLanguageLedger(ledger => settleLanguageRequest(ledger, request, { ok: false, error: error?.message })));
+  }
+  const markLanguageShown = key => setLanguageLedger(ledger => markLanguageReplyShown(ledger, key));
   const scrollToPanel = (id) => {
     const el = document.getElementById(id);
     if (el) {
@@ -237,7 +275,9 @@ function App() {
   const visibleHistory = history.filter(row => row.scope === observationScope(state));
   const fixtureView = !["Nervous system", "Connectome lab"].includes(tab);
   const pod = podPresentation(state?.visitor);
-  const podRoster = visitorRoster.filter(entry => entry.owned || entry.phase !== "home");
+  const rosterRows = buildFlyRoster({ individuals, visitorRoster, overrides: rosterOverrides, rosterReadAt,
+    selectedId: individualId || state?.individualId || "", ledger: languageLedger });
+  const roster = <FlyRoster rows={rosterRows} disabled={busy} bridgeConfigured={bridgeConfigured} onSelect={selectIndividual} onVisitorReply={handleRosterReply} />;
   const go = (t) => {
     location.hash = encodeURIComponent(t);
     setTab(t);
@@ -346,14 +386,7 @@ function App() {
             <div className="toolbar-individual">
               <label>
                 <span className="muted">Fly: </span>
-                <select disabled={busy} value={individualId || state?.individualId || ""} onChange={event => {
-                  requestEpoch.current++;
-                  const member = selectedSharedMember(sharedLive.current, event.target.value);
-                  setVisualLease(null);
-                  if (!member) { sharedLive.current = null; setSharedBundle(null); setSharedLease(null); }
-                  selectedIndividualRef.current = event.target.value;
-                  setIndividualId(event.target.value); setState(member); setSelected(""); setHistory([]); setConnectionError("");
-                }}>
+                <select disabled={busy} value={individualId || state?.individualId || ""} onChange={event => selectIndividual(event.target.value)}>
                   {individuals.map(individual => (
                     <option key={individual.individualId} value={individual.individualId}>
                       {individual.individualId.slice(0, 8)}… · {individual.resident ? "resident" : "unloaded"}
@@ -581,35 +614,18 @@ function App() {
                   <span className="eyebrow">INDIVIDUAL ROSTER</span>
                   <span className="muted">ISOLATED RESIDENTS</span>
                 </div>
-                <label>Individual <select disabled={busy} value={individualId || state?.individualId || ""} onChange={event => {
-                  requestEpoch.current++;
-                  const member = selectedSharedMember(sharedLive.current, event.target.value);
-                  setVisualLease(null);
-                  if (!member) { sharedLive.current = null; setSharedBundle(null); setSharedLease(null); }
-                  selectedIndividualRef.current = event.target.value;
-                  setIndividualId(event.target.value); setState(member); setSelected(""); setHistory([]); setConnectionError("");
-                }}>{individuals.map(individual => <option key={individual.individualId} value={individual.individualId}>
+                <label>Individual <select disabled={busy} value={individualId || state?.individualId || ""} onChange={event => selectIndividual(event.target.value)}>{individuals.map(individual => <option key={individual.individualId} value={individual.individualId}>
                   {individual.individualId} · {individual.resident ? "resident" : "saved unloaded"}
                 </option>)}</select></label>
                 <p>Each synthetic individual has separate state and exposure reservations. Selection does not start a simulation.</p>
-                {podRoster.length > 0 && <>
-                  <p>Teleport pod status for every individual. Read-only; selecting a different fly does not move a pod.</p>
-                  <ul className="pod-roster" aria-label="Teleport pod status by individual">
-                    {podRoster.map(entry => <li key={entry.individualId} className={`pod-${entry.tone}`}>
-                      ◎ {entry.individualId} · {entry.label} · {entry.owned ? "owned by the bridge" : "home controller available"} · {entry.running ? "stepping" : "paused"}
-                    </li>)}
-                  </ul>
-                </>}
               </section>
             )}
+            {individuals.length > 0 && roster}
           </section>
         )}
+        {tab === "Eidoverse" && individuals.length > 0 && roster}
         {(tab === "Eidoverse" || state?.externalOwner) && <ManagedVisitorControls key={`${state?.individualId}/${state?.sessionId}`}
-          state={state} disabled={!available} onBusyChange={setBusy} onMutation={next => {
-            if (next.individualId !== selectedIndividualRef.current) return;
-            requestEpoch.current++; if (next.externalOwner) setVisualLease(null);
-            setState(previous => mergeRuntimeSnapshot(previous, next));
-          }} />}
+          state={state} disabled={!available} onBusyChange={setBusy} onMutation={handleVisitorMutation} />}
         {tab === "Connectome lab" && <details className="card operations-panel"><summary>Shared population and memory limits</summary><Population /></details>}
         {tab === "Connectome lab" && <Suspense fallback={<p role="status">Reading full-connectome individuals…</p>}><ConnectomeLab selectedIndividualId={connectomeId} onSelectIndividual={(id,dataset) => setConnectomeSelection(current => selectConnectomePair(current,id,dataset))} onSelection={value => setConnectomeSelection(current => mergeConnectomeSelection(current,value))} /></Suspense>}
         {tab === "Nervous system" && <Suspense fallback={<p role="status">Loading anatomical viewer…</p>}><NervousSystem dataset={connectomeDataset} individualId={connectomeId || null} onDatasetChange={dataset => setConnectomeSelection(current => selectConnectomePair(current,"",dataset))} /></Suspense>}
@@ -744,7 +760,8 @@ function App() {
         {tab === "Language" && (
           <section className="card content-panel language">
             <span className="eyebrow">LANGUAGE INTERFACE / EXPLICIT OPT-IN</span>
-            <LanguageControls key={`${state?.individualId}/${state?.sessionId}`} state={state} disabled={!available || Boolean(state?.sharedSession || state?.externalOwner)} onMutation={next => {
+            <LanguageControls key={`${state?.individualId}/${state?.sessionId}`} state={state} disabled={!available || Boolean(state?.sharedSession || state?.externalOwner)}
+              ledger={languageLedger} onRequest={trackLanguageRequest} onReplyShown={markLanguageShown} onMutation={next => {
               if (!next || next.individualId !== selectedIndividualRef.current) return;
               requestEpoch.current++;
               setState(previous => {
