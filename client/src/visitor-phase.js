@@ -44,5 +44,6 @@ export function podRosterEntry(entry) {
   const pod = podPresentation(entry);
   return { individualId: typeof entry?.individualId === 'string' ? entry.individualId : '',
     phase: pod.phase, tone: pod.tone, label: pod.label,
-    owned: Boolean(entry?.owned), running: Boolean(entry?.running) };
+    owned: Boolean(entry?.owned), running: Boolean(entry?.running),
+    worldId: pod.destination };
 }

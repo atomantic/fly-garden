@@ -394,16 +394,25 @@ h3 {
   font-size: 8px;
   margin-top: 6px;
 }
-/* Decorative pod tone only. It reports bridge phase, never a welfare or experience claim. */
-.pod-label.pod-idle { color: #8ea394; }
-.pod-label.pod-pending { color: #d8cf95; }
-.pod-label.pod-active { color: #bddec6; }
-.pod-label.pod-fault { color: #e3a98f; }
-.pod-roster { margin: 12px 0 0; padding: 0; list-style: none; font: 11px monospace; }
-.pod-roster li { margin: 4px 0; overflow-wrap: anywhere; }
-.pod-roster .pod-pending { color: #a79a52; }
-.pod-roster .pod-active { color: #4e7f5f; }
-.pod-roster .pod-fault { color: #a05a3a; }
+/* Decorative pod tone only, over the habitat and on each roster row. It reports bridge phase, which
+   the label and the row also state as text, never a welfare or experience claim. */
+.pod-label.pod-idle, .fly-roster-pod { color: #8ea394; }
+.pod-label.pod-pending, .fly-roster-row.pod-pending .fly-roster-pod { color: #d8cf95; }
+.pod-label.pod-active, .fly-roster-row.pod-active .fly-roster-pod { color: #bddec6; }
+.pod-label.pod-fault, .fly-roster-row.pod-fault .fly-roster-pod { color: #e3a98f; }
+/* Per-fly roster rows and the language panel's held reply share one box. */
+.fly-roster-list { display: grid; gap: 10px; margin: 12px 0; }
+.fly-roster-row, .language-held {
+  border: 1px solid #2c4236;
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+.fly-roster-row { display: grid; gap: 8px; }
+.fly-roster-row[data-selected="true"] { border-color: #86997a; }
+.fly-roster-row [role="radio"] { text-align: left; justify-self: start; }
+.fly-roster-pod { margin: 0; font: 11px monospace; }
+.fly-roster-pod, .language-recipient, .language-held { overflow-wrap: anywhere; }
+.language-held { margin: 12px 0; }
 .scene-footer {
   position: absolute;
   bottom: 0;
@@ -785,7 +794,8 @@ td {
 td button {
   padding: 5px 9px;
 }
-td button[aria-pressed="true"] {
+td button[aria-pressed="true"],
+.fly-roster-row [role="radio"][aria-checked="true"] {
   background: #86997a;
   border-color: #86997a;
   color: #101c0d;

@@ -302,6 +302,6 @@ export function createRuntime({ individualId = 'synthetic-fixture', sessionId = 
     return canceled;
   }
 
-  return { snapshot, control, encounter, stimulate, stimulusEnvelope: policy.envelope, cancelStimulus, step, prepareStep, previewStep, commitStep, checkpoint, pauseFault,
+  return { sessionId, snapshot, control, encounter, stimulate, stimulusEnvelope: policy.envelope, cancelStimulus, step, prepareStep, previewStep, commitStep, checkpoint, pauseFault,
     checkpointStimulusPolicy: policy.checkpoint, restoreStimulusPolicy };
 }

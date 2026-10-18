@@ -63,6 +63,15 @@ export default defineConfig({
       use: { ...devices['Desktop Chrome'] },
     },
     {
+      // Per-fly roster: keyboard selection, per-row controls and late-reply attribution, with every
+      // visitor and language route fulfilled on loopback by the spec itself. No host, provider,
+      // admission or individual is involved; see the spec header.
+      name: 'fly-roster',
+      testMatch: 'fly-roster.spec.js',
+      timeout: 120_000,
+      use: { ...devices['Desktop Chrome'] },
+    },
+    {
       name: 'small-screen',
       testMatch: 'small-screen.spec.js',
       use: { ...devices['Desktop Chrome'], viewport: { width: 390, height: 844 } },

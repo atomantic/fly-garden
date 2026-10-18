@@ -81,18 +81,27 @@ export async function tabThroughPanel(page, limit = 500) {
   let entered = false;
   for (let index = 0; index < limit; index++) {
     await page.keyboard.press('Tab');
-    const focused = await page.evaluate(() => {
-      const element = document.activeElement;
-      if (!element || element === document.body) return null;
-      const style = getComputedStyle(element);
-      return { stop: element.dataset?.kbdStop ?? null, tag: element.tagName.toLowerCase(),
-        outlineStyle: style.outlineStyle, outlineWidth: parseFloat(style.outlineWidth) || 0,
-        outlineColor: style.outlineColor, hidden: element.offsetParent === null };
-    });
+    const focused = await focusedElement(page);
     if (focused?.stop != null) { entered = true; stops.push({ ...focused, stop: Number(focused.stop) }); }
     else if (entered) break;
   }
   return stops;
+}
+
+/**
+ * The active element's tag, panel stop, the focus outline the browser actually computed, and the
+ * nearest `data-individual` ancestor; null when nothing but the body has focus.
+ */
+export async function focusedElement(page) {
+  return page.evaluate(() => {
+    const element = document.activeElement;
+    if (!element || element === document.body) return null;
+    const style = getComputedStyle(element);
+    return { stop: element.dataset?.kbdStop ?? null, tag: element.tagName.toLowerCase(),
+      outlineStyle: style.outlineStyle, outlineWidth: parseFloat(style.outlineWidth) || 0,
+      outlineColor: style.outlineColor, hidden: element.offsetParent === null,
+      individual: element.closest('[data-individual]')?.dataset.individual ?? null };
+  });
 }
 
 /** Panel state words that must be legible as text, not only as colour or position. */

@@ -491,3 +491,22 @@ test('failed garden reservation stops only that recipient without delivering or 
   const disk = JSON.parse(readFileSync(join(path, 'identities.json'), 'utf8'));
   assert.equal(disk.individuals[0].checkpoints.at(-1).payload.stimulusPolicy.entries.length, 0);
 });
+
+test('the individual list names each resident runtime session and no session for an unloaded individual', t => {
+  const store = openIdentityStore(directory(t));
+  t.after(() => store.close());
+  const primary = store.primaryId, second = store.create().individualId;
+  const listed = Object.fromEntries(store.list().map(entry => [entry.individualId, entry]));
+  assert.equal(listed[primary].resident, true);
+  assert.equal(listed[primary].sessionId, store.snapshot(primary).sessionId);
+  assert.equal(listed[second].resident, false);
+  assert.equal(listed[second].sessionId, null, 'an unloaded individual has no commandable session');
+  store.load(second);
+  assert.equal(store.list().find(entry => entry.individualId === second).sessionId, store.snapshot(second).sessionId);
+  // A restore replaces the session; the list follows the live runtime, not a cached value.
+  const before = store.snapshot(primary).sessionId;
+  store.restore(primary, store.snapshot(primary).persistence.checkpointId);
+  const after = store.list().find(entry => entry.individualId === primary).sessionId;
+  assert.notEqual(after, before);
+  assert.equal(after, store.snapshot(primary).sessionId);
+});

@@ -18,3 +18,6 @@ export function mergeRuntimeSnapshot(previous, next) {
   return previous && previous.individualId === next.individualId && previous.sessionId === next.sessionId
     && (previous.tick > next.tick || previous.commandSequence > next.commandSequence) ? previous : next;
 }
+
+/** One spelling of the identity a scoped panel, request or remount key is bound to. */
+export const sessionKey = (individualId, sessionId) => `${individualId}/${sessionId}`;
