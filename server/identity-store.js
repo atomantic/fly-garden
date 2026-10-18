@@ -671,7 +671,7 @@ export function openIdentityStore(directory, { write = atomicWrite, loadPrimary 
     list: () => saved.individuals.map(record => ({ individualId: record.individualId, branchOf: structuredClone(record.branchOf),
       dataset: structuredClone(checkpointFor(record, record.head).payload.dataset),
       checkpointId: record.head, resident: runtimes.has(record.individualId),
-      sessionId: runtimes.has(record.individualId) ? runtimes.get(record.individualId).snapshot().sessionId : null })),
+      sessionId: runtimes.get(record.individualId)?.sessionId ?? null })),
     checkpoints: id => recordFor(id).checkpoints.map(({ payload, ...metadata }) => ({ ...metadata, simTimeMs: payload.dynamics.tick * 5 })),
     control: (id, action) => {
       requireExternalFree(id);

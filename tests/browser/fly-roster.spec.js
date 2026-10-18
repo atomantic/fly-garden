@@ -1,4 +1,5 @@
 import { describeRuntime, expect, test } from './cdp-browser.js';
+import { focusedElement } from './panel-accessibility.js';
 import { podPresentation } from '../../client/src/visitor-phase.js';
 
 /**
@@ -83,7 +84,7 @@ async function fixtures(page) {
       await route.fulfill({ json: { state: snapshots[id], language: views[id], result } });
     });
   }
-  return { a, b, pods, snapshots, visitorCommands, languageCommands, releaseChat: () => releaseChat() };
+  return { a, visitorCommands, languageCommands, releaseChat };
 }
 
 const row = (page, id) => page.locator(`.fly-roster-row[data-individual="${id}"]`);
@@ -112,13 +113,11 @@ test('arrow keys move the selection between flies, and each row reports its own 
   await expect(radio(page, a.individualId)).toHaveAttribute('tabindex', '0');
   await expect(radio(page, B_ID)).toHaveAttribute('tabindex', '-1');
   await radio(page, a.individualId).focus();
-  const focused = async () => page.evaluate(() => ({ id: document.activeElement?.closest('.fly-roster-row')?.dataset.individual ?? null,
-    outline: getComputedStyle(document.activeElement).outlineStyle, width: parseFloat(getComputedStyle(document.activeElement).outlineWidth) || 0 }));
   await page.keyboard.press('ArrowDown');
   await expect(radio(page, B_ID)).toHaveAttribute('aria-checked', 'true');
   await expect(radio(page, a.individualId)).toHaveAttribute('aria-checked', 'false');
   await expect(toolbarSelect(page)).toHaveValue(B_ID);
-  expect((await focused()).id).toBe(B_ID);
+  expect((await focusedElement(page)).individual).toBe(B_ID);
   // The selected fly's own visitor panel now describes the second fly's acknowledged visit.
   await expect(page.getByRole('region', { name: 'Managed Eidoverse visitor' }).getByRole('status'))
     .toContainText(podPresentation({ phase: 'visiting', worldId: WORLD }).label);
@@ -129,15 +128,14 @@ test('arrow keys move the selection between flies, and each row reports its own 
   await expect(radio(page, B_ID)).toHaveAttribute('aria-checked', 'true');
   await page.keyboard.press('Home');
   await expect(radio(page, a.individualId)).toHaveAttribute('aria-checked', 'true');
-  expect((await focused()).id).toBe(a.individualId);
-  const style = await focused();
-  console.log(`[${info.project.name}] roster focus outline: ${JSON.stringify(style)}`);
+  expect((await focusedElement(page)).individual).toBe(a.individualId);
   // Keyboard focus is visible on the roster radio when reached by keyboard.
   await page.keyboard.press('Tab'); await page.keyboard.press('Shift+Tab');
-  const back = await focused();
-  expect(back.id).toBe(a.individualId);
-  expect(back.outline).not.toBe('none');
-  expect(back.width).toBeGreaterThan(0);
+  const back = await focusedElement(page);
+  console.log(`[${info.project.name}] roster focus outline: ${JSON.stringify(back)}`);
+  expect(back.individual).toBe(a.individualId);
+  expect(back.outlineStyle).not.toBe('none');
+  expect(back.outlineWidth).toBeGreaterThan(0);
 });
 
 test('each row\'s Visit and Return controls post to that row\'s fly and session, whichever fly is selected', async ({ page }, info) => {
@@ -223,11 +221,8 @@ test('a provider reply that lands after a selection change is kept with its init
   const held = panel.locator('.language-held[data-request]');
   await expect(held).toHaveAttribute('data-request', requestId);
   await expect(held).toContainText(INTERPRETATION);
-  await expect(held).toContainText(`individual ${a.individualId}`);
   await expect(held).toContainText('was not shown under any other fly');
   await expect(panel).toContainText('Reserved: 1 calls');
-  await page.goto('/#Eidoverse');
-  await expect(row(page, a.individualId).getByRole('status')).toContainText('interpreter reply shown under this fly');
   expect(languageCommands.map(command => [command.url, command.operation])).toEqual([[a.individualId, 'chat']]);
   console.log(`[${info.project.name}] language commands: ${JSON.stringify(languageCommands.map(({ url, individualId, sessionId, operation }) => ({ url, individualId, sessionId, operation })))}`);
 });

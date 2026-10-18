@@ -17,9 +17,10 @@ import { mergeToolbarVisitorReply } from "./visitor-command-state.js";
 import { postVisitorCommand } from "./visitor-api.js";
 import { podPresentation, podRosterEntry } from "./visitor-phase.js";
 import FlyRoster from "./FlyRoster.jsx";
-import { buildFlyRoster, recordRosterReply } from "./fly-roster-state.js";
-import { beginLanguageRequest, emptyLanguageLedger, markLanguageReplyShown, settleLanguageRequest } from "./language-reply-ledger.js";
-import { readRuntimeSnapshot, mergeRuntimeSnapshot } from "./runtime-state.js";
+import { buildFlyRoster, mergeRosterReply } from "./fly-roster-state.js";
+import { beginLanguageRequest, emptyLanguageLedger, settleLanguageRequest } from "./language-reply-ledger.js";
+import { postLanguage } from "./language-api.js";
+import { readRuntimeSnapshot, mergeRuntimeSnapshot, sessionKey } from "./runtime-state.js";
 import { selectConnectomePair, mergeConnectomeSelection } from "./connectome-lab-state.js";
 import "./style.css";
 // Same accessibility scope the atlas and lab already carry: visible keyboard focus, forced-colors
@@ -56,8 +57,7 @@ function App() {
   const [individualId, setIndividualId] = useState("");
   const [individuals, setIndividuals] = useState([]);
   const [visitorRoster, setVisitorRoster] = useState([]);
-  const [rosterReadAt, setRosterReadAt] = useState(0), [rosterTick, setRosterTick] = useState(0);
-  const [rosterOverrides, setRosterOverrides] = useState({}), [bridgeConfigured, setBridgeConfigured] = useState(false);
+  const [rosterTick, setRosterTick] = useState(0), [bridgeConfigured, setBridgeConfigured] = useState(false);
   // Caretaker language requests, keyed by their recipient; survives panel remounts on selection change.
   const [languageLedger, setLanguageLedger] = useState(emptyLanguageLedger);
   const [connectomeSelection, setConnectomeSelection] = useState({individualId:"",dataset:"male-cns:v1.0"});
@@ -100,18 +100,18 @@ function App() {
     return () => removeEventListener("hashchange", change);
   }, []);
   // Per-fly pod phase for the whole roster. Read-only; it never admits, starts or retargets a visit.
-  // A row command bumps `rosterTick` so the next read starts at once instead of after the interval.
+  // A row command bumps `rosterTick`, which abandons any read in flight and starts a fresh one at
+  // once, so the roster never shows a read that began before the command was applied.
   useEffect(() => {
     let stopped = false, timer, controller;
     async function readPods() {
       controller = new AbortController();
-      const startedAt = Date.now();
       try {
         const response = await fetch("/api/health", { signal: controller.signal });
         if (!response.ok) throw new Error("Health unavailable");
         const value = await response.json();
         const list = Array.isArray(value?.eidoverse?.individuals) ? value.eidoverse.individuals : [];
-        if (!stopped) { setVisitorRoster(list.map(podRosterEntry)); setRosterReadAt(startedAt); setBridgeConfigured(value?.eidoverse?.configured === true); }
+        if (!stopped) { setVisitorRoster(list.map(podRosterEntry)); setBridgeConfigured(value?.eidoverse?.configured === true); }
       } catch { if (!stopped) { setVisitorRoster([]); setBridgeConfigured(false); } }
       finally { if (!stopped) timer = setTimeout(readPods, 2000); }
     }
@@ -247,19 +247,32 @@ function App() {
     requestEpoch.current++; if (next.externalOwner) setVisualLease(null);
     setState(previous => mergeRuntimeSnapshot(previous, next));
   }
-  function handleRosterReply({ state: next, visitor }) {
-    setRosterOverrides(previous => recordRosterReply(previous, { individualId: next.individualId, sessionId: next.sessionId, visitor }));
+  // A roster row's reply refreshes that row at once and restarts the pod read; the selected state
+  // is touched only when the reply answers the selected individual.
+  function handleRosterReply(next) {
+    setVisitorRoster(list => mergeRosterReply(list, next));
     setRosterTick(tick => tick + 1);
     handleVisitorMutation(next);
   }
+  // Language mutates command ordering, never the neural trajectory.
+  function handleLanguageMutation(next) {
+    if (!next || next.individualId !== selectedIndividualRef.current) return;
+    requestEpoch.current++;
+    setState(previous => {
+      if (!previous || previous.individualId !== next.individualId || previous.sessionId !== next.sessionId
+        || previous.commandSequence > next.commandSequence) return previous;
+      return previous.tick > next.tick ? { ...previous, commandSequence: next.commandSequence } : next;
+    });
+  }
   // The ledger owns a caretaker chat from submission to settlement, whichever fly is selected meanwhile.
-  function trackLanguageRequest(request, promise) {
+  function sendLanguageChat(source, payload) {
+    const request = { key: sessionKey(source.individualId, source.sessionId), individualId: source.individualId,
+      sessionId: source.sessionId, requestId: payload.requestId };
     setLanguageLedger(ledger => beginLanguageRequest(ledger, request));
-    promise.then(
-      value => setLanguageLedger(ledger => settleLanguageRequest(ledger, request, { ok: true, result: value.result, language: value.language, state: value.state })),
+    postLanguage(source, "chat", payload).then(
+      value => { setLanguageLedger(ledger => settleLanguageRequest(ledger, request, { ok: true, result: value.result })); handleLanguageMutation(value.state); },
       error => setLanguageLedger(ledger => settleLanguageRequest(ledger, request, { ok: false, error: error?.message })));
   }
-  const markLanguageShown = key => setLanguageLedger(ledger => markLanguageReplyShown(ledger, key));
   const scrollToPanel = (id) => {
     const el = document.getElementById(id);
     if (el) {
@@ -275,9 +288,10 @@ function App() {
   const visibleHistory = history.filter(row => row.scope === observationScope(state));
   const fixtureView = !["Nervous system", "Connectome lab"].includes(tab);
   const pod = podPresentation(state?.visitor);
-  const rosterRows = buildFlyRoster({ individuals, visitorRoster, overrides: rosterOverrides, rosterReadAt,
-    selectedId: individualId || state?.individualId || "", ledger: languageLedger });
-  const roster = <FlyRoster rows={rosterRows} disabled={busy} bridgeConfigured={bridgeConfigured} onSelect={selectIndividual} onVisitorReply={handleRosterReply} />;
+  const visitorPanelShown = tab === "Eidoverse" || Boolean(state?.externalOwner);
+  const rosterRows = buildFlyRoster({ individuals, visitorRoster, selectedId: individualId || state?.individualId || "", ledger: languageLedger });
+  const roster = <FlyRoster rows={rosterRows} disabled={busy} bridgeConfigured={bridgeConfigured} onSelect={selectIndividual} onMutation={handleRosterReply}
+    panelId={visitorPanelShown ? state?.individualId ?? null : null} />;
   const go = (t) => {
     location.hash = encodeURIComponent(t);
     setTab(t);
@@ -624,7 +638,7 @@ function App() {
           </section>
         )}
         {tab === "Eidoverse" && individuals.length > 0 && roster}
-        {(tab === "Eidoverse" || state?.externalOwner) && <ManagedVisitorControls key={`${state?.individualId}/${state?.sessionId}`}
+        {visitorPanelShown && <ManagedVisitorControls key={sessionKey(state?.individualId, state?.sessionId)}
           state={state} disabled={!available} onBusyChange={setBusy} onMutation={handleVisitorMutation} />}
         {tab === "Connectome lab" && <details className="card operations-panel"><summary>Shared population and memory limits</summary><Population /></details>}
         {tab === "Connectome lab" && <Suspense fallback={<p role="status">Reading full-connectome individuals…</p>}><ConnectomeLab selectedIndividualId={connectomeId} onSelectIndividual={(id,dataset) => setConnectomeSelection(current => selectConnectomePair(current,id,dataset))} onSelection={value => setConnectomeSelection(current => mergeConnectomeSelection(current,value))} /></Suspense>}
@@ -760,17 +774,8 @@ function App() {
         {tab === "Language" && (
           <section className="card content-panel language">
             <span className="eyebrow">LANGUAGE INTERFACE / EXPLICIT OPT-IN</span>
-            <LanguageControls key={`${state?.individualId}/${state?.sessionId}`} state={state} disabled={!available || Boolean(state?.sharedSession || state?.externalOwner)}
-              ledger={languageLedger} onRequest={trackLanguageRequest} onReplyShown={markLanguageShown} onMutation={next => {
-              if (!next || next.individualId !== selectedIndividualRef.current) return;
-              requestEpoch.current++;
-              setState(previous => {
-                if (!previous || previous.individualId !== next.individualId || previous.sessionId !== next.sessionId
-                  || previous.commandSequence > next.commandSequence) return previous;
-                // Language mutates command ordering, never the neural trajectory.
-                return previous.tick > next.tick ? { ...previous, commandSequence: next.commandSequence } : next;
-              });
-            }} />
+            <LanguageControls key={sessionKey(state?.individualId, state?.sessionId)} state={state} disabled={!available || Boolean(state?.sharedSession || state?.externalOwner)}
+              ledger={languageLedger} onChat={sendLanguageChat} onMutation={handleLanguageMutation} />
           </section>
         )}
 

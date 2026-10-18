@@ -130,8 +130,9 @@ same `postVisitorCommand` pre-read, so a row whose session has since been replac
 refused rather than commanding the new session. Return is offered in every owned phase, including a
 stuck return, so no fly is stranded; a visit can be requested only from `home` by a resident with a
 known session on a configured bridge. Unloaded individuals have no commandable session and show why.
-A reply updates that row at once and triggers a roster re-read; the reply stands in only until a read
-that started after it, and only for the session the row listed.
+A reply refreshes that row at once and restarts the pod read, so the roster never shows a read that
+began before the command was applied. A fly whose own visitor panel is open keeps its controls there,
+so each target has one command surface at a time.
 
 `tests/browser/fly-roster.spec.js` (Playwright project `fly-roster`) measures this in Chromium with
 every visitor and language route fulfilled on loopback by the spec itself: keyboard selection, the

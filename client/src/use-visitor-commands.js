@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { postVisitorCommand, visitorJson } from './visitor-api.js';
+import { sessionKey } from './runtime-state.js';
 
 /** Visitor commands for exactly one individual and runtime session.
  *
@@ -12,11 +13,12 @@ export function useVisitorCommands(target, { onMutation = () => {}, onBusyChange
   const active = useRef(null), generation = useRef(0), mounted = useRef(true);
   const busyRef = useRef(onBusyChange), mutationRef = useRef(onMutation);
   busyRef.current = onBusyChange; mutationRef.current = onMutation;
-  const key = target ? `${target.individualId}/${target.sessionId}` : null;
-  useEffect(() => { mounted.current = true; return () => { mounted.current = false; generation.current++; active.current?.abort(); busyRef.current(false); }; }, []);
+  const key = target ? sessionKey(target.individualId, target.sessionId) : null;
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  // A different target, or unmount, abandons any request; only a still-mounted hook resets its state.
   useEffect(() => () => {
-    generation.current++; active.current?.abort(); active.current = null;
-    if (mounted.current) { setCapabilities(null); setWorld(''); setError(''); setBusy(false); busyRef.current(false); }
+    generation.current++; active.current?.abort(); active.current = null; busyRef.current(false);
+    if (mounted.current) { setCapabilities(null); setWorld(''); setError(''); setBusy(false); }
   }, [key]);
   async function perform(operation) {
     if (!target || busy && !['home', 'pause', 'rest'].includes(operation)) return;
@@ -35,7 +37,7 @@ export function useVisitorCommands(target, { onMutation = () => {}, onBusyChange
         const value = await postVisitorCommand({ individualId, sessionId }, operation, operation === 'admit' ? { worldId: world } : {}, controller.signal);
         if (!mounted.current || ticket !== generation.current) return;
         if (value.state?.individualId !== individualId || value.state?.sessionId !== sessionId) throw new Error('Visitor reply belongs to a different runtime session.');
-        mutationRef.current(value.state, value.visitor ?? value.state.visitor ?? null);
+        mutationRef.current(value.state);
       }
     } catch (e) {
       if (mounted.current && ticket === generation.current) setError(controller.signal.aborted

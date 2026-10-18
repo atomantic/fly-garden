@@ -1,5 +1,6 @@
 import { podPresentation } from './visitor-phase.js';
 import { useVisitorCommands } from './use-visitor-commands.js';
+import VisitRequestForm from './VisitRequestForm.jsx';
 
 export default function ManagedVisitorControls({ state, disabled = false, onMutation, onBusyChange = () => {} }) {
   const visitor = state?.visitor, owned = Boolean(state?.externalOwner || visitor?.owned);
@@ -21,11 +22,7 @@ export default function ManagedVisitorControls({ state, disabled = false, onMuta
       <button disabled={unavailable || !visitor?.available || Boolean(state?.sharedSession)} onClick={() => perform('discover')}>Check owner-approved worlds</button>
       {state?.sharedSession && <p>Separate the shared garden before requesting an individual visit.</p>}
       {capabilities && <>
-        <label>World <select value={world} disabled={unavailable} onChange={event => setWorld(event.target.value)}>
-          {!capabilities.worldIds.length && <option value="">No approved worlds</option>}
-          {capabilities.worldIds.map(id => <option key={id} value={id}>{id}</option>)}
-        </select></label>
-        <button disabled={unavailable || !capabilities.available || !world} onClick={() => perform('admit')}>Request visit (paused)</button>
+        <VisitRequestForm capabilities={capabilities} world={world} setWorld={setWorld} disabled={unavailable} onAdmit={() => perform('admit')} />
         {Number.isInteger(capabilities.maxConcurrentVisitors) && <p>Host negotiated capacity: {capabilities.maxConcurrentVisitors} concurrent managed visitor{capabilities.maxConcurrentVisitors === 1 ? '' : 's'}. A further admission is refused before any local ownership changes, so an existing visit is never disturbed.</p>}
         {capabilities.interactionAvailable
           ? <p>Optional patch interaction is negotiated. Allowlisted patch objects: {capabilities.patchObjects.join(', ')}.</p>
